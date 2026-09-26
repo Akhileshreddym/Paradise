@@ -119,7 +119,7 @@ async function onCars({ cars, compass }) {
 // the depth model is still busy with the last one) obstacles in the walking path, for the laptop page.
 async function onPreview(msg, raw) {
   const pages = [...wss.clients].filter((c) => c.role === "hands" && c.readyState === 1);
-  for (const client of pages) client.send(raw);
+  for (const client of pages) client.send(raw, { binary: false }); // as text, like it came: a page can't parse a binary frame
   if (!pages.length || !msg.cam || typeof msg.image !== "string") return;
   const t0 = Date.now();
   const result = await findHazards(msg.image, msg.cam);

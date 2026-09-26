@@ -1,0 +1,149 @@
+/* Nudge: the look shared by the three pages (laptop display, chest phone, beacon phone).
+   Light or dark follows the device's setting. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #f5f5f7;
+  --card: #ffffff;
+  --well: #f0f0f3;             /* inputs, buttons, chips */
+  --line: rgba(0, 0, 0, 0.08);
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --faint: #b0b0b6;
+  --accent: #0071e3;
+  --green: #1a9a44;
+  --red: #e0352b;
+  --orange: #d46b08;
+  --violet: #8a4fd6;
+  --buzz: #ffcc00;
+  --radius: 18px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.04);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d0d0f;
+    --card: #19191c;
+    --well: #26262a;
+    --line: rgba(255, 255, 255, 0.08);
+    --text: #f5f5f7;
+    --muted: #9b9ba2;
+    --faint: #55555c;
+    --accent: #3d95ff;
+    --green: #32d74b;
+    --red: #ff453a;
+    --orange: #ff9f0a;
+    --violet: #bf5af2;
+    --buzz: #ffd60a;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 20px 24px 48px; }
+.wrap.narrow { max-width: 560px; padding: 16px 16px 40px; }
+
+/* ---- Header: name + connection pills ---- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.brand .sub { font-weight: 500; color: var(--muted); }
+/* Two dots on a tile: the two buzzing wrists. */
+.mark { position: relative; width: 26px; height: 26px; border-radius: 8px; background: var(--text); flex: none; }
+.mark::before, .mark::after { content: ""; position: absolute; top: 10px; width: 6px; height: 6px; border-radius: 50%; background: var(--buzz); }
+.mark::before { left: 6px; }
+.mark::after { right: 6px; }
+.pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--card); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 500; color: var(--muted); white-space: nowrap;
+}
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.pill.ok { color: var(--text); }
+.pill.ok::before { background: var(--green); }
+.pill.warn::before { background: var(--orange); }
+.pill.bad::before { background: var(--red); }
+
+/* ---- Cards and labels ---- */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
+.label { font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }
+
+/* ---- Buttons and inputs ---- */
+button {
+  font: inherit; font-size: 14px; font-weight: 600;
+  min-height: 38px; padding: 8px 14px; border: 0; border-radius: 12px;
+  background: var(--well); color: var(--text); cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.05s;
+}
+button:hover { background: color-mix(in srgb, var(--well) 88%, var(--text)); }
+button:active { transform: scale(0.97); }
+button.primary { background: var(--accent); color: #fff; }
+button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+button.danger { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
+button.danger:hover { background: color-mix(in srgb, var(--red) 20%, transparent); }
+button.active { background: var(--text); color: var(--card); }
+button.big { width: 100%; min-height: 54px; font-size: 17px; border-radius: 14px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="text"], input[type="number"], input:not([type]) {
+  font: inherit; min-height: 38px; padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--well); color: var(--text); outline: none;
+}
+input[type="text"]:focus, input[type="number"]:focus, input:not([type]):focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+input[type="range"] { accent-color: var(--accent); width: 100%; }
+/* A checkbox that looks like a switch. */
+input.switch {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+  position: relative; width: 44px; height: 26px; border-radius: 999px;
+  background: var(--faint); cursor: pointer; transition: background 0.2s;
+}
+input.switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.2s;
+}
+input.switch:checked { background: var(--green); }
+input.switch:checked::after { transform: translateX(18px); }
+
+/* ---- Collapsible sections ---- */
+details.card { padding: 0; }
+details.card > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; font-weight: 600;
+}
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::after { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin-top: -4px; transition: transform 0.2s; }
+details.card[open] > summary::after { transform: rotate(-135deg); margin-top: 4px; }
+details.card > .body { padding: 0 20px 18px; }
+
+/* ---- Status rows (phone pages): dot, name, value ---- */
+.rows { padding: 4px 20px; }
+.rows > div { display: grid; grid-template-columns: 8px 76px minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.rows > div:first-child { border-top: 0; }
+.rows i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.rows span { color: var(--muted); }
+.rows b { font-weight: 500; text-align: right; overflow-wrap: anywhere; }
+.rows [data-state="ok"] i { background: var(--green); }
+.rows [data-state="warn"] i { background: var(--orange); }
+.rows [data-state="bad"] i { background: var(--red); }
+.rows [data-state="bad"] b { color: var(--red); }
+
+/* ---- Form rows: label and field ---- */
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 120px; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.field:first-child { border-top: 0; }
+.field input { width: 100%; text-align: right; }

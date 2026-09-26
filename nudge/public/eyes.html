@@ -4,40 +4,72 @@
      hears. Also sends small camera frames (for the laptop's display and the server's depth model)
      and, when asked, bigger ones for the server's object finder (door handles, whatever's being
      looked for). At the target, it tracks the wearer's hand (MediaPipe). Needs https. -->
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nudge · Eyes</title>
+<link rel="stylesheet" href="nudge.css">
 <style>
-  body { font: 16px system-ui, sans-serif; margin: 0; padding: 12px; background: #111; color: #eee; }
-  button { font-size: 20px; padding: 12px 18px; margin: 4px 0; }
-  input { font-size: 16px; width: 90px; }
-  canvas { width: 100%; height: auto; display: block; background: #000; margin-top: 8px; }
-  #info { font: 700 22px/1.4 monospace; margin-top: 8px; white-space: pre; }
-  .row { margin: 8px 0; }
+  .stack { display: grid; gap: 16px; }
+  .intro p { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
+  .camera { padding: 0; overflow: hidden; }
+  .camera canvas { display: block; width: 100%; height: auto; background: #000; }
+  .camera .mono { padding: 12px 16px; }
+  #calib { width: 100%; margin-top: 12px; }
 </style>
 </head>
 <body>
-<button id="start">Start (camera + GPS + compass + mic)</button>
-<div class="row">
-  Focal (px): <input id="focal" type="number" step="1" value="720">
-  Person height (m): <input id="personH" type="number" step="0.01" value="1.70"><br>
-  <button id="calib">Calibrate: that person standing exactly 3.00 m away</button>
+<div class="wrap narrow">
+  <header class="top">
+    <div class="brand"><span class="mark"></span>Nudge <span class="sub">Eyes</span></div>
+  </header>
+  <div class="stack">
+    <section class="card intro" id="intro">
+      <button id="start" class="primary big">Start</button>
+      <p>Turns on the camera, GPS, compass and microphone: allow every prompt. Then mount the phone on
+        the chest: upright, camera facing forward, tilted down a little.</p>
+    </section>
+    <section class="card rows">
+      <div data-state="bad"><i></i><span>Laptop</span><b id="net">Not connected</b></div>
+      <div><i></i><span>Objects</span><b id="yoloInfo">Starts with Start</b></div>
+      <div><i></i><span>Hands</span><b id="handsInfo">Starts with Start</b></div>
+      <div><i></i><span>Voice</span><b id="voiceInfo">Starts with Start</b></div>
+      <div><i></i><span>GPS</span><b id="gpsV">—</b></div>
+      <div><i></i><span>Compass</span><b id="compassV">—</b></div>
+      <div><i></i><span>Tilt</span><b id="tiltV">—</b></div>
+    </section>
+    <section class="card camera" id="camera" hidden>
+      <canvas id="view"></canvas>
+      <div id="info" class="mono"></div>
+    </section>
+    <details class="card" data-key="calibration">
+      <summary>Calibration</summary>
+      <div class="body">
+        <div class="field"><label for="focal">Focal length (px)</label><input id="focal" type="number" step="1" value="720" inputmode="numeric"></div>
+        <div class="field"><label for="personH">Person height (m)</label><input id="personH" type="number" step="0.01" value="1.70" inputmode="decimal"></div>
+        <div class="field"><label for="camH">Chest height (m)</label><input id="camH" type="number" step="0.05" value="1.30" inputmode="decimal"></div>
+        <button id="calib">Calibrate: that person is standing exactly 3.00 m away</button>
+      </div>
+    </details>
+  </div>
 </div>
-<div class="row">Chest height (m): <input id="camH" type="number" step="0.05" value="1.30"></div>
-<div id="yoloInfo" style="font-family: monospace">objects: starts with Start</div>
-<div id="voiceInfo" style="font-family: monospace">voice: starts with Start</div>
-<div id="handsInfo" style="font-family: monospace">hands: starts with Start</div>
-<div id="net" style="font: 700 20px/1.6 monospace; padding: 4px 10px; border-radius: 6px; background: #a00">LAPTOP: NOT CONNECTED</div>
-<div id="sensors" style="font-family: monospace">GPS: off · compass: off</div>
-<div id="info">tap Start</div>
-<canvas id="view"></canvas>
 <video id="video" playsinline muted style="display:none"></video>
 
 <script>
   const $ = (id) => document.getElementById(id);
   const video = $("video"), view = $("view"), ctx = view.getContext("2d");
+  // One status row: its value, and its dot: "ok" (green), "warn" (orange), "bad" (red), "" (grey).
+  function row(id, text, state = "") {
+    const v = $(id);
+    if (v.textContent !== text) v.textContent = text;
+    if (v.parentElement.dataset.state !== state) v.parentElement.dataset.state = state;
+  }
+  // Which sections are open is remembered on this phone.
+  document.querySelectorAll("details[data-key]").forEach((d) => {
+    try { d.open = localStorage.getItem(`nudge.open.${d.dataset.key}`) === "1"; } catch {}
+    d.addEventListener("toggle", () => { try { localStorage.setItem(`nudge.open.${d.dataset.key}`, d.open ? "1" : ""); } catch {} });
+  });
   // Remember settings on this phone (browser storage can be blocked; that's fine).
   try {
     if (localStorage.getItem("focal960")) $("focal").value = localStorage.getItem("focal960");
@@ -71,7 +103,7 @@
   // ---- Compass: which way the rear camera faces, degrees clockwise from (magnetic) north ----
   // compassNow() is null when the reading is over a second old: the laptop must not steer by a
   // heading that stopped updating.
-  let compass = null, compassAt = -Infinity;
+  let compass = null, compassAt = -Infinity, compassError = "";
   const compassNow = () => (performance.now() - compassAt < 1000 ? compass : null);
   // ---- Tilt: how far the camera looks down from level, in degrees ----
   // Distances measured from where things meet the floor depend on it (a chest mount is rarely
@@ -82,10 +114,11 @@
   const tiltRad = () => (tiltNow() * Math.PI) / 180;
   async function startCompass() {
     const D = window.DeviceOrientationEvent;
-    if (!D) return;
+    if (!D) { compassError = "Not available"; return; }
     // iPhone only shows this permission prompt when it's called straight from a tap.
     if (typeof D.requestPermission === "function") {
-      try { if ((await D.requestPermission()) !== "granted") return; } catch { return; }
+      const refused = () => { compassError = "Not allowed (motion access)"; };
+      try { if ((await D.requestPermission()) !== "granted") return refused(); } catch { return refused(); }
     }
     // iPhone: webkitCompassHeading is the rear camera's direction when the phone is upright.
     window.addEventListener("deviceorientation", (e) => {
@@ -117,16 +150,22 @@
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
     );
   }
+  let started = false;
   setInterval(() => {
-    const g = gps ? `±${gps.acc.toFixed(0)} m` : gpsError || "waiting…";
+    if (!started) return;
+    row("gpsV", gps ? `±${gps.acc.toFixed(0)} m` : gpsError || "Waiting…", gps ? (gps.acc <= 20 ? "ok" : "warn") : gpsError ? "bad" : "warn");
     const c = compassNow();
-    $("sensors").textContent = `GPS: ${g} · compass: ${c !== null ? c.toFixed(0) + "°" : compass === null ? "—" : "not updating"}` +
-      ` · tilt: ${performance.now() - tiltAt < 1000 ? `${tilt.toFixed(0)}° ${tilt >= 0 ? "down" : "up"}` : "—"}`;
+    row("compassV", c !== null ? `${c.toFixed(0)}°` : compassError || (compass === null ? "Waiting…" : "Not updating"),
+      c !== null ? "ok" : compassError ? "bad" : "warn");
+    const t = performance.now() - tiltAt < 1000;
+    row("tiltV", t ? `${Math.abs(tilt).toFixed(0)}° ${tilt >= 0 ? "down" : "up"}` : compassError || "Waiting…",
+      t ? (tilt >= 0 && tilt <= 40 ? "ok" : "warn") : compassError ? "bad" : "warn");
   }, 500);
 
   // ---- Camera ----
   $("start").onclick = async () => {
-    $("start").style.display = "none";
+    $("intro").hidden = true;
+    started = true;
     // iPhone only allows the motion (compass) and speech prompts straight from the tap: both start
     // before the first await.
     startVoice();
@@ -141,10 +180,13 @@
       });
       video.srcObject = stream;
       await video.play();
+      $("camera").hidden = false;
       requestAnimationFrame(loop);
       startHands(); // in the background: it's only needed at the target
     } catch (err) {
       // GPS mode still works without the camera.
+      $("camera").hidden = false;
+      $("view").hidden = true;
       $("info").textContent = `camera error: ${err.name}\n${err.message}\n(the page must be https)`;
     }
   };
@@ -177,21 +219,26 @@
     $("info").textContent = lines.join("\n") || "nothing found";
   }
 
+  const rr = (x, y, w, h, r) => (ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h));
   function draw() {
-    ctx.lineWidth = 3;
-    ctx.font = "bold 20px monospace";
+    ctx.lineJoin = "round";
     if (performance.now() - yolo.at < 1500) { // last result (YOLO runs slower than the preview)
-      ctx.strokeStyle = ctx.fillStyle = "#0cf";
+      ctx.font = "600 22px -apple-system, system-ui, sans-serif";
       for (const b of yolo.boxes) {
-        ctx.strokeRect(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
-        ctx.fillText(`${b.label} ${Math.round(b.score * 100)}%`, b.x1 + 4, b.y1 + 22);
+        ctx.strokeStyle = ctx.fillStyle = "#3d95ff";
+        ctx.lineWidth = 4;
+        ctx.beginPath(); rr(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1, 10); ctx.stroke();
+        const text = `${b.label} ${Math.round(b.score * 100)}%`, w = ctx.measureText(text).width + 16;
+        const ty = b.y1 - 36 >= 0 ? b.y1 - 36 : b.y1 + 4; // above the box, or inside it at the top
+        ctx.beginPath(); rr(b.x1, ty, w, 32, 8); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.fillText(text, b.x1 + 8, ty + 23);
       }
     }
     if (performance.now() - hands.at < 300) { // fingertips being tracked
-      ctx.fillStyle = "#f0f";
-      for (const h of hands.list) { ctx.beginPath(); ctx.arc(h.tip[0] * view.width, h.tip[1] * view.height, 10, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "#ff2d92";
+      for (const h of hands.list) { ctx.beginPath(); ctx.arc(h.tip[0] * view.width, h.tip[1] * view.height, 12, 0, 2 * Math.PI); ctx.fill(); }
     }
-    ctx.strokeStyle = "rgba(255,255,255,.5)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.45)"; ctx.lineWidth = 2; // straight ahead
     ctx.beginPath(); ctx.moveTo(view.width / 2, 0); ctx.lineTo(view.width / 2, view.height); ctx.stroke();
   }
 
@@ -207,12 +254,12 @@
   const yolo = { worker: null, busy: false, scale: 1, boxes: [], objects: [], at: -Infinity, fresh: false };
   function startYolo() {
     if (yolo.worker) return;
-    $("yoloInfo").textContent = "objects: loading model (about 30 MB the first time)…";
+    row("yoloInfo", "Loading (about 30 MB the first time)…", "warn");
     yolo.worker = new Worker("yolo-worker.js", { type: "module" });
-    yolo.worker.onerror = (e) => ($("yoloInfo").textContent = `objects: worker failed: ${e.message || "see console"}`);
+    yolo.worker.onerror = (e) => row("yoloInfo", `Failed: ${e.message || "see console"}`, "bad");
     yolo.worker.onmessage = ({ data }) => {
-      if (data.type === "ready") $("yoloInfo").textContent = `objects: model ready (${data.backend})`;
-      else if (data.type === "error") $("yoloInfo").textContent = `objects: model failed to load: ${data.message}`;
+      if (data.type === "ready") row("yoloInfo", `Ready (${data.backend})`, "ok");
+      else if (data.type === "error") row("yoloInfo", `Failed to load: ${data.message}`, "bad");
       else onBoxes(data);
     };
   }
@@ -240,7 +287,7 @@
     }));
     yolo.at = performance.now();
     yolo.fresh = true;
-    $("yoloInfo").textContent = error ? `objects: ${error}` : `objects: ${backend}, ${ms.toFixed(0)} ms a frame`;
+    row("yoloInfo", error || `${backend} · ${ms.toFixed(0)} ms a frame`, error ? "warn" : "ok");
   }
 
   function distanceOf(b, f, H) {
@@ -337,7 +384,7 @@
   const hands = { tracker: null, list: [], at: -Infinity, last: 0 };
   let wantHandsUntil = -Infinity;
   async function startHands() {
-    $("handsInfo").textContent = "hands: loading (about 20 MB the first time)…";
+    row("handsInfo", "Loading (about 20 MB the first time)…", "warn");
     try {
       const { FilesetResolver, HandLandmarker } = await import(`${MEDIAPIPE}/vision_bundle.mjs`);
       const files = await FilesetResolver.forVisionTasks(`${MEDIAPIPE}/wasm`);
@@ -356,9 +403,9 @@
       warm.width = warm.height = 64;
       tracker.detectForVideo(warm, performance.now());
       hands.tracker = tracker;
-      $("handsInfo").textContent = `hands: ready (${hands.delegate})`;
+      row("handsInfo", `Ready (${hands.delegate})`, "ok");
     } catch (err) {
-      $("handsInfo").textContent = `hands: failed to load (${err?.message || err}); no reach guidance`;
+      row("handsInfo", `Failed to load (${err?.message || err}): no reach guidance`, "bad");
     }
   }
   function trackHands(now) {
@@ -376,21 +423,21 @@
       };
     });
     hands.at = performance.now();
-    $("handsInfo").textContent = `hands: ${hands.list.length} in view · ${(hands.at - t0).toFixed(0)} ms`;
+    row("handsInfo", `${hands.list.length} in view · ${(hands.at - t0).toFixed(0)} ms`, "ok");
   }
 
   // ---- Voice: "Waymo", a place's name, or "find the water bottle". The phone never speaks back. ----
   // Listens all the time; the laptop decides whether what it heard means anything.
   function startVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { $("voiceInfo").textContent = "voice: not available in this browser (use the buttons)"; return; }
+    if (!SR) { row("voiceInfo", "Not available in this browser (use the buttons)", "bad"); return; }
     const rec = new SR();
     rec.lang = "en-US";
     rec.continuous = true;
     rec.interimResults = false;
     rec.onresult = (e) => {
       const text = e.results[e.results.length - 1][0].transcript.trim();
-      $("voiceInfo").textContent = `voice: heard "${text}"`;
+      row("voiceInfo", `Heard “${text}”`, "ok");
       if (ws?.readyState === 1) ws.send(JSON.stringify({ type: "heard", text }));
     };
     // It stops after a while of silence; start it again. Not after a refusal, though: that would
@@ -398,19 +445,24 @@
     let refused = false;
     rec.onerror = (e) => {
       refused = ["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error);
-      $("voiceInfo").textContent = `voice: ${e.error}${refused ? " (off; use the buttons)" : ""}`;
+      row("voiceInfo", `${e.error}${refused ? " (off: use the buttons)" : ""}`, refused ? "bad" : "warn");
     };
-    rec.onend = () => { if (!refused) setTimeout(() => { try { rec.start(); } catch {} }, 300); };
-    try { rec.start(); $("voiceInfo").textContent = "voice: listening"; } catch (err) { $("voiceInfo").textContent = `voice: ${err.message}`; }
+    rec.onend = () => {
+      if (refused) return;
+      setTimeout(() => {
+        try { rec.start(); } catch {}
+        if ($("voiceInfo").parentElement.dataset.state === "warn") row("voiceInfo", "Listening", "ok"); // after a hiccup (e.g. no-speech)
+      }, 300);
+    };
+    try { rec.start(); row("voiceInfo", "Listening", "ok"); } catch (err) { row("voiceInfo", err.message, "bad"); }
   }
 
   // ---- Send ~10 updates a second ----
-  // Big green/red badge: is the laptop actually getting our updates?
+  // The Laptop row: is the server actually getting our updates?
   let seq = 0;
   setInterval(() => {
     const up = ws?.readyState === 1;
-    $("net").style.background = up ? "#070" : "#a00";
-    $("net").textContent = up ? `LAPTOP: CONNECTED · ${seq} updates sent` : "LAPTOP: NOT CONNECTED (reconnecting…)";
+    row("net", up ? `Connected · ${seq} updates` : "Not connected (reconnecting…)", up ? "ok" : "bad");
   }, 500);
   setInterval(() => {
     if (ws?.readyState !== 1) return;

@@ -1,77 +1,194 @@
 <!doctype html>
 <!-- Nudge "hands": laptop page. Drives the two wrist Joy-Cons (WebHID, so Chrome or Edge only),
-     runs all the guidance logic, and is the onlooker display: camera feed, wrist icons, status. -->
-<html>
+     runs all the guidance logic, and is the onlooker display: camera feed, what the wearer is being
+     told, which wrist is buzzing. -->
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nudge</title>
+<link rel="stylesheet" href="nudge.css">
 <style>
-  body { font: 18px system-ui, sans-serif; max-width: 980px; margin: 24px auto; padding: 0 16px; background: #111; color: #eee; }
-  button { font-size: 16px; padding: 8px 14px; margin: 3px; }
-  h2 { margin-top: 32px; border-top: 1px solid #333; padding-top: 16px; }
-  .row { margin: 12px 0; }
-  .mono { font-family: monospace; white-space: pre-wrap; }
-  #display { display: grid; grid-template-columns: 1fr 180px; gap: 16px; align-items: start; }
-  #feed { width: 100%; background: #000; border-radius: 8px; }
-  .wrist { height: 120px; border-radius: 16px; border: 3px solid #444; display: grid; place-items: center;
-           font: 700 40px system-ui; color: #666; margin-bottom: 16px; transition: background 60ms, color 60ms; }
-  .wrist.on { background: #fc0; color: #111; border-color: #fc0; }
-  #status { font: 700 24px/1.4 monospace; margin-top: 12px; padding: 10px 14px; background: #222; border-radius: 8px; }
-  #ride { font: 600 18px system-ui; margin-top: 8px; color: #8cf; }
-  input[type=range] { width: 200px; vertical-align: middle; }
+  /* Display: camera on the left, what's happening on the right. */
+  .stage { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; }
+  .feed { position: relative; height: min(72vh, 680px); aspect-ratio: 9 / 16; border-radius: 22px; overflow: hidden; background: #000; }
+  .feed canvas { display: block; width: 100%; height: 100%; object-fit: contain; transition: opacity 0.3s; }
+  .feed .empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: #8e8e93; font-size: 14px; }
+  .feed:not(.live) canvas { opacity: 0.25; }
+  .feed.live .empty { display: none; }
+  .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  /* Fills whatever height the camera view leaves, message centred. */
+  .guide { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 190px; padding: 28px 30px; transition: background 0.2s; }
+  .guide .head { font-size: clamp(36px, 4.4vw, 60px); font-weight: 700; letter-spacing: -0.035em; line-height: 1.05; transition: color 0.2s; }
+  .guide .detail { margin-top: 10px; font-size: 19px; color: var(--muted); min-height: 1.45em; }
+  .guide .heard { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .guide[data-state="stop"] { background: color-mix(in srgb, var(--red) 13%, var(--card)); }
+  .guide[data-state="stop"] .head { color: var(--red); }
+  .guide[data-state="turn"] .head, .guide[data-state="go"] .head { color: var(--accent); }
+  .guide[data-state="done"] { background: color-mix(in srgb, var(--green) 12%, var(--card)); }
+  .guide[data-state="done"] .head { color: var(--green); }
+  .guide[data-state="reach"] { background: color-mix(in srgb, var(--violet) 11%, var(--card)); }
+  .guide[data-state="reach"] .head { color: var(--violet); }
+  .guide[data-state="warn"] .head { color: var(--orange); }
+
+  .wrists { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .wrist {
+    display: grid; place-content: center; justify-items: center; gap: 2px; height: 124px;
+    border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow);
+    transition: background 0.25s, box-shadow 0.25s, border-color 0.25s;
+  }
+  .wrist b { font-size: 42px; line-height: 1; color: var(--faint); transition: color 0.25s; }
+  .wrist span { font-size: 13px; color: var(--muted); }
+  /* Lights up at once, fades out: short buzzes still show. */
+  .wrist.on { background: var(--buzz); border-color: var(--buzz); box-shadow: 0 0 0 6px color-mix(in srgb, var(--buzz) 35%, transparent); transition: none; }
+  .wrist.on b, .wrist.on span { color: #1d1d1f; transition: none; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .stat .v { margin-top: 6px; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+  .stat .s { font-size: 13px; color: var(--muted); }
+  .stat.alert { border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+  .stat.alert .v { color: var(--red); }
+
+  .ride .now { margin-top: 6px; font-weight: 600; }
+  .ride ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+  .ride li { padding-top: 10px; border-top: 3px solid var(--line); font-size: 13px; color: var(--muted); }
+  .ride li.done { border-color: var(--accent); color: var(--text); }
+
+  .controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 20px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  #choices { display: contents; }
+  .chips .n { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 8px; border-radius: 7px; background: color-mix(in srgb, currentColor 12%, transparent); font-size: 12px; }
+  .find { display: flex; gap: 8px; margin-top: 12px; }
+  .find input { flex: 1; min-width: 0; }
+
+  .more { display: grid; gap: 12px; margin-top: 16px; }
+  .setting { display: grid; grid-template-columns: 190px minmax(0, 1fr) 64px; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .setting:first-child { border-top: 0; }
+  .setting .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .toggle small { display: block; color: var(--muted); font-size: 13px; }
+  .group + .group { margin-top: 16px; }
+  .group .chips { margin-top: 8px; }
+  .group button { font-weight: 500; }
+
+  @media (max-width: 900px) {
+    .stage { grid-template-columns: minmax(0, 1fr); }
+    .feed { height: min(62vh, 560px); margin: 0 auto; }
+    .controls { grid-template-columns: minmax(0, 1fr); }
+    .setting { grid-template-columns: minmax(0, 1fr) 64px; }
+    .setting input { grid-column: 1 / -1; grid-row: 2; }
+  }
+  @media (max-width: 520px) {
+    .wrap { padding: 16px; }
+    .stats { grid-template-columns: minmax(0, 1fr); }
+  }
 </style>
 </head>
 <body>
+<div class="wrap">
+
+<header class="top">
+  <div class="brand"><span class="mark"></span>Nudge</div>
+  <div class="pills">
+    <span class="pill" id="phonePill">Phone</span>
+    <span class="pill" id="joyLPill">Joy-Con L</span>
+    <span class="pill" id="joyRPill">Joy-Con R</span>
+    <button id="connect" class="primary" title="Once per Joy-Con: left wrist = L, right wrist = R">Connect Joy-Con</button>
+  </div>
+</header>
 
 <!-- ============ Display (for onlookers, never the wearer) ============ -->
-<div id="display">
-  <canvas id="feed" width="360" height="640"></canvas>
-  <div>
-    <div class="wrist" id="wristL">L</div>
-    <div class="wrist" id="wristR">R</div>
+<main class="stage">
+  <div class="feed" id="feedBox">
+    <canvas id="feed" width="360" height="640"></canvas>
+    <div class="empty">Waiting for the chest camera…</div>
   </div>
-</div>
-<div id="status">Mode: off | Distance: — | Obstacle: none</div>
-<div id="ride"></div>
+  <div class="side">
+    <section class="card guide" id="guide" data-state="idle">
+      <div class="head" id="guideHead">Ready</div>
+      <div class="detail" id="guideDetail"></div>
+      <div class="heard" id="heard" hidden></div>
+    </section>
+    <div class="wrists">
+      <div class="wrist" id="wristL"><b>L</b><span>left wrist</span></div>
+      <div class="wrist" id="wristR"><b>R</b><span>right wrist</span></div>
+    </div>
+    <div class="stats">
+      <div class="card stat"><div class="label">Mode</div><div class="v" id="modeV">Off</div></div>
+      <div class="card stat"><div class="label">Distance</div><div class="v" id="distV">—</div><div class="s" id="distS"></div></div>
+      <div class="card stat" id="obsCard"><div class="label">Obstacle</div><div class="v" id="obsV">None</div><div class="s" id="obsS"></div></div>
+    </div>
+    <section class="card ride" id="rideCard" hidden>
+      <div class="label">Waymo ride</div>
+      <div class="now" id="ride"></div>
+      <ol id="rideSteps"><li>Requested</li><li>Arrived</li><li>Found by the camera</li><li>At the door</li></ol>
+    </section>
+  </div>
+</main>
 
-<!-- ============ Setup (for the team) ============ -->
-<h2>Setup</h2>
-<div class="row">
-  <button id="connect">Connect a Joy-Con</button> (once per Joy-Con: left wrist = L, right wrist = R)
-  <div id="joyStatus" class="mono">Joy-Con L: — · Joy-Con R: —</div>
+<!-- ============ Choosing (for the team; the wearer uses the Joy-Con buttons or voice) ============ -->
+<section class="controls">
+  <div class="card">
+    <div class="label">Go to</div>
+    <div class="chips"><div id="choices"></div><button id="stopMode" class="danger">Stop</button></div>
+  </div>
+  <div class="card">
+    <div class="label">Find something</div>
+    <div class="find">
+      <input id="findText" placeholder="water bottle, red mug, trash can…" autocomplete="off">
+      <button id="findGo" class="primary">Find</button>
+    </div>
+  </div>
+</section>
+
+<section class="more">
+  <details class="card" data-key="settings">
+    <summary>Settings</summary>
+    <div class="body">
+      <div class="setting"><label for="amp">Buzz strength</label><input id="amp" type="range" min="0.1" max="1" step="0.05" value="0.7"><span class="val"><span id="ampV">0.7</span></span></div>
+      <div class="setting"><label for="margin">On-target margin</label><input id="margin" type="range" min="5" max="30" value="12"><span class="val">±<span id="marginV">12</span>°</span></div>
+      <div class="setting"><label for="arrive">GPS arrival radius</label><input id="arrive" type="range" min="2" max="20" value="6"><span class="val"><span id="arriveV">6</span> m</span></div>
+      <div class="setting"><label for="stopDist">Obstacle stop distance</label><input id="stopDist" type="range" min="0.5" max="3" step="0.1" value="1.5"><span class="val"><span id="stopDistV">1.5</span> m</span></div>
+      <label class="toggle"><span>Obstacles from depth<small>Walls, poles, doors, boxes: anything close in the walking path</small></span><input type="checkbox" id="depthOn" class="switch" checked></label>
+    </div>
+  </details>
+  <details class="card" data-key="testing">
+    <summary>Testing</summary>
+    <div class="body">
+      <div class="group">
+        <div class="label">Walking buzzes</div>
+        <div class="chips">
+          <button data-pattern="left">Steer left</button><button data-pattern="right">Steer right</button>
+          <button data-pattern="approach">Approaching</button><button data-pattern="arrived">Arrived</button>
+          <button data-pattern="obstacle">Obstacle</button><button data-pattern="search">Search</button>
+          <button data-pattern="connected">Connected / found it</button><button data-pattern="echo3">Echo 3</button>
+        </div>
+      </div>
+      <div class="group">
+        <div class="label">Reaching buzzes</div>
+        <div class="chips">
+          <button data-pattern="reachLeft">Hand left</button><button data-pattern="reachRight">Hand right</button>
+          <button data-pattern="reachUp">Hand up</button><button data-pattern="reachDown">Hand down</button>
+          <button data-pattern="reachForward">Forward</button><button data-pattern="reachOut">Reach out</button><button data-pattern="touch">Touch</button>
+        </div>
+      </div>
+      <div class="group">
+        <div class="label">Indoor steering test (no GPS: turns from where the chest faces now)</div>
+        <div class="chips">
+          <button data-turn="-90">90° left</button><button data-turn="45">45° right</button>
+          <button data-turn="90">90° right</button><button data-turn="180">Behind</button>
+        </div>
+      </div>
+    </div>
+  </details>
+  <details class="card" data-key="details">
+    <summary>Details</summary>
+    <div class="body"><div id="info" class="mono">…</div></div>
+  </details>
+</section>
+
 </div>
-<div class="row">
-  Choose (same as pressing a Joy-Con button N times):
-  <span id="choices"></span>
-  <button id="stopMode">Stop</button>
-</div>
-<div class="row">
-  Find something: <input id="findText" placeholder="water bottle" style="font-size: 16px; width: 220px">
-  <button id="findGo">Find</button> (anything you can describe: "water bottle", "red mug", "trash can")
-</div>
-<div class="row">
-  Strength: <input id="amp" type="range" min="0.1" max="1" step="0.05" value="0.7"> <span id="ampV">0.7</span><br>
-  On-target margin: ± <input id="margin" type="range" min="5" max="30" value="12"> <span id="marginV">12</span>°<br>
-  GPS arrival radius: <input id="arrive" type="range" min="2" max="20" value="6"> <span id="arriveV">6</span> m<br>
-  Obstacle stop distance: <input id="stopDist" type="range" min="0.5" max="3" step="0.1" value="1.5"> <span id="stopDistV">1.5</span> m<br>
-  <label><input type="checkbox" id="depthOn" checked> Obstacles from depth: walls, poles, doors, boxes… anything close in the walking path</label>
-</div>
-<div class="row">
-  Try each buzz:
-  <button data-pattern="left">Steer left</button><button data-pattern="right">Steer right</button>
-  <button data-pattern="approach">Approaching</button><button data-pattern="arrived">Arrived</button>
-  <button data-pattern="obstacle">Obstacle</button><button data-pattern="search">Search</button>
-  <button data-pattern="connected">Waymo connected / found it</button><button data-pattern="echo3">Echo 3</button><br>
-  Reaching: <button data-pattern="reachLeft">hand left</button><button data-pattern="reachRight">hand right</button>
-  <button data-pattern="reachUp">hand up</button><button data-pattern="reachDown">hand down</button>
-  <button data-pattern="reachForward">forward</button><button data-pattern="reachOut">reach out</button><button data-pattern="touch">Touch</button>
-</div>
-<div class="row">
-  Indoor test (no GPS needed): steer to a direction relative to where the chest faces now:
-  <button data-turn="-90">90° left</button><button data-turn="45">45° right</button>
-  <button data-turn="90">90° right</button><button data-turn="180">Behind</button>
-</div>
-<div id="info" class="mono" style="background: #1b1b1b; padding: 12px; font-size: 15px">…</div>
 
 <script type="module">
   import { connectJoyCon, connectedJoyCons, JoyConLeft, JoyConRight }
@@ -79,6 +196,11 @@
 
   const $ = (id) => document.getElementById(id);
   for (const id of ["amp", "margin", "arrive", "stopDist"]) $(id).oninput = () => ($(id + "V").textContent = $(id).value);
+  // Which sections are open is remembered in this browser.
+  document.querySelectorAll("details[data-key]").forEach((d) => {
+    try { d.open = localStorage.getItem(`nudge.open.${d.dataset.key}`) === "1"; } catch {}
+    d.addEventListener("toggle", () => { try { localStorage.setItem(`nudge.open.${d.dataset.key}`, d.open ? "1" : ""); } catch {} });
+  });
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const wrap180 = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
   const to360 = (d) => ((d % 360) + 360) % 360;
@@ -101,8 +223,11 @@
   // again would add a second input listener: every report handled twice.)
   let joyL = null, joyR = null;
   $("connect").onclick = () => connectJoyCon();
-  const showJoyStatus = () =>
-    ($("joyStatus").textContent = `Joy-Con L: ${joyL ? "connected" : "—"} · Joy-Con R: ${joyR ? "connected" : "—"}`);
+  // The header pills: green once that Joy-Con is connected and set up.
+  const showJoyStatus = () => {
+    $("joyLPill").classList.toggle("ok", !!joyL);
+    $("joyRPill").classList.toggle("ok", !!joyR);
+  };
   setInterval(async () => {
     for (const jc of connectedJoyCons.values()) {
       // Go by hardware ID, not name: Windows sometimes names both Joy-Cons "Wireless Gamepad",
@@ -291,6 +416,7 @@
   function startMode(m, echo) {
     resetGuidance();
     mode = m;
+    showChoice();
     rideStage = m.kind === "waymo" ? "requested" : "";
     PATTERNS.echo(echo);
     nextPulse = echoUntil = performance.now() + echo * 300 + 400;
@@ -300,13 +426,21 @@
     if (!c) { PATTERNS.search(); return; } // no such choice
     startMode(n === 1 ? { kind: "waymo", name: "Waymo" } : { kind: "place", name: c.name, place: c }, n);
   }
-  CHOICES.forEach((c, i) => {
-    const b = document.createElement("button");
-    b.textContent = `${i + 1} · ${c.name}`;
+  // One button per choice, numbered like the presses that pick it; the one in use is highlighted.
+  const choiceButtons = CHOICES.map((c, i) => {
+    const b = document.createElement("button"), n = document.createElement("span");
+    n.className = "n";
+    n.textContent = i + 1;
+    b.append(n, c.name);
     b.onclick = () => choose(i + 1);
     $("choices").append(b);
+    return b;
   });
-  $("stopMode").onclick = () => { mode = null; resetGuidance(); };
+  function showChoice() {
+    choiceButtons.forEach((b, i) => b.classList.toggle("active",
+      i === 0 ? mode?.kind === "waymo" : mode?.kind === "place" && mode.place === CHOICES[i]));
+  }
+  $("stopMode").onclick = () => { mode = null; resetGuidance(); showChoice(); };
   // Relative to where the chest faces; pinned down once the compass is there (guideTick).
   document.querySelectorAll("[data-turn]").forEach((b) => {
     b.onclick = () => startMode({ kind: "test", name: `test ${b.textContent}`, turn: Number(b.dataset.turn) }, 0);
@@ -489,10 +623,10 @@
 
   // ---- Guidance: every 50 ms ----
   let onTarget = false, arrived = false, nextPulse = 0, connectedBuzzed = false, obstacleNext = 0, echoUntil = 0;
-  let rideStage = "", distanceShown = "—";
+  let rideStage = "", distanceShown = "—", distanceBy = "";
   function resetGuidance() {
     cam = null; waymoSeen = null; yoloThing = null; lastCar = null;
-    onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—"; blockedRuns = 0;
+    onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—"; distanceBy = ""; blockedRuns = 0;
     Object.assign(reach, { view: null, touched: false });
     Object.assign(finder, { waiting: null, retryAt: 0, info: "idle", box: null });
   }
@@ -552,7 +686,8 @@
       // Found it (after the selection echo, so the two can't blur together).
       if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; PATTERNS.connected(); nextPulse = now + 600; }
     }
-    distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m (${by})`;
+    distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m`;
+    distanceBy = distance == null ? "" : by;
     if (target === null) {
       if (now >= nextPulse) { nextPulse = now + 1600; PATTERNS.search(); }
       return say(`SEARCHING: ${waiting}`);
@@ -624,7 +759,7 @@
     const tx = (x1 + x2) / 2 - (Math.tan(rad(wrap180(heading - cam.boxHeading))) * fr.focal) / fr.w, ty = (y1 + y2) / 2;
     if (!hs.length) {
       if (now >= reach.next) { reach.next = now + 1200; PATTERNS.reachOut(); }
-      return say(`REACH OUT toward the ${what} (${where}): hand not in view yet`);
+      return say(`REACH OUT toward the ${what}: ${where}. Hand not in view yet`);
     }
     const hand = hs.reduce((a, b) => (Math.hypot(b.tip[0] - tx, b.tip[1] - ty) < Math.hypot(a.tip[0] - tx, a.tip[1] - ty) ? b : a));
     reach.view = { tx, ty, hx: hand.tip[0], hy: hand.tip[1] };
@@ -654,22 +789,51 @@
     return `${side}${up < -25 ? ", low (about waist height)" : up < -8 ? ", a bit below chest height" : up > 8 ? ", above chest height" : ""}`;
   }
 
-  // Status line for onlookers, plus the team's details underneath.
+  // ---- The display: what the wearer is being told, big, and the team's details underneath ----
   const RIDE = {
-    requested: "🚗 Ride requested…",
-    here: "🚗 Your Waymo has arrived: guiding you to it",
-    found: "🚗 Waymo found by the camera",
-    door: "🚗 At the door",
+    requested: "Ride requested…",
+    here: "Your Waymo has arrived: guiding you to it",
+    found: "Waymo found by the camera",
+    door: "At the door",
   };
+  const RIDE_STEPS = ["requested", "here", "found", "door"];
+  const SOURCES = { gps: "by GPS", object: "to the car, by camera", handle: "to the door handle", thing: "by camera", test: "indoor test" };
+  // "TURN RIGHT 12°" → "Turn right" over "12°"; the colour says what kind of message it is.
+  const GUIDE_STATES = [[/^STOP/, "stop"], [/^TURN/, "turn"], [/^APPROACHING/, "go"], [/^(?:ARRIVED|AT THE CAR|TOUCHING)/, "done"], [/^REACH/, "reach"], [/^NO /, "warn"]];
+  const put = (id, text) => { const el = $(id); if (el.textContent !== text) el.textContent = text; }; // only touch what changed
+  const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  const EXPLAIN = { APPROACHING: "Facing it: walk forward", ARRIVED: "Within the arrival radius" }; // for messages that are one word
   function showStatus(guide, obs) {
     const now = performance.now();
     const reaching = arrived === "handle" || arrived === "thing";
-    let line = `Mode: ${mode ? mode.name : "off"} | Distance: ${mode ? distanceShown : "—"} | Obstacle: ${obs ? `${obs.label}${obs.distance != null ? ` ${obs.distance.toFixed(1)} m` : ""}${reaching ? " (ignored while reaching)" : ""}` : "none"}`;
-    if (now - heardAt < 10000) line += ` | Heard: "${heardText}"`;
-    $("status").textContent = line;
-    $("ride").textContent = mode?.kind === "waymo" ? RIDE[rideStage] || "" : "";
+    const m = guide.match(/^([A-Z]+(?: [A-Z]+)*)\b:?\s*(.*)$/);
+    put("guideHead", !mode ? "Ready" : m ? capital(m[1].toLowerCase()) : guide);
+    put("guideDetail", !mode ? "Press a Joy-Con button: 1 = Waymo, 2 or more = a place" : m ? m[2] || EXPLAIN[m[1]] || "" : "");
+    const state = (mode && GUIDE_STATES.find(([re]) => re.test(guide))?.[1]) || "idle";
+    if ($("guide").dataset.state !== state) $("guide").dataset.state = state;
+    const heard = now - heardAt < 10000;
+    $("heard").hidden = !heard;
+    if (heard) put("heard", `Heard: “${heardText}”`);
+
+    put("modeV", mode ? mode.name : "Off");
+    put("distV", mode ? distanceShown : "—");
+    put("distS", mode && distanceBy ? SOURCES[distanceBy] || distanceBy : "");
+    put("obsV", obs ? `${capital(obs.label)}${obs.distance != null ? ` · ${obs.distance.toFixed(1)} m` : ""}` : "None");
+    put("obsS", !obs ? "" : reaching ? "ignored while reaching" : obs.src === "depth" ? "seen by the depth model" : "seen by the camera");
+    $("obsCard").classList.toggle("alert", !!obs && !reaching);
+    $("rideCard").hidden = mode?.kind !== "waymo";
+    if (mode?.kind === "waymo") {
+      put("ride", RIDE[rideStage] || "");
+      const k = RIDE_STEPS.indexOf(rideStage);
+      [...$("rideSteps").children].forEach((li, i) => li.classList.toggle("done", i <= k));
+    }
+    const phoneOk = now - lastEyes < 1000;
+    $("phonePill").classList.toggle("ok", phoneOk);
+    $("phonePill").classList.toggle("bad", !phoneOk && lastEyes > 0); // was connected, went quiet
+    $("feedBox").classList.toggle("live", now - previewAt < 2000);
+
     const pos = (p) => (p ? `${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} ±${p.acc.toFixed(0)} m, ${((now - p.at) / 1000).toFixed(0)} s old` : "—");
-    $("info").textContent =
+    put("info",
       `guide:   ${guide}\n` +
       `phone:   ${lastEyes < 0 ? "no messages yet" : `last message ${(now - lastEyes).toFixed(0)} ms ago`}\n` +
       `heading: ${heading === null ? "— (no compass yet)" : `${to360(heading).toFixed(0)}° magnetic`}\n` +
@@ -678,46 +842,61 @@
       `waymo classifier: ${waymoBest && now - waymoBest.at < 3000 ? `best ${Math.round(waymoBest.prob * 100)}% (sure at ${WAYMO_SURE * 100}%)` : "—"}\n` +
       `object finder: ${finder.info}\n` +
       `depth:   ${now - depthSeen.at < 2000 ? `${depthSeen.text} · ${depthSeen.ms} ms` : "—"}${$("depthOn").checked ? "" : " (not used: switched off)"}\n` +
-      `hand:    ${handsSeen && now - handsSeen.at < 1000 ? `${handsSeen.list.length} in view` : "— (tracked only at the target)"}`;
+      `hand:    ${handsSeen && now - handsSeen.at < 1000 ? `${handsSeen.list.length} in view` : "— (tracked only at the target)"}`);
   }
 
   // ---- Camera feed on the display: small frames from the phone, boxes drawn on top ----
-  // Red: obstacle in the walking path. Green: the Waymo / thing being steered to. Grey: anything else.
+  // Red: obstacle in the walking path. Green: the Waymo / thing being steered to. White: anything
+  // else. Drawn at screen resolution, so the labels stay sharp on a small frame.
   const feed = $("feed"), fctx = feed.getContext("2d");
   const feedImg = new Image();
-  let feedBoxes = [];
+  let feedBoxes = [], previewAt = -Infinity;
+  const RED = "#ff453a", GREEN = "#32d74b", YELLOW = "#ffd60a", WHITE = "rgba(255, 255, 255, 0.85)";
+  const rr = (x, y, w, h, r) => (fctx.roundRect ? fctx.roundRect(x, y, w, h, r) : fctx.rect(x, y, w, h));
+  function tag(text, x, y, color, px) { // a label on a coloured chip above a box (inside it, at the top edge)
+    fctx.font = `600 ${12 * px}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    const w = fctx.measureText(text).width + 12 * px, h = 20 * px, ty = y - h - 3 * px >= 0 ? y - h - 3 * px : y + 3 * px;
+    fctx.fillStyle = color;
+    fctx.beginPath(); rr(x, ty, w, h, 6 * px); fctx.fill();
+    fctx.fillStyle = color === RED ? "#fff" : "#111";
+    fctx.fillText(text, x + 6 * px, ty + 14 * px);
+  }
   feedImg.onload = () => {
-    if (feed.width !== feedImg.width || feed.height !== feedImg.height) { feed.width = feedImg.width; feed.height = feedImg.height; }
-    fctx.drawImage(feedImg, 0, 0);
-    fctx.lineWidth = 3;
-    fctx.font = "bold 16px monospace";
+    const W = feedImg.width, H = feedImg.height, shown = feed.getBoundingClientRect();
+    const fit = Math.min(shown.width / W, shown.height / H) || 1; // screen pixels per frame pixel
+    const k = Math.min(4, Math.max(1, fit * (window.devicePixelRatio || 1))); // canvas pixels per frame pixel
+    if (feed.width !== Math.round(W * k) || feed.height !== Math.round(H * k)) { feed.width = Math.round(W * k); feed.height = Math.round(H * k); }
+    fctx.setTransform(k, 0, 0, k, 0, 0);
+    fctx.drawImage(feedImg, 0, 0, W, H);
+    const px = 1 / fit; // one screen pixel, in frame pixels
+    fctx.lineJoin = "round";
     for (const b of feedBoxes) {
-      fctx.strokeStyle = fctx.fillStyle = b.obstacle ? "#f33" : b.target ? "#3f6" : "#999";
-      const x = b.x1 * feed.width, y = b.y1 * feed.height;
-      fctx.strokeRect(x, y, (b.x2 - b.x1) * feed.width, (b.y2 - b.y1) * feed.height);
-      fctx.fillText(b.obstacle ? "STOP" : b.target ? (mode?.kind === "find" ? mode.what.toUpperCase() : "WAYMO") : b.label, x + 4, y + 18);
+      const color = b.obstacle ? RED : b.target ? GREEN : WHITE, x = b.x1 * W, y = b.y1 * H;
+      fctx.strokeStyle = color; fctx.lineWidth = 2.5 * px;
+      fctx.beginPath(); rr(x, y, (b.x2 - b.x1) * W, (b.y2 - b.y1) * H, 6 * px); fctx.stroke();
+      tag(b.obstacle ? "STOP" : b.target ? (mode?.kind === "find" ? mode.what : "Waymo") : b.label, x, y, color, px);
     }
-    // Reaching: the target (green cross) and the fingertips being steered to it (yellow).
+    // Reaching: the target (green ring) and the fingertips being steered to it (yellow).
     if (reach.view && (arrived === "handle" || arrived === "thing")) {
-      const { tx, ty, hx, hy } = reach.view, X = (v) => v * feed.width, Y = (v) => v * feed.height;
-      fctx.strokeStyle = "#3f6"; fctx.lineWidth = 4;
-      fctx.beginPath(); fctx.moveTo(X(tx) - 14, Y(ty)); fctx.lineTo(X(tx) + 14, Y(ty)); fctx.moveTo(X(tx), Y(ty) - 14); fctx.lineTo(X(tx), Y(ty) + 14); fctx.stroke();
-      fctx.strokeStyle = fctx.fillStyle = "#fc0"; fctx.lineWidth = 2; fctx.setLineDash([5, 4]);
-      fctx.beginPath(); fctx.moveTo(X(hx), Y(hy)); fctx.lineTo(X(tx), Y(ty)); fctx.stroke(); fctx.setLineDash([]);
-      fctx.beginPath(); fctx.arc(X(hx), Y(hy), 7, 0, 7); fctx.fill();
+      const tx = reach.view.tx * W, ty = reach.view.ty * H, hx = reach.view.hx * W, hy = reach.view.hy * H;
+      fctx.strokeStyle = YELLOW; fctx.lineWidth = 2 * px; fctx.setLineDash([5 * px, 4 * px]);
+      fctx.beginPath(); fctx.moveTo(hx, hy); fctx.lineTo(tx, ty); fctx.stroke(); fctx.setLineDash([]);
+      fctx.strokeStyle = GREEN; fctx.lineWidth = 3 * px;
+      fctx.beginPath(); fctx.arc(tx, ty, 12 * px, 0, 2 * Math.PI);
+      fctx.moveTo(tx - 18 * px, ty); fctx.lineTo(tx + 18 * px, ty); fctx.moveTo(tx, ty - 18 * px); fctx.lineTo(tx, ty + 18 * px); fctx.stroke();
+      fctx.fillStyle = YELLOW; fctx.beginPath(); fctx.arc(hx, hy, 7 * px, 0, 2 * Math.PI); fctx.fill();
     }
     // The object finder's latest box, while it's recent (it's from a slightly older frame).
     if (mode?.kind === "find" && finder.box && performance.now() - finder.box.at < 2000) {
       const [x1, y1, x2, y2] = finder.box.box;
-      fctx.strokeStyle = fctx.fillStyle = "#3f6";
-      fctx.setLineDash([6, 4]);
-      fctx.strokeRect(x1 * feed.width, y1 * feed.height, (x2 - x1) * feed.width, (y2 - y1) * feed.height);
-      fctx.setLineDash([]);
+      fctx.strokeStyle = GREEN; fctx.lineWidth = 2 * px; fctx.setLineDash([6 * px, 4 * px]);
+      fctx.beginPath(); rr(x1 * W, y1 * H, (x2 - x1) * W, (y2 - y1) * H, 6 * px); fctx.stroke(); fctx.setLineDash([]);
     }
   };
   function onPreview(msg) {
     // Mark the boxes the same way the guidance sees them.
     feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), target: isTarget(b) }));
+    previewAt = performance.now();
     feedImg.src = msg.image;
   }
 

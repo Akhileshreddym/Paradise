@@ -1,49 +1,75 @@
 <!doctype html>
 <!-- Nudge "beacon": the phone you walk to. Shares its GPS location with the laptop. Needs https. -->
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nudge · Beacon</title>
+<link rel="stylesheet" href="nudge.css">
 <style>
-  body { font: 18px system-ui, sans-serif; margin: 0; padding: 16px; background: #111; color: #eee; }
-  button { font-size: 22px; padding: 14px 20px; }
-  #info { font: 700 22px/1.5 monospace; margin-top: 12px; white-space: pre; }
-  #net { font-family: monospace; margin-top: 8px; }
+  .stack { display: grid; gap: 16px; }
+  .intro p { margin: 0 0 16px; color: var(--muted); }
+  .fix { text-align: center; padding: 28px 20px; }
+  .fix .big { margin: 6px 0 4px; font-size: 64px; font-weight: 700; letter-spacing: -0.04em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .fix[data-state="ok"] .big { color: var(--green); }
+  .fix[data-state="warn"] .big { color: var(--orange); }
+  .fix[data-state="bad"] .big { color: var(--red); }
+  .fix .mono { margin-top: 12px; }
+  .note { border-color: color-mix(in srgb, var(--orange) 45%, transparent); background: color-mix(in srgb, var(--orange) 10%, var(--card)); }
 </style>
 </head>
 <body>
-<h1>Beacon</h1>
-<p>Put this phone where the wearer should walk to (outdoors, open sky works best).
-Keep the screen on and this page open.</p>
-<button id="start">Start sharing location</button>
-<div id="net">link: connecting…</div>
-<div id="info"></div>
+<div class="wrap narrow">
+  <header class="top">
+    <div class="brand"><span class="mark"></span>Nudge <span class="sub">Beacon</span></div>
+    <span class="pill" id="net">Connecting…</span>
+  </header>
+  <div class="stack">
+    <section class="card intro" id="intro">
+      <p>This phone plays the Waymo. Put it in or on the car the wearer should walk to, outdoors if you
+        can. Keep the screen on and this page open.</p>
+      <button id="start" class="primary big">Start sharing location</button>
+    </section>
+    <section class="card fix" id="fix" hidden>
+      <div class="label">GPS accuracy</div>
+      <div class="big" id="acc">—</div>
+      <div class="muted" id="age">Waiting for GPS…</div>
+      <div class="mono" id="coords"></div>
+    </section>
+    <section class="card note" id="info" hidden></section>
+  </div>
+</div>
 
 <script>
   const $ = (id) => document.getElementById(id);
+  const note = (text) => { $("info").textContent = text; $("info").hidden = !text; };
 
+  // The pill in the header: can the server hear us?
   let ws = null;
   function connect() {
     ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=beacon`);
-    ws.onopen = () => ($("net").textContent = "link: connected");
-    ws.onclose = () => { $("net").textContent = "link: reconnecting…"; setTimeout(connect, 1000); };
+    ws.onopen = () => { $("net").textContent = "Connected"; $("net").className = "pill ok"; };
+    ws.onclose = () => { $("net").textContent = "Reconnecting…"; $("net").className = "pill bad"; setTimeout(connect, 1000); };
   }
   connect();
 
   let gps = null; // { lat, lon, acc, time }
   let watch = null;
   $("start").onclick = () => {
-    if (!navigator.geolocation) { $("info").textContent = "No GPS in this browser."; return; }
-    $("start").style.display = "none";
-    $("info").textContent = "waiting for GPS…";
+    if (!navigator.geolocation) { note("No GPS in this browser."); return; }
+    $("intro").hidden = true;
+    $("fix").hidden = false;
+    note("");
     watch = navigator.geolocation.watchPosition(
       // Arrival time, not p.timestamp: Safari counts that from 2001, not 1970, so fixes look 31 years old.
-      (p) => { gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, time: Date.now() }; },
+      (p) => {
+        gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, time: Date.now() };
+        if ($("info").textContent.startsWith("GPS error")) note(""); // a timeout earlier, fine now
+      },
       (err) => {
-        $("info").textContent = `GPS error: ${err.message}`;
+        note(`GPS error: ${err.message}`);
         // Refused: give the button back, so allowing location and tapping again works without a reload.
-        if (err.code === err.PERMISSION_DENIED) { navigator.geolocation.clearWatch(watch); $("start").style.display = ""; }
+        if (err.code === err.PERMISSION_DENIED) { navigator.geolocation.clearWatch(watch); $("intro").hidden = false; $("fix").hidden = true; }
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
     );
@@ -62,9 +88,12 @@ Keep the screen on and this page open.</p>
   setInterval(() => {
     if (!gps) return;
     const age = Math.max(0, Date.now() - gps.time);
-    $("info").textContent =
-      `${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)}\naccuracy ±${gps.acc.toFixed(0)} m\nlast update ${(age / 1000).toFixed(0)} s ago` +
-      (gps.acc > 100 ? "\n\nAccuracy is very low. iPhone: Settings → Privacy & Security →\nLocation Services → Safari Websites → turn on Precise Location." : "");
+    $("acc").textContent = `±${gps.acc.toFixed(0)} m`;
+    $("fix").dataset.state = gps.acc <= 10 ? "ok" : gps.acc <= 100 ? "warn" : "bad";
+    $("age").textContent = `Updated ${(age / 1000).toFixed(0)} s ago`;
+    $("coords").textContent = `${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)}`;
+    if (gps.acc > 100) note("Accuracy is very low. iPhone: Settings → Privacy & Security → Location Services → Safari Websites → turn on Precise Location.");
+    else if ($("info").textContent.startsWith("Accuracy")) note("");
     if (ws?.readyState === 1) {
       ws.send(JSON.stringify({ type: "beacon", lat: gps.lat, lon: gps.lon, acc: gps.acc, age }));
     }

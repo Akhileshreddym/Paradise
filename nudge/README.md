@@ -97,23 +97,33 @@ Normal buzzes play at 160 + 320 Hz (a Joy-Con's two rumble bands). *High-pitched
 *low-pitched* 80 + 160 Hz: Joy-Con "HD rumble" can play any frequency, so up and down feel different
 from everything else.
 
-Every strength is multiplied by the **Strength** slider on the laptop page (default 0.7). Guidance
-waits until an echo is over, so it can be counted. The **Try each buzz** buttons on the laptop page
-play each pattern (the reaching ones are in the second row).
+Every strength is multiplied by the **Buzz strength** slider on the laptop page (default 0.7).
+Guidance waits until an echo is over, so it can be counted. The laptop page's **Testing** section
+plays each pattern.
 
 ### What onlookers see (the laptop page is the display)
 
 The wearer never looks at a screen. The laptop page is for everyone else:
 
-- the chest camera's live view (4 frames a second), with boxes: **red "STOP"** on an obstacle,
-  **green** on the target (labelled WAYMO, or the thing's name), grey on everything else; in find
-  mode a **dashed green** box is the object finder's latest find; while reaching, a **green cross**
-  on the target and a **yellow dot** on the wearer's fingertips, joined by a dashed line;
-- two wrist icons, **L** and **R**, that light up exactly when that wrist buzzes (even with no
+- **the chest camera's live view** (4 frames a second), with labelled boxes: **red STOP** on an
+  obstacle, **green** on the target (labelled Waymo, or the thing's name), white on everything
+  else; in find mode a **dashed green** box is the object finder's latest find; while reaching, a
+  **green ring** on the target and a **yellow dot** on the wearer's fingertips, joined by a dashed
+  line. With no frames for 2 s it dims and says *Waiting for the chest camera…*;
+- **what the wearer is being told right now**, in big letters, coloured by kind: *Turn right* (blue),
+  *Approaching*, *Stop* (red), *Arrived* / *Touching* (green), *Reach* (purple), *No signal*
+  (orange), with the details underneath (*12°*, *person 1.0 m ahead*), and the last voice command
+  heard;
+- **two wrist tiles, L and R**, that light up yellow exactly when that wrist buzzes (even with no
   Joy-Con connected, which is handy for demos);
-- one status line: `Mode: Waymo | Distance: 8.0 m (object) | Obstacle: none | Heard: "waymo"`;
-- in Waymo mode, a simulated ride status: *Ride requested… → Your Waymo has arrived: guiding you to
-  it → Waymo found by the camera → At the door*.
+- **Mode**, **Distance** (and how it's measured) and **Obstacle** tiles;
+- in Waymo mode, the ride's progress (simulated): *Requested → Arrived → Found by the camera → At
+  the door*, with the current step spelled out (*Your Waymo has arrived: guiding you to it*).
+
+Above it: pills for the **Phone** and each **Joy-Con** (green when connected). Below it: the team's
+controls (where to go, find something) and three sections that open with a click: **Settings**,
+**Testing** (every buzz, the indoor steering test) and **Details** (what the guidance sees). Light
+or dark follows the Mac's setting.
 
 ---
 
@@ -287,15 +297,16 @@ After pairing, a sleeping Joy-Con reconnects when you press any button on it.
 ### 4.5 Open the laptop page and connect the Joy-Cons
 
 1. In **Chrome**, open <http://localhost:8080/>.
-2. Click **Connect a Joy-Con**. Chrome shows a device picker: choose **Joy-Con (L)**, click
-   **Connect**.
-3. Click **Connect a Joy-Con** again for **Joy-Con (R)**.
-4. The line under the button reads `Joy-Con L: connected · Joy-Con R: connected`.
-5. Press a few **Try each buzz** buttons: the right wrist should buzz, and the L/R icons should light.
+2. Click **Connect Joy-Con** (top right). Chrome shows a device picker: choose **Joy-Con (L)**,
+   click **Connect**.
+3. Click **Connect Joy-Con** again for **Joy-Con (R)**.
+4. The **Joy-Con L** and **Joy-Con R** pills at the top turn green.
+5. Open **Testing** and press a few buzz buttons: the right wrist should buzz, and the L/R tiles
+   should light.
 
 Chrome remembers the permission. Next time, the Joy-Cons reconnect by themselves when the page
-loads or when they wake up; you only click **Connect** for a new Joy-Con. If one drops out
-(battery, out of range), the status line shows `—` for it until it's back.
+loads or when they wake up; you only click **Connect Joy-Con** for a new Joy-Con. If one drops out
+(battery, out of range), its pill goes grey until it's back.
 
 Strap **Joy-Con (L) on the left wrist and Joy-Con (R) on the right.** Swapping them swaps left and
 right steering.
@@ -325,25 +336,22 @@ Once, in iPhone **Settings**:
 
 1. **Privacy & Security → Location Services**: on. Then **Safari Websites**: *While Using the App*,
    with **Precise Location** on. (Without Precise Location, accuracy is ±100 m or worse.)
-2. For voice: Safari's speech recognition uses Apple's dictation. If the phone page later shows
-   `voice: service-not-allowed`, turn on **Settings → General → Keyboard → Enable Dictation**.
+2. For voice: Safari's speech recognition uses Apple's dictation. If the phone page's **Voice** row
+   later shows `service-not-allowed`, turn on **Settings → General → Keyboard → Enable Dictation**.
 
 Then, each time:
 
 1. In **Safari**, open `https://<your tunnel address>/eyes.html`.
-2. Tap **Start (camera + GPS + compass + mic)** and **allow every prompt**: microphone (speech),
-   motion & orientation (the compass and tilt), location, camera. The first load downloads ~50 MB
-   (use Wi-Fi).
-3. Check the page:
-   - the badge turns green: `LAPTOP: CONNECTED · N updates sent`;
-   - `objects: model ready (webgpu)` (or `wasm` on phones without WebGPU), then `objects: webgpu,
-     N ms a frame`;
-   - `hands: ready (GPU)` (or `CPU`). Setting up hand tracking can freeze the page for a few seconds
-     once, right after Start; that's expected;
-   - `voice: listening`;
-   - `GPS: ±N m · compass: N° · tilt: N° down`.
-4. On the laptop page, the camera view appears and the details box shows `phone: last message
-   N ms ago`.
+2. Tap **Start** and **allow every prompt**: microphone (speech), motion & orientation (the compass
+   and tilt), location, camera. The first load downloads ~50 MB (use Wi-Fi).
+3. Check the status rows; each gets a green dot once it works:
+   - **Laptop**: `Connected · N updates`;
+   - **Objects**: `Ready (webgpu)` (or `wasm` on phones without WebGPU), then `webgpu · N ms a frame`;
+   - **Hands**: `Ready (GPU)` (or `CPU`). Setting up hand tracking can freeze the page for a few
+     seconds once, right after Start; that's expected;
+   - **Voice**: `Listening`;
+   - **GPS** `±N m`, **Compass** `N°`, **Tilt** `N° down`.
+4. On the laptop page, the camera view appears and the **Phone** pill turns green.
 
 Keep the phone's screen on and this page in front. The page keeps the screen awake (and takes the
 wake lock back if you switch apps and return). If a prompt was refused, reload and tap Start again;
@@ -356,12 +364,12 @@ if iOS doesn't ask again, quit Safari (swipe it away) and reopen it.
 - **Tilted down a little: 10–20°** (the top of the phone leaning away from the chest), so the floor
   1–4 m ahead and low things close by are in view. The depth obstacle check measures everything
   against the floor, and the wearer's reaching hand needs to be in view at the end. The phone
-  measures its own tilt and shows it (`tilt: 15° down`); every distance takes it into account, so
+  measures its own tilt and shows it (**Tilt** `15° down`); every distance takes it into account, so
   it doesn't need to be exact. Level (0°) also works, but then the depth check misses low things
   closer than ~2 m.
 - The screen faces the wearer (it's not needed; onlookers watch the laptop).
-- Measure the height of the phone's camera above the floor, in meters, and enter it as **Chest
-  height (m)** on the phone page (default 1.30).
+- Measure the height of the phone's camera above the floor, in meters, and enter it under
+  **Calibration → Chest height (m)** on the phone page (default 1.30).
 
 ### 4.9 Calibrate distances (once per phone)
 
@@ -369,8 +377,9 @@ Distances come from how big things look, which depends on the phone's camera ("f
 pixels). The default, 720, suits a typical iPhone main camera in portrait. To calibrate:
 
 1. Have someone stand **exactly 3.00 m** from the phone, whole body in view.
-2. Enter their height in **Person height (m)** on the phone page.
-3. Tap **Calibrate: that person standing exactly 3.00 m away**. The **Focal (px)** box updates.
+2. On the phone page, open **Calibration** and enter their height in **Person height (m)**.
+3. Tap **Calibrate: that person is standing exactly 3.00 m away**. The **Focal length (px)** box
+   updates.
 4. Check: the phone's list now shows them at about `person … 3.0 m`.
 
 The math: focal = (their box height in pixels) × 3.00 ÷ (their height). Focal, person height and
@@ -383,9 +392,9 @@ chest height are saved on the phone and survive reloads.
 3. Tap **Start sharing location** and allow location. (Refused by mistake? The button comes back:
    allow location in Safari's site settings and tap it again.)
 4. Put the phone **in or on the car** you'll walk to, outdoors, screen on, page open.
-5. Wait until it shows `accuracy ±10 m` or better. `last update N s ago` should stay low; a phone
-   that isn't moving can go several seconds without a new fix, which is fine (the laptop accepts a
-   beacon fix for 30 s).
+5. Wait until the big accuracy number shows **±10 m** or better (it turns green). *Updated N s ago*
+   should stay low; a phone that isn't moving can go several seconds without a new fix, which is
+   fine (the laptop accepts a beacon fix for 30 s).
 
 ### 4.11 Add your own places
 
@@ -410,7 +419,7 @@ const PLACES = [
 - **Coordinates:** in Google Maps, right-click the exact spot; the first menu item is the
   coordinates (click it to copy).
 - **Order = button count.** The first place is 2 presses (1 is always the Waymo), the second 3, and
-  so on. The laptop page's **Choose** buttons show the numbers.
+  so on. The laptop page's **Go to** buttons show the numbers.
 - **Names are what the wearer says** ("go to entrance"), so pick short, distinct, easy-to-say names.
 - Reload the laptop page after editing. No server restart needed.
 
@@ -431,13 +440,12 @@ camera-guided stages (Waymo car, door handle, found things) don't use it.
 
 - [ ] `npm start` shows all three **ready** lines (object finder, clip, depth).
 - [ ] Tunnel running with `--protocol http2`; phone pages opened with **today's** address.
-- [ ] Laptop page: both Joy-Cons connected; **Try each buzz** felt on the right wrists.
-- [ ] Chest phone: green badge, `objects: model ready`, `hands: ready`, `voice: listening`, a GPS
-      accuracy, a compass reading; mounted upright, camera forward, `tilt` 10–20° down; focal and
-      chest height set.
-- [ ] Laptop page details box: `depth: clear (floor NN%)` while the path ahead is clear.
-- [ ] Beacon phone: accuracy ±10 m or better, in/on the car, screen on.
-- [ ] Laptop page details box: `phone: last message` under 200 ms; `heading` changes when the wearer
+- [ ] Laptop page: both Joy-Con pills green; every buzz under **Testing** felt on the right wrist.
+- [ ] Chest phone: every status row green (Laptop, Objects, Hands, Voice, GPS, Compass, Tilt);
+      mounted upright, camera forward, **Tilt** 10–20° down; focal and chest height set.
+- [ ] Laptop page **Details**: `depth: clear (floor NN%)` while the path ahead is clear.
+- [ ] Beacon phone: accuracy ±10 m or better (green), in/on the car, screen on.
+- [ ] Laptop page **Details**: `phone: last message` under 200 ms; `heading` changes when the wearer
       turns (turning right makes it go **up**).
 - [ ] Spotter ready. Cane in hand.
 
@@ -448,55 +456,61 @@ camera-guided stages (Waymo car, door handle, found things) don't use it.
 Each step adds one piece. "✅" is what working looks like. Steps 1–2 need only the laptop and
 Joy-Cons; 3–5 and 8 work indoors; 6–7 need outdoors.
 
+Messages are written below the way the laptop page's **Details** section shows them (its `guide:`
+line). The big display shows the same message in two parts: `STOP: person 1.0 m ahead` is **Stop**
+over *person 1.0 m ahead*.
+
 ### 1. Laptop and Joy-Cons
 
-- `npm start`, open <http://localhost:8080/>, click **Connect a Joy-Con** for each.
-- Press every **Try each buzz** button.
+- `npm start`, open <http://localhost:8080/>, click **Connect Joy-Con** for each.
+- Open **Testing** and press every buzz button.
 - ✅ Each pattern matches the table in [What each buzz means](#what-each-buzz-means), on the right
-  wrist; the L/R icons light with it.
-- ✅ In the **Reaching** row, **hand up** and **hand down** feel clearly different from each other
-  and from **forward** (high, low, normal pitch). If they don't, note it: the frequencies are
+  wrist; the L/R tiles light with it.
+- ✅ Under **Reaching buzzes**, **Hand up** and **Hand down** feel clearly different from each other
+  and from **Forward** (high, low, normal pitch). If they don't, note it: the frequencies are
   `HIGH` and `LOW` in `hands.html` ([8](#8-tuning-and-customizing)).
-- Adjust **Strength** until every pattern is clearly felt through a sleeve.
+- Adjust **Settings → Buzz strength** until every pattern is clearly felt through a sleeve.
 
 ### 2. Choosing with the buttons
 
-- Press any button once and wait. ✅ After 1.5 s: one echo pulse; the status line says `Mode: Waymo`.
-- Press three times. ✅ Three echo pulses; `Mode: test east`.
-- Press once on each Joy-Con. ✅ It counts as 2: `Mode: test north`.
+- Press any button once and wait. ✅ After 1.5 s: one echo pulse; the **Mode** tile says `Waymo`
+  (and the **Waymo** button is highlighted).
+- Press three times. ✅ Three echo pulses; **Mode** `test east`.
+- Press once on each Joy-Con. ✅ It counts as 2: **Mode** `test north`.
 - Press more times than there are choices. ✅ A search buzz; the mode doesn't change.
 - Connect the Joy-Cons and don't touch them for 10 s. ✅ Nothing is chosen by itself.
 
 ### 3. Chest phone and compass (indoors is fine)
 
 - Tunnel on, `eyes.html` on the chest phone, **Start**, then mount it.
-- ✅ Phone: green badge, `objects: model ready`. Laptop: the camera view appears.
-- Stand still and press **90° right** (Indoor test).
+- ✅ Phone: **Laptop** and **Objects** rows green. Laptop: the camera view appears, **Phone** pill
+  green.
+- Stand still and press **90° right** (**Testing → Indoor steering test**).
 - ✅ Right wrist pulses; turn right. At about 90°: approaching pulses (1 a second). If it steers the
-  wrong way, watch the details box: turning right should make `heading` go **up**.
+  wrong way, watch **Details**: turning right should make `heading` go **up**.
 - Close `eyes.html`. ✅ Within a second: `NO SIGNAL from the chest phone` and slow L-R-L buzzes.
 
 ### 4. Obstacles
 
 - Choose anything, and have a teammate step in front of you, 1 m away.
-- ✅ 3 sharp pulses repeating, `STOP: person 1.0 m ahead`, a red STOP box on the camera view.
-  Guidance resumes when they step aside.
+- ✅ 3 sharp pulses repeating, `STOP: person 1.0 m ahead`, a red STOP box on the camera view, a red
+  **Obstacle** tile. Guidance resumes when they step aside.
 - Calibrate distances now if you haven't ([4.9](#49-calibrate-distances-once-per-phone)).
-- **Depth:** in a clear hallway, watch the details box. ✅ `depth: clear (floor NN%) · ~80 ms`, and
-  no stops.
+- **Depth:** in a clear hallway, watch **Details**. ✅ `depth: clear (floor NN%) · ~80 ms`, and no
+  stops.
 - Walk slowly toward a big cardboard box, a pillar or a closed door (things YOLO has no name for).
-  ✅ `STOP: something 1.4 m ahead` at about the stop distance (details: `depth: obstacle 1.4 m +3°`).
-  Nothing is drawn on the camera view for these.
+  ✅ `STOP: something 1.4 m ahead` at about the stop distance (**Obstacle** tile: *seen by the depth
+  model*; **Details**: `depth: obstacle 1.4 m +3°`). Nothing is drawn on the camera view for these.
 - Stand facing a wall, 1 m away. ✅ Within about half a second: `STOP: something close (no floor in
   view)`.
 - Stops when nothing's there? See [10](#10-troubleshooting) (usually tilt, chest height or focal).
-  The **Obstacles from depth** checkbox turns this part off.
+  **Settings → Obstacles from depth** turns this part off.
 
 ### 5. Voice
 
 - Say "Waymo", then "take me to test north", then "find the water bottle".
-- ✅ The phone shows `voice: heard "…"`; the laptop status line shows `Heard: "…"`; an echo; the
-  mode changes each time.
+- ✅ The phone's **Voice** row shows `Heard “…”`; the laptop shows `Heard: “…”` under the big
+  message; an echo; the mode changes each time.
 - Say "let's get started" and "that's way more fun". ✅ `Heard:` updates, the mode doesn't.
 
 ### 6. Go to a place (outdoors)
@@ -509,12 +523,14 @@ Joy-Cons; 3–5 and 8 work indoors; 6–7 need outdoors.
 ### 7. Go to the Waymo (outdoors, at a car)
 
 - Beacon phone in or on a parked car. Start 30 m or more away; choose **Waymo** (1 press).
-- ✅ Ride status "Your Waymo has arrived: guiding you to it"; steering toward the beacon, `… m (gps)`.
-- ✅ Details box: `waymo classifier: best NN%`. Ordinary cars stay low; a Waymo goes over 90%.
-- ✅ Waymo in view: 2 quick pulses ("connected"), a green WAYMO box, `… m (object)`, ride status
-  "Waymo found by the camera".
-- ✅ Within 4 m: `object finder: door handle: … NN%`, then `… m (handle)`.
-- ✅ At the handle: one long buzz, ride status "At the door", then the reach guidance (as in
+- ✅ Ride progress "Your Waymo has arrived: guiding you to it"; steering toward the beacon,
+  **Distance** *by GPS*.
+- ✅ **Details**: `waymo classifier: best NN%`. Ordinary cars stay low; a Waymo goes over 90%.
+- ✅ Waymo in view: 2 quick pulses ("connected"), a green **Waymo** box, **Distance** *to the car, by
+  camera*, ride progress "Waymo found by the camera".
+- ✅ Within 4 m: **Details** `object finder: door handle: … NN%`, then **Distance** *to the door
+  handle*.
+- ✅ At the handle: one long buzz, ride progress "At the door", then the reach guidance (as in
   step 8): `REACH: move your hand …`, `REACH: forward …`, `TOUCHING the door handle`. It stays
   arrived while you reach, even when your hand hides the handle.
 - ✅ The car right in front doesn't trigger STOP (neither YOLO's "car" nor the depth model's
@@ -525,20 +541,21 @@ Joy-Cons; 3–5 and 8 work indoors; 6–7 need outdoors.
 
 - Put a water bottle on a table 3–5 m away. Type **water bottle** under *Find something* and press
   Find (or say "find the water bottle").
-- ✅ One echo; `Mode: find "water bottle"`; search buzz while it's out of view.
-- ✅ Once in view: `object finder: "water bottle": ~1200 ms · NN%`; a dashed green box; 2 quick pulses
-  ("found it"); steering toward it.
+- ✅ One echo; **Mode** `find "water bottle"`; search buzz while it's out of view.
+- ✅ Once in view: **Details** `object finder: "water bottle": ~1200 ms · NN%`; a dashed green box;
+  2 quick pulses ("found it"); steering toward it.
 - ✅ About 1 m away: one long buzz. It stays arrived as you reach.
 - **Reach for it** with one hand, keeping your chest still:
-  - ✅ hand not in the camera view yet: `REACH OUT toward the water bottle (…): hand not in view
+  - ✅ hand not in the camera view yet: `REACH OUT toward the water bottle: … Hand not in view
     yet` and a 250 ms buzz every 1.2 s;
-  - ✅ hand in view (magenta dots on the phone page; a yellow dot and a dashed line to a green cross
-    on the laptop's camera view): `REACH: move your hand left 12°` on the left wrist, `right` on the
+  - ✅ hand in view (pink dots on the phone page; a yellow dot and a dashed line to a green ring on
+    the laptop's camera view): `REACH: move your hand left 12°` on the left wrist, `right` on the
     right, `up` as a high buzz on both, `down` as a low buzz on both;
   - ✅ lined up: `REACH: forward (0.30 m to go)`, pulses speeding up as you get closer;
   - ✅ at it: `TOUCHING the water bottle` and 3 quick high buzzes.
-  - Without hand tracking (`hands: failed to load` on the phone), the display just says where to
-    reach: `ARRIVED: the water bottle is within reach, a little left, low (about waist height)`.
+  - Without hand tracking (the phone's **Hands** row says `Failed to load`), the display just says
+    where to reach: `ARRIVED: the water bottle is within reach, a little left, low (about waist
+    height)`.
 - ✅ The table under the bottle (bottle near its front edge) doesn't trigger STOP (neither YOLO nor
   the depth model); a person stepping in between does (until you've arrived: while reaching, stops
   are off).
@@ -559,35 +576,45 @@ presses only; follow buzzes only. Note every hesitation and wrong turn, and tune
 
 `http://localhost:8080/` (`public/hands.html`).
 
-**Display** (top): camera view, wrist icons, status line, ride status. See
-[What onlookers see](#what-onlookers-see-the-laptop-page-is-the-display).
+**Display** (top): camera view, the big message, wrist tiles, Mode / Distance / Obstacle tiles,
+ride progress. See [What onlookers see](#what-onlookers-see-the-laptop-page-is-the-display).
 
-**Status line fields**
+**Big message**: what the wearer is being told right now: the guide message (list below), split in
+two (`TURN RIGHT 12°` shows as **Turn right** over *12°*), coloured by kind: blue steering, red stop,
+green arrived or touching, purple reaching, orange no signal or no compass, grey waiting or
+searching. Under it, for 10 s: `Heard: “…”`, the last thing the phone heard.
 
-| Field | Meaning |
+**Tiles**
+
+| Tile | Meaning |
 |---|---|
-| `Mode` | `off`, `Waymo`, a place's name, `find "…"`, or `test …` |
-| `Distance` | Meters to the target and where it comes from: `gps`, `object` (the Waymo car), `handle` (its door handle), `thing` (find mode), `test` |
-| `Obstacle` | What's in the way and how far, or `none`. `something` = seen by the depth model (it has no names); `(ignored while reaching)` at the door handle or the thing |
-| `Heard` | The last thing the phone heard (shown for 10 s) |
+| **Mode** | `Off`, `Waymo`, a place's name, `find "…"`, or `test …` |
+| **Distance** | Meters to the target, and how it's measured: *by GPS*, *to the car, by camera* (the Waymo), *to the door handle*, *by camera* (find mode), *indoor test* |
+| **Obstacle** | What's in the way and how far, or `None`: *seen by the camera* (YOLO's name for it) or *seen by the depth model* (`Something`, `Drop-off`); *ignored while reaching* at the door handle or the thing. Red while it stops the wearer |
+| **Waymo ride** | Waymo mode only: *Requested → Arrived → Found by the camera → At the door* |
 
-**Setup controls**
+**Header pills**: **Phone** (green: a message in the last second; red: it was connected and went
+quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected and set up).
+
+**Controls**
 
 | Control | Default | What it does |
 |---|---|---|
-| Connect a Joy-Con | — | Chrome's device picker; once per Joy-Con |
-| Choose: `1 · Waymo`, `2 · …` | — | Same as pressing a Joy-Con button that many times |
+| Connect Joy-Con (top right) | — | Chrome's device picker; once per Joy-Con |
+| Go to: `1 Waymo`, `2 test north`, … | — | Same as pressing a Joy-Con button that many times; the one in use is highlighted |
 | Stop | — | Mode off |
 | Find something + Find (or Enter) | — | Starts find mode for the typed thing |
-| Strength | 0.7 (0.1–1) | Multiplies every buzz's strength |
-| On-target margin | ±12° (5–30) | How close to straight ahead counts as "facing it" (+5° extra once facing, so it doesn't flicker) |
-| GPS arrival radius | 6 m (2–20) | Arrival distance for places |
-| Obstacle stop distance | 1.5 m (0.5–3) | Anything closer than this, straight ahead, is an obstacle |
-| Obstacles from depth | on | Also stop for anything the depth model sees close in the walking path, not just what YOLO recognizes ([7.5](#75-obstacles)) |
-| Try each buzz | — | Plays each pattern; the second row has the reaching ones |
-| Indoor test: 90° left, 45° right, 90° right, Behind | — | Steers to a direction relative to where the chest faces (no GPS needed); no arrival |
+| Settings → Buzz strength | 0.7 (0.1–1) | Multiplies every buzz's strength |
+| Settings → On-target margin | ±12° (5–30) | How close to straight ahead counts as "facing it" (+5° extra once facing, so it doesn't flicker) |
+| Settings → GPS arrival radius | 6 m (2–20) | Arrival distance for places |
+| Settings → Obstacle stop distance | 1.5 m (0.5–3) | Anything closer than this, straight ahead, is an obstacle |
+| Settings → Obstacles from depth | on | Also stop for anything the depth model sees close in the walking path, not just what YOLO recognizes ([7.5](#75-obstacles)) |
+| Testing → Walking buzzes, Reaching buzzes | — | Plays each pattern |
+| Testing → Indoor steering test: 90° left, 45° right, 90° right, Behind | — | Steers to a direction relative to where the chest faces (no GPS needed); no arrival |
 
-**Details box** (bottom): what the guidance sees.
+**Settings**, **Testing** and **Details** open with a click; the browser remembers which are open.
+
+**Details** (the last section): what the guidance sees.
 
 | Line | Example | Meaning |
 |---|---|---|
@@ -613,12 +640,12 @@ presses only; follow buzzes only. Note every hesitation and wrong turn, and tune
 | `STOP: something close (no floor in view)` | The depth model couldn't see the floor where it should be, twice in a row: something (a wall, a door) is right in front |
 | `SEARCHING: waiting for GPS` / `waiting for the Waymo's location (beacon)` / `the water bottle: turn slowly` | No target yet |
 | `TURN LEFT 83°` / `TURN RIGHT 12°` | Steering |
-| `APPROACHING` | Facing it: walk |
+| `APPROACHING` | Facing it: walk (the big message adds *Facing it: walk forward*) |
 | `ARRIVED` | At a place |
 | `AT THE CAR: turn slowly along it to find the door handle` | At the Waymo, handle not found yet |
 | `ARRIVED at the door handle: reach straight ahead, a bit below chest height` | At the handle: the first second (during the arrival buzz), or with no hand tracking |
 | `ARRIVED: the water bottle is within reach, a little left, low (about waist height)` | At the thing: same |
-| `REACH OUT toward the water bottle (straight ahead, low (about waist height)): hand not in view yet` | Reaching: no hand in the camera view |
+| `REACH OUT toward the water bottle: straight ahead, low (about waist height). Hand not in view yet` | Reaching: no hand in the camera view |
 | `REACH: move your hand left 12°` (`right` / `up` / `down`) | Reaching: the fingertips are off the target that way (the bigger miss first) |
 | `REACH: forward (0.30 m to go)` | Reaching: lined up; the target is that much farther than the hand |
 | `TOUCHING the door handle` / `TOUCHING the water bottle` | Reaching: lined up and about as far away as the target |
@@ -629,25 +656,24 @@ presses only; follow buzzes only. Note every hesitation and wrong turn, and tune
 
 | Element | What it is |
 |---|---|
-| Start (camera + GPS + compass + mic) | Starts everything; asks for every permission. Tap once. |
-| Focal (px) | Camera focal length in pixels of the 960-px detection frame. Default 720. Saved on the phone. |
-| Person height (m) | Height of the person used to calibrate, and the height assumed for people in distance estimates. Default 1.70. |
-| Calibrate: that person standing exactly 3.00 m away | Sets Focal from the tallest person in view |
-| Chest height (m) | Camera height above the floor. Default 1.30. Used for distances from where things meet the floor. |
-| `objects:` | YOLO: loading, `model ready (webgpu/wasm)`, then milliseconds per frame |
-| `voice:` | `listening`, `heard "…"`, or an error (`not-allowed` etc.: voice turns itself off; buttons still work) |
-| Green/red badge | `LAPTOP: CONNECTED · N updates sent` means the phone reaches the **server**; check the laptop page's `phone:` line to be sure the laptop page is open too |
-| `hands:` | Hand tracking: `loading (about 20 MB the first time)…`, `ready (GPU)` / `ready (CPU)`, then while reaching `N in view · M ms`; or `failed to load (…); no reach guidance` |
-| `GPS: ±N m · compass: N° · tilt: N° down` | Current accuracy, heading and camera tilt (`compass: not updating` if the reading is over a second old) |
-| List | Everything YOLO sees: `label score%  ±angle°  distance m` |
-| Camera view | With blue YOLO boxes, a white center line, and magenta dots on tracked fingertips |
+| Start | Starts everything; asks for every permission. Tap once (it then goes away). |
+| Status rows | One per part, with a dot: green working, orange waiting or unsure, red failed, grey not started yet |
+| **Laptop** | `Connected · N updates` means the phone reaches the **server**; check the laptop page's **Phone** pill to be sure the laptop page is open too |
+| **Objects** | YOLO: `Loading (about 30 MB the first time)…`, `Ready (webgpu)` or `Ready (wasm)`, then `webgpu · N ms a frame` |
+| **Hands** | Hand tracking: `Loading (about 20 MB the first time)…`, `Ready (GPU)` or `Ready (CPU)`, then while reaching `N in view · M ms`; or `Failed to load (…): no reach guidance` |
+| **Voice** | `Listening`, `Heard “…”`, or an error (`not-allowed` etc.: voice turns itself off; buttons still work) |
+| **GPS** | Accuracy, `±N m` (green up to ±20 m) |
+| **Compass** | Heading, `N°`; `Not updating` if the reading is over a second old, `Not allowed (motion access)` if refused |
+| **Tilt** | How far the camera looks down, `N° down` (green from level to 40° down) |
+| Camera view | Appears after Start: blue YOLO boxes with labels, a white center line, pink dots on tracked fingertips; under it, everything YOLO sees: `label score%  ±angle°  distance m` |
+| **Calibration** (opens with a click) | **Focal length (px)**: the camera's focal length in pixels of the 960-px detection frame (default 720). **Person height (m)**: the height of the person used to calibrate, and the height assumed for people in distance estimates (default 1.70). **Chest height (m)**: the camera's height above the floor, for distances from where things meet the floor (default 1.30). **Calibrate: that person is standing exactly 3.00 m away**: sets the focal length from the tallest person in view. All saved on the phone. |
 
 ### 6.3 The beacon page
 
-`https://<tunnel>/beacon.html` (`public/beacon.html`). **Start sharing location** → shows
-`lat, lon`, `accuracy ±N m`, `last update N s ago`, and a hint if accuracy is worse than 100 m
-(Precise Location is off). `link: connected` means it reaches the server. It sends its latest fix
-once a second.
+`https://<tunnel>/beacon.html` (`public/beacon.html`). **Start sharing location** → a big accuracy
+number (green at ±10 m or better, orange up to ±100 m, red beyond, with a hint to turn on Precise
+Location), *Updated N s ago*, and the coordinates. The pill at the top says **Connected** when it
+reaches the server. It sends its latest fix once a second.
 
 ### 6.4 The server terminal
 
@@ -772,7 +798,7 @@ turns the whole frame into meters. In `analyze()`:
 2. **Fit:** on the floor, the model's value ≈ `s × (1 ÷ Z) + t`. RANSAC (150 tries; `s` must be
    positive; tolerance 5% of the values' range) finds the line most of those pixels agree on, even
    with a box or a person standing on part of the floor; least squares on the agreeing pixels
-   refines it. The share that agrees is `floor` (shown in the details box). Under **25%** (or a
+   refines it. The share that agrees is `floor` (shown in **Details**). Under **25%** (or a
    negative `s`): `floor not visible (something close in front?)`: typically a wall or a door
    filling the view.
 3. **Every pixel → 3D:** `Z = s ÷ (value − t)`, then how far ahead, how far to the side and how high
@@ -1064,8 +1090,9 @@ All in `public/hands.html` unless noted. Pages: edit and reload. Server files: r
 |---|---|---|---|
 | `PLACES` | top of the script | 2 test spots | Saved places ([4.11](#411-add-your-own-places)) |
 | `DECLINATION` | top of the script | −6.8 (Miami) | Magnetic declination, east positive ([4.12](#412-set-your-magnetic-declination)) |
-| Strength / margin / GPS radius / stop distance | sliders on the page | 0.7 / ±12° / 6 m / 1.5 m | See [6.1](#61-the-laptop-page) |
-| Obstacles from depth | checkbox on the page | on | See [7.5](#75-obstacles) |
+| Buzz strength / margin / GPS radius / stop distance | sliders under **Settings** on the page | 0.7 / ±12° / 6 m / 1.5 m | See [6.1](#61-the-laptop-page) |
+| Obstacles from depth | switch under **Settings** on the page | on | See [7.5](#75-obstacles) |
+| Colours, fonts, spacing | `public/nudge.css` (shared by the three pages) | light and dark | The page look; each page adds its own layout in its `<style>` |
 | `PATTERNS` | "Buzz vocabulary" | see [What each buzz means](#what-each-buzz-means) | Each pattern: `buzz(side, strength, ms)`, `both(...)`, `repeat(n, gap, fn)` |
 | `LO_HZ`, `HI_HZ` | Joy-Cons section | 160, 320 Hz | Rumble frequencies of normal buzzes (Joy-Con ranges: 41–626 Hz low, 82–1253 Hz high) |
 | `HIGH`, `LOW` | Joy-Cons section | 320 + 900 Hz, 80 + 160 Hz | The up / down buzzes while reaching (and the touch buzz: `HIGH`) |
@@ -1136,23 +1163,23 @@ Then restart `npm start`. To start from scratch (download the web photos again),
 | `Port 8080 is already in use` | `npm start` is already running in another terminal: stop it, or `PORT=8081 npm start`. |
 | Models download slowly on first start | They're ~390 MB; wait for all three **ready** lines. After that they load from disk. |
 | Tunnel logs `Failed to dial a quic connection` | Use `--protocol http2`. Still stuck: put the Mac on a phone hotspot. |
-| Phone: `LAPTOP: NOT CONNECTED` | Is `npm start` running? Is the tunnel running, with the address you typed? It changes on every restart. |
+| Phone: **Laptop** `Not connected` | Is `npm start` running? Is the tunnel running, with the address you typed? It changes on every restart. |
 | Phone: `camera error` | Use the https tunnel address, not `http://…`. Allow the camera in Safari's site settings (**aA → Website Settings**). |
-| Phone: `objects: model failed to load` | The phone needs internet for the first load (~30 MB from jsDelivr and Hugging Face). Reload. |
+| Phone: **Objects** `Failed to load` | The phone needs internet for the first load (~30 MB from jsDelivr and Hugging Face). Reload. |
 | `GPS error: User denied Geolocation` | Allow location ([4.7](#47-set-up-the-chest-iphone)); reload and tap Start again. |
 | GPS ±35 m or worse | You're indoors, or Precise Location is off. |
-| Laptop: `NO COMPASS…` / heading `—` | Allow motion & orientation when Start asks. Reload and tap Start again; if iOS doesn't ask, quit Safari and reopen it. |
+| Laptop: *No compass* / phone: **Compass** `Not allowed (motion access)` | Allow motion & orientation when Start asks. Reload and tap Start again; if iOS doesn't ask, quit Safari and reopen it. |
 | Steers the wrong way | Phone upright, camera facing forward; turning right must make `heading` go **up**. Keep it away from magnets and steel. Joy-Cons on the right wrists (L left, R right). |
 | GPS targets consistently a bit off | Set `DECLINATION` for your location ([4.12](#412-set-your-magnetic-declination)). |
 | Joy-Con won't connect or buzz | Quit Steam/BetterJoy; re-pair; use Chrome; press a button on the Joy-Con to wake it. |
 | Button presses don't count | Use a face button, trigger or stick click (not SL/SR); wait 1.5 s after the last press. |
 | `NO SIGNAL` while the phone is on | Keep the phone screen on and `eyes.html` in front; check its signal. |
-| Voice: `voice: not-allowed` / `service-not-allowed` | Allow the microphone for the site; turn on Dictation (**Settings → General → Keyboard**). Buttons always work. |
+| Phone: **Voice** `not-allowed` / `service-not-allowed` | Allow the microphone for the site; turn on Dictation (**Settings → General → Keyboard**). Buttons always work. |
 | Voice ignores what I say | It must start with a command ([7.10](#710-choosing-buttons-voice-typing)); check the `Heard:` text for how it was transcribed. |
 | Stops for no reason: `STOP: person…`, `STOP: chair…` | Something YOLO recognized is within the stop distance ahead; lower **Obstacle stop distance**. |
 | Stops for no reason: `STOP: something…` | The depth model. Check the phone's `tilt` (10–20° down is best), **Chest height** and **Focal** ([4.8](#48-mount-the-chest-iphone), [4.9](#49-calibrate-distances-once-per-phone)): it measures against the floor, so wrong values put the floor in the wrong place. Still wrong: untick **Obstacles from depth**. |
 | `STOP: something close (no floor in view)` with nothing there, or `depth: no floor in view (tilt the phone down a little)` | The camera doesn't see the floor ahead: it's tilted up, or a jacket or strap covers the lower part of the lens. Tilt it down 10–20°. |
-| Phone: `hands: failed to load` | Needs internet the first time (~20 MB from jsDelivr and Google). Without it, the reach buzzes are off and the display just says where to reach. |
+| Phone: **Hands** `Failed to load` | Needs internet the first time (~20 MB from jsDelivr and Google). Without it, the reach buzzes are off and the display just says where to reach. |
 | Reaching: `hand not in view yet` although the hand is out | Reach out in front of the chest, below the camera (the camera sees about ±20° to each side). Keep the chest still while reaching. Gloves and long sleeves over the hand can hide it from the tracker. |
 | Reaching: the touch buzz comes too early or too late | The target's distance or the hand's is off: calibrate focal ([4.9](#49-calibrate-distances-once-per-phone)); for a smaller or bigger hand, change `KNUCKLES` ([8](#8-tuning-and-customizing)). |
 | Never finds the Waymo | Check `waymo classifier: best NN%` while the car is in view: under 90% on your Waymo = retrain with venue photos ([9](#9-the-waymo-classifier)). |
@@ -1267,6 +1294,7 @@ nudge/
 │   ├── hands.html             laptop page: Joy-Cons, choosing, voice commands, all guidance (incl. the last reach), the display
 │   ├── eyes.html              chest phone: camera + YOLO, hand tracking (MediaPipe), compass, tilt, GPS, voice, frames and crops
 │   ├── yolo-worker.js         YOLOv10n in a web worker on the phone (WebGPU or WebAssembly)
+│   ├── nudge.css              the look shared by the three pages (light and dark follow the device)
 │   └── beacon.html            beacon phone: shares its GPS location
 └── training/                  the Waymo classifier's training pipeline (see training/README.md)
     ├── README.md
