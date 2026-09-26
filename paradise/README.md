@@ -1140,7 +1140,8 @@ laptop, which decides:
 
 1. Lower-case it, drop punctuation, and drop leading `please`, `hey`, `hi`, `ok`/`okay`, `paradise`,
    `can you`, `could you`, `would you`, `will you`.
-2. A leading command verb is noted and removed: `take me to`, `bring me to`, `get me to`, `go to`,
+2. A leading command verb is noted and removed: `take me to`, `bring me to`, `get me to`,
+   `take me`, `lead me to`, `show me`, `go to`,
    `guide me to`, `walk me to`, `navigate to`, `help me find`, `look for`, `find`, `grab`, `fetch`,
    `bring me`, `bring`, `get`, `where's`, `where is`, `where are`, `where did i put`.
 3. Filler is removed: leading `me us the a an my our your some`, trailing `please`, `for me`,
@@ -1158,8 +1159,9 @@ laptop, which decides:
 | "Waymo." / "Take me to the Waymo, please" / "Bring me the Waymo" | Waymo |
 | "Test north" / "Go to test north" | That place |
 | "Find my keys." / "Where are my keys?" / "Hey Paradise, find my phone." / "Get me a water bottle please" / "Where’s the trash can?" | Find: keys / keys / phone / water bottle / trash can |
+| "Take me a bottle" / "Take me to the water bottle" / "Lead me to a chair" / "Show me the door" | Find: bottle / water bottle / chair / door |
 | "Find me something to drink" / "Help me find somewhere to sit" | Find: water bottle / chair (named by the AI) |
-| "Let's get started" / "That's way more fun" / "I love Waymo" / "I can't get there" / "Get going" | Nothing (not commands) |
+| "Let's get started" / "That's way more fun" / "I love Waymo" / "I can't get there" / "Get going" / "Take me home" | Nothing (not commands) |
 
 **Typing:** the **Find something** box goes through the same cleanup (steps 2 and 3, so "find me
 something to drink" works typed too), then find mode.

@@ -560,8 +560,8 @@
   //   "test north", "go to test north"         → that place
   //   "find / get / grab / bring me / where's / where are … <thing>" → find it
   const POLITE = /^(?:please|hey|hi|ok|okay|paradise|can you|could you|would you|will you)\s+/;
-  const VERB = /^(?:(?:take|bring|get) me to|go to|guide me to|walk me to|navigate to|help me find|look for|find|grab|fetch|bring me|bring|get|where's|wheres|where is|where are|where did i put)\s+/;
-  const NOT_A_THING = /^(?:it|that|this|there|here|them|going|started|ready|back|in|on|off|out|up|over|away|lost)\b/;
+  const VERB = /^(?:(?:take|bring|get) me to|take me|lead me to|show me|go to|guide me to|walk me to|navigate to|help me find|look for|find|grab|fetch|bring me|bring|get|where's|wheres|where is|where are|where did i put)\s+/;
+  const NOT_A_THING = /^(?:it|that|this|there|here|them|home|going|started|ready|back|in|on|off|out|up|over|away|lost)\b/;
   function onHeard(text) {
     heardText = text; heardAt = performance.now();
     let t = text.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9' -]+/g, " ").replace(/\s+/g, " ").trim(), prev;
