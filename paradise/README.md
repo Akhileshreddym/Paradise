@@ -127,7 +127,10 @@ The wearer never looks at a screen. The laptop page is for everyone else:
   (orange), with the details underneath (*12°*, *person 1.0 m ahead*), and the last voice command
   heard;
 - **two wrist tiles, L and R**, that light up yellow exactly when that wrist buzzes (even with no
-  Joy-Con connected, which is handy for demos);
+  Joy-Con connected, which is handy for demos and for testing without Joy-Cons), and say what the
+  buzz means (`turn right`, `walk`, `STOP`, `hand up (high buzz)`…) for a moment after;
+- under them, **the last few buzzes**, newest first, with the wrist and a count (`R · turn right
+  ×6`, `L+R · walk ×4`), and a note when no Joy-Con is connected;
 - **Mode** (with a task timer: from the choice to the "touch", or to arriving at a place),
   **Distance** (and how it's measured) and **Obstacle** tiles;
 - **the difference**: the same task done without Paradise (the team times it with the **Time it**
@@ -648,7 +651,7 @@ quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected
 | Settings → GPS arrival radius | 6 m (2–20) | Arrival distance for places |
 | Settings → Obstacle stop distance | 1.5 m (0.5–3) | Anything closer than this, straight ahead, is an obstacle |
 | Settings → Obstacles from depth | on | Also stop for anything the depth model sees close in the walking path, not just what YOLO recognizes ([7.5](#75-obstacles)) |
-| Settings → Ask the AI where to look | on | Find mode: after a full turn round the room finds nothing, send that turn's photos to Gemini (at most 3 times a search); off: say "not found" instead ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)) |
+| **Gemini on / off** (header button) = Settings → Use Gemini | on (remembered in the browser) | Both of Gemini's jobs: plain-language requests ([7.8b](#78b-plain-language-requests)) and, after a full turn finds nothing, where to look (at most 3 times a search, [7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)). Off: no Gemini calls at all; requests are taken literally and find mode says "not found" after one turn |
 | Settings → Any car counts as the Waymo (demo) | off | Only for a demo with no real Waymo there: any car the phone sees counts as the Waymo (the one in the beacon's direction). The ride card says `(demo: any car counts as the Waymo)` while it's on, so nobody is misled ([7.7](#77-mode-2-the-waymo)) |
 | Settings → Follow walking routes | on | Steer along an OpenStreetMap walking route to a place or the Waymo, turning at corners; off: a straight line ([7.6a](#76a-walking-routes)) |
 | Testing → Walking buzzes, Reaching buzzes | — | Plays each pattern |
@@ -1027,8 +1030,8 @@ The detectors only find what's in front of the camera. When the thing isn't (`sc
    (something close in the walking path, often the counter or desk itself) or the time running out
    ends the walk: **turn round and look again** (step 1).
 4. **Gives up** (the search buzz once, then quiet; `NOT FOUND` on the display) when a turn finds
-   nothing and the AI has been asked **3 times this search**, or it's switched off (**Settings → Ask
-   the AI where to look**), or it has no answer (no key, no good place to look, no reply in 25 s).
+   nothing and the AI has been asked **3 times this search**, or Gemini is switched off (the
+   **Gemini** button at the top), or it has no answer (no key, no good place to look, no reply in 25 s).
 
 What keeps it cheap and safe:
 
@@ -1076,7 +1079,7 @@ sit", "something to write with" (`findThing()`, `onAiWhat()` in `hands.html`; `w
 
 Against Gemini (`gemini-3.5-flash-lite`): "something to drink" → water bottle (133 tokens, 0.95 s),
 "somewhere to sit" → chair (134 tokens, 0.76 s). Same limits and switch as 7.8a: only from the
-laptop's own page, 6 calls a minute, **Settings → Ask the AI where to look** off = no calls.
+laptop's own page, 6 calls a minute, and the **Gemini on / off** button (top of the page) off = no calls.
 
 ### 7.9 The last reach: steering the hand
 
@@ -1394,7 +1397,7 @@ Say these out loud when presenting:
 - The phone downloads its models and libraries from jsDelivr, Hugging Face and Google's storage
   (the hand model). Those are downloads only: no camera data goes to them.
 - **The one exception: asking the AI** ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)).
-  With a Gemini key set and **Settings → Ask the AI where to look** on, a find that sees nothing
+  With a Gemini key set and the **Gemini** button on, a find that sees nothing
   all the way round sends that turn's 10 small photos of the room to Google's Gemini API. Tell
   whoever wears it; switch it off, or leave out the key, to keep everything local. **On Gemini's
   free tier, Google may use what's sent to improve its products** (its pricing page, September
