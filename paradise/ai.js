@@ -9,6 +9,9 @@
 // laptop page turns that into a direction and walks the wearer there; the phone's detectors still
 // have to find the thing before the "found it" buzz.
 //
+// And one smaller job, text only: a request in plain language ("something to drink", "somewhere to
+// sit") → the thing to look for ("water bottle", "chair"), since the detectors need a thing's name.
+//
 // Needs GEMINI_API_KEY in paradise/.env (loaded by npm start). GEMINI_MODEL there picks the model.
 
 const KEY = process.env.GEMINI_API_KEY || "";
@@ -26,16 +29,10 @@ const recent = [];
 // { visible, view, rel (the chosen photo's), x, target, distance_m, reason, tokens, ms }, or a reason string when there's
 // no usable answer (no key, too many calls, network, a reply that doesn't make sense).
 export async function whereToLook(what, shots) {
-  if (!KEY) return ai.status;
   what = String(what).slice(0, 80);
   shots = shots.slice(0, MAX_SHOTS).filter((s) => typeof s?.image === "string" && s.image.length < MAX_IMAGE &&
     /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(s.image) && Number.isFinite(s.rel));
   if (!what || !shots.length) return "nothing to ask about";
-  const now = Date.now();
-  while (recent.length && now - recent[0] > 60000) recent.shift();
-  if (recent.length >= PER_MINUTE) return `over ${PER_MINUTE} calls a minute: skipped`;
-  if (ai.calls >= PER_RUN) return `over ${PER_RUN} calls since the server started: skipped`;
-  recent.push(now); ai.calls++;
 
   const parts = [{ text:
     `You are helping a blind person find: "${what}". They wear a phone on their chest, camera facing forward. ` +
@@ -57,6 +54,43 @@ export async function whereToLook(what, shots) {
   ));
 
   const t0 = Date.now();
+  const a = await ask(parts);
+  if (typeof a === "string") return a;
+  const view = Number(a?.view), x = Number(a?.x);
+  if (view === -1) return `no good place to look (${String(a?.reason || "").slice(0, 120)})`;
+  if (!Number.isInteger(view) || view < 0 || view >= shots.length || !Number.isFinite(x)) return "Gemini's answer didn't point at a photo";
+  const dist = Number(a.distance_m);
+  return {
+    visible: a.visible === true, view, rel: shots[view].rel, x: Math.min(1000, Math.max(0, x)),
+    target: String(a.target || "that spot").slice(0, 60), reason: String(a.reason || "").slice(0, 160),
+    distance_m: Number.isFinite(dist) && dist > 0 ? Math.min(dist, 15) : null, tokens: a.tokens, ms: Date.now() - t0,
+  };
+}
+
+// "something to drink" → { thing: "water bottle", reason, tokens, ms }, or a reason string.
+export async function whatToFind(request) {
+  request = String(request).slice(0, 80);
+  if (!request) return "nothing to ask about";
+  const t0 = Date.now();
+  const a = await ask([{ text:
+    `A blind person asked the device on their chest to find: "${request}". Name the one kind of ` +
+    `physical object its camera should look for to do that, in 1 to 3 plain words an object detector ` +
+    `understands ("water bottle", "chair", "trash can", "cup", "pen"): the most likely one nearby in an ` +
+    `ordinary home, office or classroom. Answer with JSON only: {"thing": "…", "reason": "one short sentence"}` }]);
+  if (typeof a === "string") return a;
+  const thing = String(a?.thing || "").toLowerCase().trim();
+  if (!/^[a-z][a-z' -]{1,38}$/.test(thing)) return "Gemini's answer wasn't a thing's name";
+  return { thing, reason: String(a.reason || "").slice(0, 160), tokens: a.tokens, ms: Date.now() - t0 };
+}
+
+// One call, JSON back: the parsed answer (+ tokens), or a reason string. Shares the limits above.
+async function ask(parts) {
+  if (!KEY) return ai.status;
+  const now = Date.now();
+  while (recent.length && now - recent[0] > 60000) recent.shift();
+  if (recent.length >= PER_MINUTE) return `over ${PER_MINUTE} calls a minute: skipped`;
+  if (ai.calls >= PER_RUN) return `over ${PER_RUN} calls since the server started: skipped`;
+  recent.push(now); ai.calls++;
   let reply;
   try {
     const res = await fetch(URL_, {
@@ -73,15 +107,8 @@ export async function whereToLook(what, shots) {
   const tokens = reply.usageMetadata?.totalTokenCount ?? 0;
   ai.tokens += tokens;
   const text = (reply.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
-  let a;
-  try { a = JSON.parse(text.replace(/^\s*```(?:json)?|```\s*$/g, "")); } catch { return "Gemini's answer wasn't JSON"; }
-  const view = Number(a?.view), x = Number(a?.x);
-  if (view === -1) return `no good place to look (${String(a?.reason || "").slice(0, 120)})`;
-  if (!Number.isInteger(view) || view < 0 || view >= shots.length || !Number.isFinite(x)) return "Gemini's answer didn't point at a photo";
-  const dist = Number(a.distance_m);
-  return {
-    visible: a.visible === true, view, rel: shots[view].rel, x: Math.min(1000, Math.max(0, x)),
-    target: String(a.target || "that spot").slice(0, 60), reason: String(a.reason || "").slice(0, 160),
-    distance_m: Number.isFinite(dist) && dist > 0 ? Math.min(dist, 15) : null, tokens, ms: Date.now() - t0,
-  };
+  try {
+    const a = JSON.parse(text.replace(/^\s*```(?:json)?|```\s*$/g, ""));
+    return a && typeof a === "object" ? { ...a, tokens } : "Gemini's answer wasn't JSON";
+  } catch { return "Gemini's answer wasn't JSON"; }
 }

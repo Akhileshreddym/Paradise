@@ -6,10 +6,20 @@ to the wearer. A phone on the chest is the eyes; a laptop in a backpack does the
 
 It does three things:
 
-1. **Walks you to a saved place** (GPS and compass).
-2. **Walks you to your Waymo, right up to its door handle** (GPS toward the car, then a camera
-   model that recognizes Waymos, then a door-handle finder).
-3. **Finds a thing you ask for** ("water bottle", "my keys", "trash can") and walks you to it.
+1. **Walks you to a saved place, along sidewalks and footpaths**: a walking route from
+   OpenStreetMap, followed by GPS and compass, turning you at corners instead of pointing you
+   straight across streets.
+2. **Walks you to your Waymo, right up to its door handle** (the walking route toward the car, then
+   a camera model that recognizes Waymos, then a door-handle finder).
+3. **Finds a thing you ask for** ("water bottle", "my keys", "trash can", or just "something to
+   drink": the AI works out what to look for) and walks you to it. Not in view? The wrists **turn you round the room** to look. Still nothing? It **asks an AI (Google
+   Gemini) where to go and look next**, from the photos of that turn ("the desk: keys are often left
+   on desks"), walks you there, and looks again.
+
+The AI that sees runs on the phone and the laptop (object detection, an object finder that reads
+any words, a depth model): seeing, distances and obstacle stops never wait on a cloud service. The
+cloud AI is asked only when a full look round finds nothing, at most 3 times a search, and it only
+picks where to go look: the detectors on the phone and laptop still have to find the thing.
 
 At the door handle or the thing, it **steers your hand onto it**: the chest camera tracks your hand,
 the wrists buzz left, right, up (a high buzz) or down (a low buzz), then "forward", and three quick
@@ -117,9 +127,15 @@ The wearer never looks at a screen. The laptop page is for everyone else:
   (orange), with the details underneath (*12°*, *person 1.0 m ahead*), and the last voice command
   heard;
 - **two wrist tiles, L and R**, that light up yellow exactly when that wrist buzzes (even with no
-  Joy-Con connected, which is handy for demos);
+  Joy-Con connected, which is handy for demos and for testing without Joy-Cons), and say what the
+  buzz means (`turn right`, `walk`, `STOP`, `hand up (high buzz)`…) for a moment after;
+- under them, **the last few buzzes**, newest first, with the wrist and a count (`R · turn right
+  ×6`, `L+R · walk ×4`), and a note when no Joy-Con is connected;
 - **Mode** (with a task timer: from the choice to the "touch", or to arriving at a place),
   **Distance** (and how it's measured) and **Obstacle** tiles;
+- **the difference**: the same task done without Paradise (the team times it with the **Time it**
+  button: start, stop; kept in the browser) next to the last task done with it, and how many times
+  faster (`1:30` vs `0:20`: `4.5× faster`);
 - in find mode, the **room scan**: each stop's photo round a circle (top = where the turn started),
   the stop being looked at, and, if the AI was asked, the photo it picked (violet) with what it said
   ("look at the desk, about 2 m away. Keys are often left on desks.");
@@ -635,7 +651,8 @@ quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected
 | Settings → GPS arrival radius | 6 m (2–20) | Arrival distance for places |
 | Settings → Obstacle stop distance | 1.5 m (0.5–3) | Anything closer than this, straight ahead, is an obstacle |
 | Settings → Obstacles from depth | on | Also stop for anything the depth model sees close in the walking path, not just what YOLO recognizes ([7.5](#75-obstacles)) |
-| Settings → Ask the AI where to look | on | Find mode: after a full turn round the room finds nothing, send that turn's photos to Gemini (at most 3 times a search); off: say "not found" instead ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)) |
+| **Gemini on / off** (header button) = Settings → Use Gemini | on (remembered in the browser) | Both of Gemini's jobs: plain-language requests ([7.8b](#78b-plain-language-requests)) and, after a full turn finds nothing, where to look (at most 3 times a search, [7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)). Off: no Gemini calls at all; requests are taken literally and find mode says "not found" after one turn |
+| Settings → Any car counts as the Waymo (demo) | off | Only for a demo with no real Waymo there: any car the phone sees counts as the Waymo (the one in the beacon's direction). The ride card says `(demo: any car counts as the Waymo)` while it's on, so nobody is misled ([7.7](#77-mode-2-the-waymo)) |
 | Settings → Follow walking routes | on | Steer along an OpenStreetMap walking route to a place or the Waymo, turning at corners; off: a straight line ([7.6a](#76a-walking-routes)) |
 | Testing → Walking buzzes, Reaching buzzes | — | Plays each pattern |
 | Testing → Indoor steering test: 90° left, 45° right, 90° right, Behind | — | Steers to a direction relative to where the chest faces (no GPS needed); no arrival |
@@ -899,7 +916,10 @@ obstacle and drop-off checks, still matter.
    sensors are in it), squashed to 224 × 224.
 4. **Classifier:** CLIP image features → standardized → logistic regression (`waymo-head.json`) →
    probability. **0.9 or more = confirmed**, with its direction: the compass when the crop was taken
-   + its angle. Several confirmed: the one closest to the beacon's direction.
+   + its angle. Several confirmed: the one closest to the beacon's direction. **Demo with no real
+   Waymo there:** **Settings → Any car counts as the Waymo (demo)** makes every car crop count
+   (still the one closest to the beacon's direction), and the ride card says so. Off by default;
+   leave it off with a real Waymo, and tell the judges when it's on.
 5. **Car stage:** every YOLO result, the car within 12° of the confirmed Waymo's direction becomes
    the target (`object`). First time: the "connected" buzz and "Waymo found by the camera".
    Arrival at 1.0 m: `AT THE CAR: turn slowly along it to find the door handle`.
@@ -1010,8 +1030,8 @@ The detectors only find what's in front of the camera. When the thing isn't (`sc
    (something close in the walking path, often the counter or desk itself) or the time running out
    ends the walk: **turn round and look again** (step 1).
 4. **Gives up** (the search buzz once, then quiet; `NOT FOUND` on the display) when a turn finds
-   nothing and the AI has been asked **3 times this search**, or it's switched off (**Settings → Ask
-   the AI where to look**), or it has no answer (no key, no good place to look, no reply in 25 s).
+   nothing and the AI has been asked **3 times this search**, or Gemini is switched off (the
+   **Gemini** button at the top), or it has no answer (no key, no good place to look, no reply in 25 s).
 
 What keeps it cheap and safe:
 
@@ -1040,6 +1060,26 @@ A laptop whose antivirus scans HTTPS (Norton, for one) re-signs Google's certifi
 then refuses it (`couldn't reach Gemini: …` with a certificate error). Start the
 server with `node --use-system-ca --env-file-if-exists=.env server.js` (Node.js 22.15 or newer):
 Node then trusts the system's certificates, as browsers do.
+
+### 7.8b Plain-language requests
+
+The detectors need a thing's name; people say what they need. "Something to drink", "somewhere to
+sit", "something to write with" (`findThing()`, `onAiWhat()` in `hands.html`; `whatToFind()` in
+`ai.js`):
+
+1. Find mode starts at once (the echo buzz), but nothing is looked for yet (`THINKING: what to look
+   for, for "something to drink"`).
+2. The request alone, as text, goes to Gemini: *which one kind of object should the camera look
+   for?* It answers with 1–3 plain words and a reason; the answer is checked (letters only, short).
+3. Find mode goes on as if that had been asked ("water bottle": the object finder's prompt, YOLO's
+   `bottle`, its usual size). The display's scan card shows `AI: "something to drink" means water
+   bottle. A water bottle is the most common…`.
+4. No answer (no key, switched off, an error, or nothing in 15 s): it looks for the words as they
+   were said.
+
+Against Gemini (`gemini-3.5-flash-lite`): "something to drink" → water bottle (133 tokens, 0.95 s),
+"somewhere to sit" → chair (134 tokens, 0.76 s). Same limits and switch as 7.8a: only from the
+laptop's own page, 6 calls a minute, and the **Gemini on / off** button (top of the page) off = no calls.
 
 ### 7.9 The last reach: steering the hand
 
@@ -1100,7 +1140,8 @@ laptop, which decides:
 
 1. Lower-case it, drop punctuation, and drop leading `please`, `hey`, `hi`, `ok`/`okay`, `paradise`,
    `can you`, `could you`, `would you`, `will you`.
-2. A leading command verb is noted and removed: `take me to`, `bring me to`, `get me to`, `go to`,
+2. A leading command verb is noted and removed: `take me to`, `bring me to`, `get me to`,
+   `take me`, `lead me to`, `show me`, `go to`,
    `guide me to`, `walk me to`, `navigate to`, `help me find`, `look for`, `find`, `grab`, `fetch`,
    `bring me`, `bring`, `get`, `where's`, `where is`, `where are`, `where did i put`.
 3. Filler is removed: leading `me us the a an my our your some`, trailing `please`, `for me`,
@@ -1109,16 +1150,21 @@ laptop, which decides:
    - exactly `waymo` (or `way mo` / `way more`, how dictation sometimes spells it) → **Waymo**;
    - exactly a place's name → **that place**;
    - otherwise, *if there was a command verb*, and it isn't a word like `it`, `there`, `going`,
-     `started`, `ready`… → **find it**.
+     `started`, `ready`… → **find it**. Plain language instead of a thing's name (it starts with
+     `something`, `anything`, `somewhere`, `anywhere`, `place`, `thing` or `stuff`: "something to
+     drink", "a place to sit") → the AI names the thing first ([7.8b](#78b-plain-language-requests)).
 
 | Said | Result |
 |---|---|
 | "Waymo." / "Take me to the Waymo, please" / "Bring me the Waymo" | Waymo |
 | "Test north" / "Go to test north" | That place |
 | "Find my keys." / "Where are my keys?" / "Hey Paradise, find my phone." / "Get me a water bottle please" / "Where’s the trash can?" | Find: keys / keys / phone / water bottle / trash can |
-| "Let's get started" / "That's way more fun" / "I love Waymo" / "I can't get there" / "Get going" | Nothing (not commands) |
+| "Take me a bottle" / "Take me to the water bottle" / "Lead me to a chair" / "Show me the door" | Find: bottle / water bottle / chair / door |
+| "Find me something to drink" / "Help me find somewhere to sit" | Find: water bottle / chair (named by the AI) |
+| "Let's get started" / "That's way more fun" / "I love Waymo" / "I can't get there" / "Get going" / "Take me home" | Nothing (not commands) |
 
-**Typing:** the **Find something** box goes through the same cleanup, then find mode.
+**Typing:** the **Find something** box goes through the same cleanup (steps 2 and 3, so "find me
+something to drink" works typed too), then find mode.
 
 ### 7.11 The server
 
@@ -1353,7 +1399,7 @@ Say these out loud when presenting:
 - The phone downloads its models and libraries from jsDelivr, Hugging Face and Google's storage
   (the hand model). Those are downloads only: no camera data goes to them.
 - **The one exception: asking the AI** ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)).
-  With a Gemini key set and **Settings → Ask the AI where to look** on, a find that sees nothing
+  With a Gemini key set and the **Gemini** button on, a find that sees nothing
   all the way round sends that turn's 10 small photos of the room to Google's Gemini API. Tell
   whoever wears it; switch it off, or leave out the key, to keep everything local. **On Gemini's
   free tier, Google may use what's sent to improve its products** (its pricing page, September
@@ -1414,7 +1460,7 @@ paradise/
 ├── package.json               npm start → node server.js (with .env); dependencies: ws, @huggingface/transformers
 ├── .env                       your Gemini key, if any (you create it; git-ignored; 4.2a)
 ├── server.js                  web server (public/ only), WebSocket relay, passes frames/crops to the models, status line
-├── ai.js                      asks Gemini where to look next (find mode, only after a full turn finds nothing), with limits
+├── ai.js                      asks Gemini where to look next (only after a full turn finds nothing) and what a plain-language request means, with limits
 ├── object-finder.js           starts and talks to the object finder process (restarts it if it crashes)
 ├── object-finder-worker.js    the object finder: Grounding DINO tiny (8-bit), finds things described in words
 ├── clip.js                    starts and talks to the CLIP process (restarts it if it crashes)
