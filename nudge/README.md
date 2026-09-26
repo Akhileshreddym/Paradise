@@ -1,25 +1,26 @@
 # Nudge
 
 Touch-only guidance for blind and DeafBlind people. Two wrist-worn Joy-Cons buzz the wearer; no
-sound in or out of the device. It does two things: guide someone to a place, and guide them to a
-Waymo. Meant to work alongside a cane, not instead of one.
+sound in or out of the device. It guides someone to a place, to a Waymo, or to a thing they ask
+for ("water bottle"). Meant to work alongside a cane, not instead of one.
 
 ```
 chest iPhone ── eyes.html: camera + YOLO, GPS, compass, mic ──┐
                                                                ├── https tunnel ──► Mac: server.js ──► index page (Chrome) ──Bluetooth──► Joy-Cons (wrists)
-beacon phone ── beacon.html: GPS (stands in for the Waymo) ────┘                    (Waymo classifier,              (+ display for onlookers)
-                                                                                     door handle finder)
+beacon phone ── beacon.html: GPS (stands in for the Waymo) ────┘                    (object finder,                 (+ display for onlookers)
+                                                                                     CLIP: Waymo classifier, checks)
 ```
 
-## The two modes
+## The modes
 
-**Choose** by pressing any Joy-Con button N times (1.5 s after the last press it counts), or by
-saying it. The Joy-Cons buzz N times back to confirm.
+**Choose** by pressing any Joy-Con button N times (1.5 s after the last press it counts), by
+saying it, or (find mode) by typing it on the laptop page. The Joy-Cons buzz N times back to confirm.
 
-| Presses | Say | Mode |
-|---|---|---|
-| 1 | "Waymo" | Mode 2: go to the Waymo |
-| 2, 3, … | the place's name | Mode 1: go to a saved place (see `PLACES` in `public/hands.html`) |
+| Presses | Say | Type (laptop page) | Mode |
+|---|---|---|---|
+| 1 | "Waymo" | | Mode 2: go to the Waymo |
+| 2, 3, … | the place's name | | Mode 1: go to a saved place (see `PLACES` in `public/hands.html`) |
+| | "find / get / grab / where's the water bottle" | **Find something:** water bottle | Mode 3: find a thing |
 
 **Mode 1: a place.** GPS and compass only: bearing and distance from the wearer to the place.
 Arrival: GPS distance under the arrival radius (default 6 m; tune it on site).
@@ -33,7 +34,22 @@ Arrival: GPS distance under the arrival radius (default 6 m; tune it on site).
 3. Within 4 m, the server finds the **door handle** in camera frames (~1.2 s each) and steers to it.
 4. Arrival at arm's length from the handle. The display says whether the handle is above or below chest height.
 
-**Obstacles, always on in both modes:** anything the camera recognizes in the walking path (±20°)
+**Mode 3: find a thing** ("water bottle", "red mug", "my keys", "trash can": anything describable).
+1. The server's **object finder** (Grounding DINO) looks for exactly those words in camera frames
+   (~1.2 s each). It boxes *something* nearly every time, so a box only counts when **CLIP agrees**
+   it looks more like the thing than like ~80 other everyday things, or when the phone's YOLO sees
+   the same kind of thing in the same direction.
+2. If the thing is one of YOLO's 80 everyday classes (bottle, cup, phone, backpack, laptop…), YOLO's
+   ~10 sightings a second keep the steering smooth in between.
+3. First sighting: the **"found it"** buzz (same as Waymo connected). Not in view: search buzz, turn slowly.
+4. Arrival at about 1 m, where a table-top thing drops out of the chest camera's view. The display
+   says where to reach: left/right, and how low.
+
+Distance to a thing comes from its usual size (a bottle is about 25 cm; the list is `THINGS` in
+`public/hands.html`), or for unknown things from where it meets the floor. Things on or behind the
+target (the table the bottle is on) don't count as obstacles.
+
+**Obstacles, always on in every mode:** anything the camera recognizes in the walking path (±20°)
 closer than the stop distance (default 1.5 m) gives the **stop** buzz, overriding everything else.
 
 The wearer's heading comes from the chest iPhone's compass. The Joy-Cons only buzz.
@@ -48,14 +64,15 @@ The wearer's heading comes from the chest iPhone's compass. The Joy-Cons only bu
 | Arrived | Both, one long 800 ms buzz |
 | Obstacle/stop | Both, 3 sharp 100 ms pulses (repeats while it's there) |
 | Search/no signal | Alternating L-R-L, slow |
-| Waymo connected | Both, 2 quick pulses |
+| Waymo connected / found it | Both, 2 quick pulses |
 | Selection echo | N short pulses |
 
 The laptop page's **Try each buzz** buttons play each one.
 
 ## The display (for onlookers, never the wearer)
 The laptop page shows:
-- the live camera feed, with boxes: **red STOP** for an obstacle, **green WAYMO** for the target car;
+- the live camera feed, with boxes: **red STOP** for an obstacle, **green** for the target (the
+  Waymo, or the thing being found; dashed green is the object finder's latest box);
 - two wrist icons that light up with every real buzz;
 - one status line, e.g. `Mode: Waymo | Distance: 8.0 m (object) | Obstacle: none | Heard: "waymo"`;
 - in Waymo mode, the simulated ride status: requested, arrived, found, at the door.
@@ -96,8 +113,8 @@ teammate as spotter.
 cd nudge
 npm start
 ```
-Wait for `waymo classifier: ready` and `door handle finder: ready`. The first start downloads the
-handle model (~200 MB) and the classifier's model (~90 MB) into `nudge/models/`.
+Wait for `clip (waymo classifier, second opinions): ready` and `object finder: ready`. The first
+start downloads the object finder (~200 MB) and CLIP (~150 MB) into `nudge/models/`.
 
 **Terminal 2: the https tunnel.** iPhones only allow the camera, GPS, compass and mic on https pages.
 ```
@@ -161,11 +178,21 @@ Each step adds one piece. "✅" is what working looks like.
 - ✅ Ride status "Your Waymo has arrived". Steers toward the beacon (`… m (gps)`).
 - ✅ Details box: `waymo classifier: best NN%`. Ordinary cars stay low; a Waymo goes over 90%.
 - ✅ Waymo in view: 2 quick pulses ("connected"), a green WAYMO box, `… m (object)`.
-- ✅ Within 4 m: `door handle finder: … handle NN%` in the details, then `… m (handle)`.
+- ✅ Within 4 m: `object finder: door handle: … NN%` in the details, then `… m (handle)`.
 - ✅ At the handle: one long buzz, `ARRIVED at the door handle: reach straight out`.
 - No handle found: get side-on to the door, 1–3 m away, with the whole door in view.
 
-### 8. Full run
+### 8. Find a thing (indoors)
+- Put a water bottle on a table 3–5 m away. On the laptop page, type **water bottle** under
+  *Find something* and press Find (or say "find the water bottle").
+- ✅ One echo pulse; status `Mode: find "water bottle"`; search buzz while it's out of view.
+- ✅ Details: `object finder: "water bottle": ~1200 ms · NN%` once it's in view; a dashed green box
+  on the feed; 2 quick pulses ("found it"); steering toward it.
+- ✅ About 1 m away: one long buzz, `ARRIVED: the water bottle is within reach, straight ahead, low…`.
+- ✅ The table under it doesn't trigger STOP. A person stepping in between does.
+- Try something YOLO doesn't know: "keys", "trash can". It still works, just updates slower (~1.2 s).
+
+### 9. Full run
 Wearer blindfolded, cane in hand, spotter alongside, starting 50 m or more away. Choose by button
 press only, follow buzzes only. Note every hesitation or wrong turn.
 
@@ -194,6 +221,10 @@ press only, follow buzzes only. Note every hesitation or wrong turn.
   rarely matter), with 4 false alarms among 654 other cars in testing: mostly other robotaxis with roof
   sensors. Trained on web photos; photos from the venue will make it better (`training/README.md`).
 - **Door handle:** it sometimes picks the charging-port flap. Distances up close are rough (±20%).
+- **Find mode:** in 21 photo tests the double check (object finder + CLIP) accepted 10 of 11 real
+  finds and rejected 9 of 10 false alarms; the one that got through was a plastic container taken
+  for "a water bottle". Things YOLO doesn't know update only every ~1.2 s, so turn slowly. Distance
+  to unknown things assumes they're on the floor.
 - **Voice** needs clean mic pickup; button presses always work.
 - **Compass** is magnetic: steel, magnets and cars nearby can skew it by several degrees.
 
@@ -201,8 +232,8 @@ press only, follow buzzes only. Note every hesitation or wrong turn.
 | File | What it is |
 |---|---|
 | `server.js` | Serves the pages, relays messages, prints a status line every 3 s |
-| `waymo-classifier.js`, `waymo-classifier-worker.js`, `waymo-head.json` | Is this car a Waymo? (CLIP + trained weights), in its own process |
-| `handle-finder.js`, `handle-finder-worker.js` | Door handle detection (Grounding DINO), in its own process |
+| `object-finder.js`, `object-finder-worker.js` | Finds things described in words (door handles, a water bottle): Grounding DINO, in its own process |
+| `clip.js`, `clip-worker.js`, `waymo-head.json` | CLIP, in its own process: the Waymo classifier (with its trained weights) and second opinions for the object finder |
 | `training/` | Collects photos and trains the Waymo classifier; see its README |
 | `public/hands.html` | Laptop page: Joy-Cons, choosing, all guidance logic, the display. `PLACES` is here |
 | `public/eyes.html` | Chest phone: camera + YOLO, GPS, compass, voice |

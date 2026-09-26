@@ -46,6 +46,10 @@
   <button id="stopMode">Stop</button>
 </div>
 <div class="row">
+  Find something: <input id="findText" placeholder="water bottle" style="font-size: 16px; width: 220px">
+  <button id="findGo">Find</button> (anything you can describe: "water bottle", "red mug", "trash can")
+</div>
+<div class="row">
   Strength: <input id="amp" type="range" min="0.1" max="1" step="0.05" value="0.7"> <span id="ampV">0.7</span><br>
   On-target margin: ± <input id="margin" type="range" min="5" max="30" value="12"> <span id="marginV">12</span>°<br>
   GPS arrival radius: <input id="arrive" type="range" min="2" max="20" value="6"> <span id="arriveV">6</span> m<br>
@@ -56,7 +60,7 @@
   <button data-pattern="left">Steer left</button><button data-pattern="right">Steer right</button>
   <button data-pattern="approach">Approaching</button><button data-pattern="arrived">Arrived</button>
   <button data-pattern="obstacle">Obstacle</button><button data-pattern="search">Search</button>
-  <button data-pattern="connected">Waymo connected</button><button data-pattern="echo3">Echo 3</button>
+  <button data-pattern="connected">Waymo connected / found it</button><button data-pattern="echo3">Echo 3</button>
 </div>
 <div class="row">
   Indoor test (no GPS needed): steer to a direction relative to where the chest faces now:
@@ -133,18 +137,97 @@
     arrived: () => both(1, 800),                                    // arrived: one long buzz
     obstacle: () => repeat(3, 180, () => both(1, 100)),             // stop: 3 sharp pulses
     search: () => [["L", 0], ["R", 450], ["L", 900]].forEach(([s, t]) => setTimeout(() => buzz(s, 0.6, 200), t)),
-    connected: () => repeat(2, 180, () => both(1, 80)),             // Waymo connected: 2 quick pulses
+    connected: () => repeat(2, 180, () => both(1, 80)),             // Waymo connected (and "found it"): 2 quick pulses
     echo: (n) => repeat(n, 300, () => both(0.8, 120)),              // selection echo: N short pulses
   };
   document.querySelectorAll("[data-pattern]").forEach((b) => {
     b.onclick = () => (b.dataset.pattern === "echo3" ? PATTERNS.echo(3) : PATTERNS[b.dataset.pattern]());
   });
 
+  // ---- Finding things ("water bottle", "my keys", "trash can") ----
+  // Two detectors look at the same time:
+  // - the server's object finder (Grounding DINO) looks for exactly the words given, ~1.2 s a frame.
+  //   It boxes *something* nearly every time, so a box only counts if CLIP agrees it looks like the
+  //   thing (verified), or YOLO sees the same kind of thing in the same direction;
+  // - if the thing is one of YOLO's 80 classes, the phone's YOLO also reports it ~10 times a second,
+  //   which keeps the steering smooth in between.
+  // Distance: from its usual size (largest side, meters) when we know it, else from where it meets
+  // the floor. Things on a table aren't on the floor, so the sizes matter for tables.
+  const THINGS = [
+    // [words that mean it, YOLO class or null, usual size in m]
+    [["water bottle", "bottle", "water"], "bottle", 0.25],
+    [["mug", "cup", "coffee"], "cup", 0.12],
+    [["phone", "iphone", "cell phone", "mobile"], "cell phone", 0.15],
+    [["backpack", "book bag", "bag"], "backpack", 0.45],
+    [["purse", "handbag"], "handbag", 0.3],
+    [["laptop", "computer"], "laptop", 0.33],
+    [["book"], "book", 0.24],
+    [["remote"], "remote", 0.18],
+    [["keyboard"], "keyboard", 0.44],
+    [["scissors"], "scissors", 0.2],
+    [["umbrella"], "umbrella", 0.9],
+    [["suitcase", "luggage"], "suitcase", 0.6],
+    [["glass", "wine glass"], "wine glass", 0.2],
+    [["bowl"], "bowl", 0.18],
+    [["banana"], "banana", 0.2], [["apple"], "apple", 0.08], [["orange"], "orange", 0.08],
+    [["ball"], "sports ball", 0.22],
+    [["plant"], "potted plant", 0.5],
+    [["chair", "seat"], "chair", 0.9],
+    [["couch", "sofa"], "couch", 0.9],
+    [["bench"], "bench", 1.2],
+    [["tv", "television"], "tv", 0.7],
+    [["fridge", "refrigerator"], "refrigerator", 1.7],
+    [["microwave"], "microwave", 0.5],
+    [["sink"], "sink", 0.6],
+    [["toilet"], "toilet", 0.75],
+    [["bike", "bicycle"], "bicycle", 1.7],
+    [["dog"], "dog", 0.6], [["cat"], "cat", 0.45],
+    [["person", "someone", "friend"], "person", 1.7],
+    [["keys", "key"], null, 0.08],
+    [["trash can", "trash", "garbage", "bin"], null, 0.65],
+    [["door"], null, 2.0],
+    [["wallet"], null, 0.11],
+    [["glasses", "sunglasses"], null, 0.14],
+  ];
+  function findThing(text) {
+    const what = text.trim().toLowerCase().replace(/^(the|a|an|my|some)\s+/, "");
+    if (!what) return;
+    // Longest matching word wins ("water bottle" over "water").
+    let best = null;
+    for (const [words, coco, size] of THINGS) for (const w of words) {
+      if (new RegExp(`\\b${w}\\b`).test(what) && (!best || w.length > best.w.length)) best = { w, coco, size, same: [...words, ...(coco ? [coco] : [])] };
+    }
+    PATTERNS.echo(1);
+    resetGuidance();
+    rideStage = "";
+    mode = { kind: "find", name: `find "${what}"`, what, prompt: `a ${what}.`, coco: best?.coco ?? null, size: best?.size ?? null, same: best?.same ?? [] };
+  }
+  $("findGo").onclick = () => findThing($("findText").value);
+  $("findText").onkeydown = (e) => { if (e.key === "Enter") findThing($("findText").value); };
+  // How far away a box is (box = 0–1 of a w × h frame with this focal length and chest height).
+  const deg = (px, focal) => (Math.atan(px / focal) * 180) / Math.PI;
+  function thingDistance(box, frame, size) {
+    const [x1, y1, x2, y2] = box, bw = (x2 - x1) * frame.w, bh = (y2 - y1) * frame.h;
+    if (size) return (frame.focal * size) / Math.max(bw, bh, 1);
+    const below = Math.min(y2, 1) * frame.h - frame.h / 2; // floor contact, pixels below the middle
+    return below > 5 ? (frame.camH * frame.focal) / below : null;
+  }
+  function thingSeen(box, frame, refHeading, score) {
+    const now = performance.now();
+    const cx = ((box[0] + box[2]) / 2) * frame.w - frame.w / 2, cy = ((box[1] + box[3]) / 2) * frame.h - frame.h / 2;
+    cam = {
+      heading: wrap180(refHeading + deg(cx, frame.focal)),
+      distance: thingDistance(box, frame, mode.size),
+      up: -deg(cy, frame.focal), // + above the chest camera, − below
+      at: now, by: "thing", score,
+    };
+  }
+
   // ---- Choosing where to go ----
   // Button presses: press any Joy-Con button N times; 1.5 s after the last press it counts.
   // 1 = Waymo, 2 = first place, 3 = second place… Confirmation: N short pulses back.
   const CHOICES = [{ name: "Waymo" }, ...PLACES];
-  let mode = null; // { kind: "waymo" | "place" | "test", name, place?, heading? }
+  let mode = null; // { kind: "waymo" | "place" | "find" | "test", name, place?, what?, heading? }
   let heardText = "", heardAt = -Infinity;
   const presses = { count: 0, timer: null, down: new Map() };
   function onButtons(jc, status) {
@@ -175,10 +258,12 @@
   document.querySelectorAll("[data-turn]").forEach((b) => {
     b.onclick = () => { resetGuidance(); mode = { kind: "test", name: `test ${b.textContent}`, heading: wrap180((heading ?? 0) + Number(b.dataset.turn)) }; };
   });
-  // Voice (from the chest phone): "Waymo", or a place's name.
+  // Voice (from the chest phone): "Waymo", a place's name, or "find / get / grab / where's …".
   function onHeard(text) {
     heardText = text; heardAt = performance.now();
     const t = text.toLowerCase();
+    const ask = /\b(?:find|get|grab|fetch|bring me|take me to|where(?:'s| is))\s+(.+)/.exec(t);
+    if (ask && !/way ?mo|way more/.test(t) && !CHOICES.some((c, i) => i > 0 && ask[1].includes(c.name.toLowerCase()))) return findThing(ask[1]);
     const n = /way ?mo|way more/.test(t) ? 1 : CHOICES.findIndex((c, i) => i > 0 && t.includes(c.name.toLowerCase())) + 1;
     if (n > 0) choose(n);
   }
@@ -187,14 +272,17 @@
   let heading = null;              // which way the chest faces, magnetic degrees (iPhone compass)
   let lastEyes = -Infinity;        // performance.now() of the last chest phone message
   let wearer = null, beacon = null;  // { lat, lon, acc, at } (at = laptop time of the fix)
-  let cam = null;                  // Waymo seen by the camera: { heading, distance, at, by, up? }
+  let cam = null;                  // target seen by the camera: { heading, distance, at, by, up? }
+                                   // by: "object" (Waymo car), "handle" (its door handle), "thing" (find mode)
   let lastCar = null;              // { distance, at }, for the door handle's distance
   let obstacle = null;             // { label, distance, at } closest thing in the walking path
   let latestObjects = [];          // for the display
+  let lastFrame = null;            // { w, h, focal, camH } the phone measures boxes in
+  let yoloThing = null;            // { heading, at } last time YOLO saw the kind of thing being found
 
   // ---- Waymo: which car ----
   // While in Waymo mode the phone sends crops of the cars it sees, twice a second, and the server's
-  // classifier (waymo-classifier.js) says how sure it is each one is a Waymo. At WAYMO_SURE or
+  // classifier (clip.js) says how sure it is each one is a Waymo. At WAYMO_SURE or
   // more it counts: the "connected" buzz, and the camera takes over steering from GPS. Several
   // Waymos in view: the one in the beacon's direction.
   const WAYMO_SURE = 0.9;
@@ -223,27 +311,32 @@
     return list.length ? list.reduce((a, b) => (off(b) < off(a) ? b : a)) : null;
   }
 
-  // ---- Waymo: door handle, the last few meters ----
-  // Within HANDLE_RANGE of the car, ask the phone for camera frames, one at a time; the server
-  // finds door handles in each (handle-finder.js, ~1.2 s a frame). In between, the compass keeps
-  // the handle's direction as the wearer turns.
+  // ---- Object finder frames: the Waymo's door handle, or the thing being found ----
+  // Ask the phone for camera frames, one at a time, with what to look for; the server's object
+  // finder (object-finder.js, ~1.2 s a frame) answers with boxes. In between, the compass keeps
+  // the target's direction as the wearer turns.
+  // Waymo: only within HANDLE_RANGE of the car. Find mode: all the time.
   const HANDLE_RANGE = 4;    // m
   const HANDLE_WIDTH = 0.25; // m, roughly; seen at an angle the box is narrower, so distance reads long
-  const handle = { waiting: null, nextId: 0, retryAt: 0, info: "starts within 4 m of the car" };
+  const THING_SURE = 0.25;   // object finder score to count (bottles scored 0.27–0.44 in tests, most things 0.6+)
+  const finder = { waiting: null, nextId: 0, retryAt: 0, info: "idle", box: null };
   setInterval(() => {
     const now = performance.now();
-    const want = mode?.kind === "waymo" && cam && now - cam.at < 4000 && cam.distance != null && cam.distance <= HANDLE_RANGE;
-    if (!want || phoneWs?.readyState !== 1 || now < handle.retryAt || heading === null) return;
-    if (handle.waiting && now - handle.waiting.at < 5000) return; // one at a time; give up on lost ones
+    const nearCar = mode?.kind === "waymo" && cam && now - cam.at < 4000 && cam.distance != null && cam.distance <= HANDLE_RANGE;
+    const prompt = nearCar ? "a car door handle." : mode?.kind === "find" ? mode.prompt : null;
+    if (!prompt || phoneWs?.readyState !== 1 || now < finder.retryAt || heading === null) return;
+    if (finder.waiting && now - finder.waiting.at < 5000) return; // one at a time; give up on lost ones
     // The frame is taken right after this; remember which way the chest faced.
-    handle.waiting = { id: ++handle.nextId, at: now, heading };
-    phoneWs.send(JSON.stringify({ type: "frame-please", to: "eyes", id: handle.nextId }));
+    finder.waiting = { id: ++finder.nextId, at: now, heading, purpose: nearCar ? "handle" : "thing" };
+    const check = nearCar ? undefined : { what: mode.what, same: mode.same };
+    phoneWs.send(JSON.stringify({ type: "frame-please", to: "eyes", id: finder.nextId, prompt, check }));
   }, 100);
-  function onHandleBoxes({ id, boxes, reason, w, h, focal, ms }) {
-    const req = handle.waiting;
+  function onFound({ id, boxes, reason, w, h, focal, ms }) {
+    const req = finder.waiting;
     if (req?.id !== id) return;
-    handle.waiting = null;
-    if (!boxes) { handle.retryAt = performance.now() + 2000; handle.info = reason; return; } // loading or busy
+    finder.waiting = null;
+    if (!boxes) { finder.retryAt = performance.now() + 2000; finder.info = reason; return; } // loading or busy
+    if (req.purpose === "thing") return onThingBoxes(req, boxes, w, h, focal, ms);
     // The model also scores the whole car as "handle"; keep small boxes only, best first.
     const b = boxes.filter((b) => b.x2 - b.x1 < 0.4 * w && b.score >= 0.12).sort((a, b) => b.score - a.score)[0];
     const deg = (px) => (Math.atan(px / focal) * 180) / Math.PI;
@@ -258,7 +351,25 @@
         at: now, by: "handle",
       };
     }
-    handle.info = `${ms} ms · ${b ? `handle ${Math.round(b.score * 100)}%` : "no handle in view"}`;
+    finder.info = `door handle: ${ms} ms · ${b ? `${Math.round(b.score * 100)}%` : "none in view"}`;
+  }
+  // Find mode: the best box that isn't the whole scene; while already steering to one, the one
+  // closest to it (so two bottles don't make it flip between them).
+  function onThingBoxes(req, boxes, w, h, focal, ms) {
+    if (mode?.kind !== "find") return;
+    const frame = { w, h, focal, camH: lastFrame?.camH ?? 1.3 };
+    const now = performance.now();
+    const headingOf = (o) => wrap180(req.heading + deg(((o.box[0] + o.box[2]) / 2 - 0.5) * w, focal));
+    const yoloAgrees = (o) => yoloThing && now - yoloThing.at < 1500 && Math.abs(wrap180(headingOf(o) - yoloThing.heading)) < 10;
+    const ok = boxes.filter((b) => b.score >= THING_SURE && b.x2 - b.x1 < 0.8 * w && b.y2 - b.y1 < 0.9 * h)
+      .map((b) => ({ score: b.score, verified: b.verified, box: [b.x1 / w, b.y1 / h, b.x2 / w, b.y2 / h] }))
+      .filter((o) => o.verified || yoloAgrees(o));
+    const tracking = cam?.by === "thing" && now - cam.at < 3000;
+    const b = ok.length ? ok.reduce((a, c) => (tracking
+      ? (Math.abs(wrap180(headingOf(c) - cam.heading)) < Math.abs(wrap180(headingOf(a) - cam.heading)) ? c : a)
+      : (c.score > a.score ? c : a))) : null;
+    if (b) { thingSeen(b.box, frame, req.heading, b.score); finder.box = { box: b.box, at: now }; }
+    finder.info = `"${mode.what}": ${ms} ms · ${b ? `${Math.round(b.score * 100)}%` : "not in view"}`;
   }
 
   // ---- GPS ----
@@ -340,6 +451,11 @@
       // take over as soon as it recognizes the car.
       if (cam && !connectedBuzzed) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); nextPulse = now + 600; }
     }
+    if (mode.kind === "find") {
+      if (cam && now - cam.at < 3000) { target = cam.heading; distance = cam.distance; by = "thing"; }
+      else waiting = `the ${mode.what}: turn slowly`;
+      if (cam && !connectedBuzzed) { connectedBuzzed = true; PATTERNS.connected(); nextPulse = now + 600; } // found it
+    }
     distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m (${by})`;
     if (target === null) {
       if (now >= nextPulse) { nextPulse = now + 1600; PATTERNS.search(); }
@@ -351,13 +467,15 @@
     // arrived by: getting to the car and then seeing a handle starts the last steps to it.
     if (arrived && arrived !== by) arrived = false;
     if (distance != null && !(mode.kind === "waymo" && by === "gps")) { // Waymo mode only arrives by camera
-      const radius = by === "handle" ? 0.8 : by === "object" ? 1.0 : Number($("arrive").value);
+      // Things: 1 m, about where a table-top thing drops out of the chest camera's view.
+      const radius = by === "handle" ? 0.8 : by === "object" || by === "thing" ? 1.0 : Number($("arrive").value);
       if (!arrived && distance <= radius) { arrived = by; PATTERNS.arrived(); if (mode.kind === "waymo" && by === "handle") rideStage = "door"; }
       else if (arrived && distance > radius + (by === "gps" ? 3 : 0.5)) arrived = false;
       if (arrived) {
         return say(by === "handle" ? `ARRIVED at the door handle: reach straight out` +
           (Math.abs(cam.up) > 8 ? `, ${cam.up < 0 ? "below" : "above"} chest height` : "")
-          : by === "object" ? "AT THE CAR: turn slowly along it to find the door handle" : "ARRIVED");
+          : by === "object" ? "AT THE CAR: turn slowly along it to find the door handle"
+          : by === "thing" ? `ARRIVED: the ${mode.what} is within reach, ${reachWords(wrap180(target - heading), cam.up)}` : "ARRIVED");
       }
     }
 
@@ -367,7 +485,7 @@
     onTarget = Math.abs(err) <= Number($("margin").value) + (onTarget ? 5 : 0);
     if (now < nextPulse) return say(onTarget ? "APPROACHING" : `TURN ${err < 0 ? "LEFT" : "RIGHT"} ${Math.abs(err).toFixed(0)}°`);
     if (onTarget) {
-      const perSec = distance == null ? 1 : by === "handle" ? clamp(5 / distance, 1, 4)
+      const perSec = distance == null ? 1 : by === "handle" || by === "thing" ? clamp(5 / distance, 1, 4)
         : by === "object" ? clamp(15 / distance, 0.7, 4) : clamp(40 / distance, 0.7, 3);
       nextPulse = now + 1000 / perSec;
       PATTERNS.approach();
@@ -378,6 +496,11 @@
     say(`TURN ${err < 0 ? "LEFT" : "RIGHT"} ${Math.abs(err).toFixed(0)}°`);
   }
   setInterval(guideTick, 50);
+  // Where to reach, in words for the display ("a little left, low").
+  function reachWords(err, up) {
+    const side = Math.abs(err) < 8 ? "straight ahead" : `${Math.abs(err) < 25 ? "a little " : ""}${err < 0 ? "left" : "right"}`;
+    return `${side}${up < -25 ? ", low (about waist height)" : up < -8 ? ", a bit below chest height" : up > 8 ? ", above chest height" : ""}`;
+  }
 
   // Status line for onlookers, plus the team's details underneath.
   const RIDE = {
@@ -400,11 +523,11 @@
       `you:     ${pos(wearer)}\nbeacon:  ${pos(beacon)}\n` +
       `camera:  ${latestObjects.map((o) => `${o.label} ${o.distance ? o.distance.toFixed(1) + " m" : ""}`).join(", ") || "nothing"}\n` +
       `waymo classifier: ${waymoBest && now - waymoBest.at < 3000 ? `best ${Math.round(waymoBest.prob * 100)}% (sure at ${WAYMO_SURE * 100}%)` : "—"}\n` +
-      `door handle finder: ${handle.info}`;
+      `object finder: ${finder.info}`;
   }
 
   // ---- Camera feed on the display: small frames from the phone, boxes drawn on top ----
-  // Red: obstacle in the walking path. Green: the Waymo being steered to. Grey: anything else.
+  // Red: obstacle in the walking path. Green: the Waymo / thing being steered to. Grey: anything else.
   const feed = $("feed"), fctx = feed.getContext("2d");
   const feedImg = new Image();
   let feedBoxes = [];
@@ -417,21 +540,38 @@
       fctx.strokeStyle = fctx.fillStyle = b.obstacle ? "#f33" : b.target ? "#3f6" : "#999";
       const x = b.x1 * feed.width, y = b.y1 * feed.height;
       fctx.strokeRect(x, y, (b.x2 - b.x1) * feed.width, (b.y2 - b.y1) * feed.height);
-      fctx.fillText(b.obstacle ? "STOP" : b.target ? "WAYMO" : b.label, x + 4, y + 18);
+      fctx.fillText(b.obstacle ? "STOP" : b.target ? (mode?.kind === "find" ? mode.what.toUpperCase() : "WAYMO") : b.label, x + 4, y + 18);
+    }
+    // The object finder's latest box, while it's recent (it's from a slightly older frame).
+    if (mode?.kind === "find" && finder.box && performance.now() - finder.box.at < 2000) {
+      const [x1, y1, x2, y2] = finder.box.box;
+      fctx.strokeStyle = fctx.fillStyle = "#3f6";
+      fctx.setLineDash([6, 4]);
+      fctx.strokeRect(x1 * feed.width, y1 * feed.height, (x2 - x1) * feed.width, (y2 - y1) * feed.height);
+      fctx.setLineDash([]);
     }
   };
   function onPreview(msg) {
     // Mark the boxes the same way the guidance sees them.
-    feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), target: VEHICLES.includes(b.label) && mode?.kind === "waymo" && cam?.by === "object" && Math.abs(wrap180(heading + b.angle - cam.heading)) < 8 }));
+    feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), target: isTarget(b) }));
     feedImg.src = msg.image;
   }
 
   // ---- Obstacles: always on, in every mode ----
   // Anything in the walking path (within ±20° of straight ahead) closer than the stop distance.
-  // The Waymo being walked to doesn't count.
+  // The target doesn't count, and in find mode neither does anything at or behind it (the table
+  // the bottle is on).
+  function isTarget(o) {
+    if (!cam || heading === null) return false;
+    const lined = Math.abs(wrap180(heading + o.angle - cam.heading)) < 15;
+    if (mode?.kind === "waymo") return lined && VEHICLES.includes(o.label);
+    if (mode?.kind === "find") return lined && o.label === mode.coco;
+    return false;
+  }
   function isObstacle(o) {
     if (o.distance == null || Math.abs(o.angle) > 20 || o.distance > Number($("stopDist").value)) return false;
-    if (mode?.kind === "waymo" && VEHICLES.includes(o.label) && cam && Math.abs(wrap180(heading + o.angle - cam.heading)) < 15) return false;
+    if (isTarget(o)) return false;
+    if (mode?.kind === "find" && cam?.distance != null && o.distance >= cam.distance - 0.3) return false;
     return true;
   }
 
@@ -444,7 +584,7 @@
       try { msg = JSON.parse(e.data); } catch { return; }
       const now = performance.now();
       if (msg.type === "beacon") { beacon = { lat: msg.lat, lon: msg.lon, acc: msg.acc, at: now - (msg.age || 0) }; return; }
-      if (msg.type === "handle") return onHandleBoxes(msg);
+      if (msg.type === "found") return onFound(msg);
       if (msg.type === "preview") return onPreview(msg);
       if (msg.type === "heard") return onHeard(msg.text);
       if (msg.type === "waymo") return onWaymoScores(msg);
@@ -452,6 +592,7 @@
 
       lastEyes = now;
       if (typeof msg.compass === "number") heading = wrap180(msg.compass);
+      if (msg.frame) lastFrame = msg.frame;
       if (msg.gps) wearer = { lat: msg.gps.lat, lon: msg.gps.lon, acc: msg.gps.acc, at: now - (msg.gps.age || 0) };
       if (!msg.objects || heading === null) return; // objects only come when there's a new result
       latestObjects = msg.objects;
@@ -464,6 +605,17 @@
         if (car && !(cam?.by === "handle" && now - cam.at < 4000)) {
           cam = { heading: wrap180(heading + car.angle), distance: car.distance, at: now, by: "object" };
         }
+      }
+      // Find mode, when it's one of YOLO's classes: YOLO's sightings keep the steering smooth
+      // between object finder answers (the one lined up with what we're steering to, else the
+      // most confident).
+      if (mode?.kind === "find" && mode.coco && lastFrame) {
+        const seen = msg.objects.filter((o) => o.label === mode.coco && o.box);
+        const tracking = cam?.by === "thing" && now - cam.at < 3000;
+        const off = (o) => Math.abs(wrap180(heading + o.angle - cam.heading));
+        const o = seen.length ? seen.reduce((a, b) => (tracking ? (off(b) < off(a) ? b : a) : (b.score > a.score ? b : a))) : null;
+        if (o) yoloThing = { heading: wrap180(heading + o.angle), at: now };
+        if (o && (!tracking || off(o) < 20)) thingSeen(o.box, lastFrame, heading, o.score);
       }
       // Closest obstacle in the walking path.
       const obs = msg.objects.filter((o) => o !== car && isObstacle(o)).sort((a, b) => a.distance - b.distance)[0];

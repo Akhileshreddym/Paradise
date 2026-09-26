@@ -1,6 +1,6 @@
 # Training the Waymo classifier
 
-The server's Waymo classifier (`../waymo-classifier.js`) is CLIP image features plus a small
+The server's Waymo classifier (`../clip.js`) is CLIP image features plus a small
 logistic regression. Only the regression is trained; its weights are `../waymo-head.json`. It
 trains in about a minute on a laptop, no GPU.
 
