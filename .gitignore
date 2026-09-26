@@ -3,3 +3,4 @@ paradise/tools/
 paradise/models/
 paradise/training/data/
 .env
+paradise/certs/
