@@ -1,0 +1,214 @@
+<!doctype html>
+<!-- Nudge "eyes": phone page. Finds ArUco markers and sends angle + distance to the laptop. Needs https. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nudge · Eyes</title>
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 0; padding: 12px; background: #111; color: #eee; }
+  button { font-size: 20px; padding: 12px 18px; margin: 4px 0; }
+  input { font-size: 16px; width: 90px; }
+  canvas { width: 100%; height: auto; display: block; background: #000; margin-top: 8px; }
+  #info { font: 700 22px/1.4 monospace; margin-top: 8px; white-space: pre; }
+  #net { font-family: monospace; margin-top: 4px; }
+  .row { margin: 8px 0; }
+</style>
+<!-- js-aruco2: cv.js must load before aruco.js. Dictionary "ARUCO" = Original ArUco. -->
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+<!-- 4x4 markers (chev.me/arucogen's default dictionary), in case markers were made there. -->
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/dictionaries/aruco_4x4_1000.js"></script>
+</head>
+<body>
+<button id="start">Start (camera + GPS + compass)</button>
+<div class="row">
+  Marker type: <select id="dict">
+    <option value="ARUCO">Original ArUco (our marker.html)</option>
+    <option value="ARUCO_4X4_1000">4x4 (chev.me default)</option>
+  </select>
+</div>
+<div class="row">
+  Marker size (m): <input id="size" type="number" step="0.001" value="0.18">
+  Focal (px): <input id="focal" type="number" step="1" value="720">
+  <button id="calib">Calibrate: marker exactly 1.00 m away</button>
+</div>
+<div id="net" style="font: 700 20px/1.6 monospace; padding: 4px 10px; border-radius: 6px; background: #a00">LAPTOP: NOT CONNECTED</div>
+<div id="sensors" style="font-family: monospace">GPS: off · compass: off</div>
+<div id="info">tap Start</div>
+<canvas id="view"></canvas>
+<video id="video" playsinline muted style="display:none"></video>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const video = $("video"), view = $("view"), ctx = view.getContext("2d", { willReadFrequently: true });
+  // Remember settings on this phone (browser storage can be blocked; that's fine).
+  try {
+    if (localStorage.getItem("focal960")) $("focal").value = localStorage.getItem("focal960");
+    if (localStorage.getItem("size")) $("size").value = localStorage.getItem("size");
+    if (localStorage.getItem("dict")) $("dict").value = localStorage.getItem("dict");
+  } catch {}
+  const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  $("focal").onchange = () => save("focal960", $("focal").value); // focal is in 960 px detection pixels
+  $("size").onchange = () => save("size", $("size").value);
+
+  let detector = new AR.Detector({ dictionaryName: $("dict").value });
+  $("dict").onchange = () => {
+    detector = new AR.Detector({ dictionaryName: $("dict").value });
+    save("dict", $("dict").value);
+  };
+
+  // ---- Link to the laptop ----
+  let ws = null;
+  function connect() {
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=eyes`);
+    ws.onclose = () => setTimeout(connect, 1000);
+  }
+  connect();
+
+  // ---- Compass: which way the rear camera faces, degrees clockwise from (magnetic) north ----
+  let compass = null;
+  async function startCompass() {
+    const D = window.DeviceOrientationEvent;
+    if (!D) return;
+    // iPhone only shows this permission prompt when it's called straight from a tap.
+    if (typeof D.requestPermission === "function") {
+      try { if ((await D.requestPermission()) !== "granted") return; } catch { return; }
+    }
+    // iPhone: webkitCompassHeading is the rear camera's direction when the phone is upright.
+    window.addEventListener("deviceorientation", (e) => {
+      if (typeof e.webkitCompassHeading === "number") compass = e.webkitCompassHeading;
+    });
+    // Android: absolute orientation, converted to the rear camera's direction.
+    window.addEventListener("deviceorientationabsolute", (e) => {
+      if (e.alpha !== null) compass = rearCameraHeading(e.alpha, e.beta, e.gamma);
+    });
+  }
+  // W3C DeviceOrientation spec's formula: horizontal direction of the vector out of the back
+  // of the phone, from alpha/beta/gamma (alpha counter-clockwise from north).
+  function rearCameraHeading(alpha, beta, gamma) {
+    const r = Math.PI / 180, a = alpha * r, b = beta * r, g = gamma * r;
+    const east = -Math.cos(a) * Math.sin(g) - Math.sin(a) * Math.sin(b) * Math.cos(g);
+    const north = -Math.sin(a) * Math.sin(g) + Math.cos(a) * Math.sin(b) * Math.cos(g);
+    return ((Math.atan2(east, north) * 180) / Math.PI + 360) % 360;
+  }
+
+  // ---- GPS ----
+  let gps = null, gpsError = "";
+  function startGps() {
+    if (!navigator.geolocation) { gpsError = "not available"; return; }
+    navigator.geolocation.watchPosition(
+      (p) => { gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, time: p.timestamp }; gpsError = ""; },
+      (err) => (gpsError = err.message),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
+    );
+  }
+  setInterval(() => {
+    const g = gps ? `±${gps.acc.toFixed(0)} m` : gpsError || "waiting…";
+    $("sensors").textContent = `GPS: ${g} · compass: ${compass === null ? "—" : compass.toFixed(0) + "°"}`;
+  }, 500);
+
+  // ---- Camera ----
+  let latest = [];      // markers seen in the most recent frame
+  let lastSides = {};   // id → side length in px, for calibration
+  $("start").onclick = async () => {
+    $("start").style.display = "none";
+    await startCompass(); // first, while the tap still counts on iPhone
+    startGps();
+    try { await navigator.wakeLock?.request("screen"); } catch {} // keep the screen on
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      video.srcObject = stream;
+      await video.play();
+      requestAnimationFrame(loop);
+    } catch (err) {
+      // GPS mode still works without the camera.
+      $("info").textContent = `camera error: ${err.name}\n${err.message}\n(the page must be https)`;
+    }
+  };
+
+  // Detect on a 960 px frame (longest side): 1.5x the range of 640 px, still fast enough on a phone.
+  let lastDetect = 0;
+  function loop(now) {
+    requestAnimationFrame(loop);
+    if (now - lastDetect < 66 || !video.videoWidth) return; // ~15 detections a second
+    lastDetect = now;
+    const k = 960 / Math.max(video.videoWidth, video.videoHeight);
+    const W = Math.round(video.videoWidth * k), H = Math.round(video.videoHeight * k);
+    if (view.width !== W) { view.width = W; view.height = H; }
+    ctx.drawImage(video, 0, 0, W, H);
+    const found = detector.detect(ctx.getImageData(0, 0, W, H));
+    latest = found.map((m) => measure(m, W));
+    draw(found);
+    $("info").textContent = latest.length
+      ? latest.map((m) => `id ${m.id}  ${m.angle >= 0 ? "+" : ""}${m.angle.toFixed(0)}°  ${m.distance.toFixed(2)} m`).join("\n")
+      : "no marker";
+  }
+
+  // Angle: how far left/right of center (− left, + right). Distance: from apparent size.
+  function measure(m, W) {
+    const f = Number($("focal").value), size = Number($("size").value);
+    const cx = m.corners.reduce((s, c) => s + c.x, 0) / 4;
+    let side = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = m.corners[i], b = m.corners[(i + 1) % 4];
+      side += Math.hypot(a.x - b.x, a.y - b.y) / 4;
+    }
+    lastSides[m.id] = side;
+    return {
+      id: m.id,
+      angle: (Math.atan((cx - W / 2) / f) * 180) / Math.PI,
+      distance: (f * size) / side,
+    };
+  }
+
+  function draw(found) {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#0f0";
+    ctx.fillStyle = "#0f0";
+    ctx.font = "bold 20px monospace";
+    for (const m of found) {
+      ctx.beginPath();
+      m.corners.forEach((c, i) => (i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y)));
+      ctx.closePath();
+      ctx.stroke();
+      ctx.fillText(`id ${m.id}`, m.corners[0].x, m.corners[0].y - 6);
+    }
+    ctx.strokeStyle = "rgba(255,255,255,.5)";
+    ctx.beginPath(); ctx.moveTo(view.width / 2, 0); ctx.lineTo(view.width / 2, view.height); ctx.stroke();
+  }
+
+  // Calibration: with a marker exactly 1.00 m away, focal = side × 1.00 / size.
+  $("calib").onclick = () => {
+    const ids = Object.keys(lastSides);
+    if (!latest.length || !ids.length) { alert("Point the camera at a marker first."); return; }
+    const side = lastSides[latest[0].id];
+    const f = Math.round((side * 1.0) / Number($("size").value));
+    $("focal").value = f;
+    save("focal960", f);
+  };
+
+  // ---- Send ~10 updates a second ----
+  // Big green/red badge: is the laptop actually getting our updates?
+  let seq = 0;
+  setInterval(() => {
+    const up = ws?.readyState === 1;
+    $("net").style.background = up ? "#070" : "#a00";
+    $("net").textContent = up ? `LAPTOP: CONNECTED · ${seq} updates sent` : "LAPTOP: NOT CONNECTED (reconnecting…)";
+  }, 500);
+  setInterval(() => {
+    if (ws?.readyState !== 1) return;
+    ws.send(JSON.stringify({
+      type: "eyes",
+      seq: ++seq,
+      markers: latest,
+      compass,
+      gps: gps && { lat: gps.lat, lon: gps.lon, acc: gps.acc, age: Math.max(0, Date.now() - gps.time) },
+    }));
+  }, 100);
+</script>
+</body>
+</html>

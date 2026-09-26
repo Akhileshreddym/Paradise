@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- Nudge markers: drawn by the same library and dictionary the phone detects with, so they always match. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nudge · Markers</title>
+<style>
+  body { font: 18px system-ui, sans-serif; margin: 0; padding: 12px; background: #fff; color: #000; text-align: center; }
+  button { font-size: 20px; padding: 10px 16px; margin: 4px; }
+  .marker { width: min(90vw, 70vh); margin: 12px auto 4px; }
+  .marker svg { width: 100%; height: auto; display: block; }
+  .label { font: 700 22px system-ui, sans-serif; }
+  .page { break-after: page; padding-top: 10mm; }
+  @media print {
+    .controls { display: none; }
+    .marker { width: 160mm; }
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+</head>
+<body>
+<div class="controls">
+  <button data-id="1">1 · Door</button>
+  <button data-id="2">2 · Chair</button>
+  <button data-id="3">3 · Car</button>
+  <button id="all">All three (for printing)</button>
+  <p>On a screen: turn the brightness all the way up and avoid glare. Printing: matte paper, keep the white border,
+  then measure the black square in meters and enter it on the phone.</p>
+</div>
+<div id="out"></div>
+
+<script>
+  const NAMES = { 1: "Door", 2: "Chair", 3: "Car" };
+  const dict = new AR.Dictionary("ARUCO"); // Original ArUco, same as eyes.html
+  const out = document.getElementById("out");
+
+  function page(id) {
+    return `<div class="page"><div class="marker">${dict.generateSVG(id)}</div>` +
+      `<div class="label">${id} · ${NAMES[id]}</div></div>`;
+  }
+  function show(ids) { out.innerHTML = ids.map(page).join(""); }
+
+  document.querySelectorAll("[data-id]").forEach((b) => (b.onclick = () => show([Number(b.dataset.id)])));
+  document.getElementById("all").onclick = () => show([1, 2, 3]);
+  show([2]);
+</script>
+</body>
+</html>

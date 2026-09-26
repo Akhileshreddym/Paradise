@@ -1,0 +1,60 @@
+<!doctype html>
+<!-- Nudge "beacon": the phone you walk to. Shares its GPS location with the laptop. Needs https. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nudge · Beacon</title>
+<style>
+  body { font: 18px system-ui, sans-serif; margin: 0; padding: 16px; background: #111; color: #eee; }
+  button { font-size: 22px; padding: 14px 20px; }
+  #info { font: 700 22px/1.5 monospace; margin-top: 12px; white-space: pre; }
+  #net { font-family: monospace; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>Beacon</h1>
+<p>Put this phone where the wearer should walk to (outdoors, open sky works best).
+Keep the screen on and this page open.</p>
+<button id="start">Start sharing location</button>
+<div id="net">link: connecting…</div>
+<div id="info"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  let ws = null;
+  function connect() {
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=beacon`);
+    ws.onopen = () => ($("net").textContent = "link: connected");
+    ws.onclose = () => { $("net").textContent = "link: reconnecting…"; setTimeout(connect, 1000); };
+  }
+  connect();
+
+  let gps = null; // { lat, lon, acc, time }
+  $("start").onclick = async () => {
+    if (!navigator.geolocation) { $("info").textContent = "No GPS in this browser."; return; }
+    $("start").style.display = "none";
+    $("info").textContent = "waiting for GPS…";
+    navigator.geolocation.watchPosition(
+      (p) => { gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, time: p.timestamp }; },
+      (err) => ($("info").textContent = `GPS error: ${err.message}`),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
+    );
+    try { await navigator.wakeLock?.request("screen"); } catch {} // keep the screen on
+  };
+
+  // Send the latest fix once a second, with its age so the laptop knows how fresh it is.
+  setInterval(() => {
+    if (!gps) return;
+    const age = Math.max(0, Date.now() - gps.time);
+    $("info").textContent =
+      `${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)}\naccuracy ±${gps.acc.toFixed(0)} m\n${(age / 1000).toFixed(0)} s old` +
+      (gps.acc > 100 ? "\n\nAccuracy is very low. iPhone: Settings → Privacy & Security →\nLocation Services → Safari Websites → turn on Precise Location." : "");
+    if (ws?.readyState === 1) {
+      ws.send(JSON.stringify({ type: "beacon", lat: gps.lat, lon: gps.lon, acc: gps.acc, age }));
+    }
+  }, 1000);
+</script>
+</body>
+</html>
