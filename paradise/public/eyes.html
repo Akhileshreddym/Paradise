@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Nudge "eyes": chest phone page. Finds objects with YOLO (cars, people, bikes…) and sends their
+<!-- Paradise "eyes": chest phone page. Finds objects with YOLO (cars, people, bikes…) and sends their
      angle + distance to the laptop, with GPS, compass (the wearer's heading), tilt and what the mic
      hears. Also sends small camera frames (for the laptop's display and the server's depth model)
      and, when asked, bigger ones for the server's object finder (door handles, whatever's being
@@ -8,8 +8,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nudge · Eyes</title>
-<link rel="stylesheet" href="nudge.css">
+<title>Paradise · Eyes</title>
+<link rel="stylesheet" href="paradise.css">
 <style>
   .stack { display: grid; gap: 16px; }
   .intro p { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
@@ -22,7 +22,7 @@
 <body>
 <div class="wrap narrow">
   <header class="top">
-    <div class="brand"><span class="mark"></span>Nudge <span class="sub">Eyes</span></div>
+    <div class="brand"><span class="mark"></span>Paradise <span class="sub">Eyes</span></div>
   </header>
   <div class="stack">
     <section class="card intro" id="intro">
@@ -67,8 +67,10 @@
   }
   // Which sections are open is remembered on this phone.
   document.querySelectorAll("details[data-key]").forEach((d) => {
-    try { d.open = localStorage.getItem(`nudge.open.${d.dataset.key}`) === "1"; } catch {}
-    d.addEventListener("toggle", () => { try { localStorage.setItem(`nudge.open.${d.dataset.key}`, d.open ? "1" : ""); } catch {} });
+    try { d.open = localStorage.getItem(`paradise.open.${d.dataset.key}`) === "1"; } catch {}
+    d.addEventListener("toggle", () => {
+      try { localStorage.setItem(`paradise.open.${d.dataset.key}`, d.open ? "1" : ""); } catch {}
+    });
   });
   // Remember settings on this phone (browser storage can be blocked; that's fine).
   try {

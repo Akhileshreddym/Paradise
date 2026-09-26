@@ -8,7 +8,7 @@ _mkdir(new URL("./data/", import.meta.url), { recursive: true });
 process.chdir(_path(new URL("./data/", import.meta.url)));
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
-const UA = { "User-Agent": "NudgeTraining/0.1 (hackathon research)" };
+const UA = { "User-Agent": "ParadiseTraining/0.1 (hackathon research)" };
 const { pos, neg } = JSON.parse(readFileSync("lists.json"));
 const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
 const jobs = [...pos.map((x) => ({ ...x, cls: "pos" })), ...shuffle(neg).slice(0, 700).map((x) => ({ ...x, cls: "neg" }))];

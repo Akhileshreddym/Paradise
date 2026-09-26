@@ -1,13 +1,13 @@
 <!doctype html>
-<!-- Nudge "hands": laptop page. Drives the two wrist Joy-Cons (WebHID, so Chrome or Edge only),
+<!-- Paradise "hands": laptop page. Drives the two wrist Joy-Cons (WebHID, so Chrome or Edge only),
      runs all the guidance logic, and is the onlooker display: camera feed, what the wearer is being
      told, which wrist is buzzing. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nudge</title>
-<link rel="stylesheet" href="nudge.css">
+<title>Paradise</title>
+<link rel="stylesheet" href="paradise.css">
 <style>
   /* Display: camera on the left, what's happening on the right. */
   .stage { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; }
@@ -89,7 +89,7 @@
 <div class="wrap">
 
 <header class="top">
-  <div class="brand"><span class="mark"></span>Nudge</div>
+  <div class="brand"><span class="mark"></span>Paradise</div>
   <div class="pills">
     <span class="pill" id="phonePill">Phone</span>
     <span class="pill" id="joyLPill">Joy-Con L</span>
@@ -198,8 +198,10 @@
   for (const id of ["amp", "margin", "arrive", "stopDist"]) $(id).oninput = () => ($(id + "V").textContent = $(id).value);
   // Which sections are open is remembered in this browser.
   document.querySelectorAll("details[data-key]").forEach((d) => {
-    try { d.open = localStorage.getItem(`nudge.open.${d.dataset.key}`) === "1"; } catch {}
-    d.addEventListener("toggle", () => { try { localStorage.setItem(`nudge.open.${d.dataset.key}`, d.open ? "1" : ""); } catch {} });
+    try { d.open = localStorage.getItem(`paradise.open.${d.dataset.key}`) === "1"; } catch {}
+    d.addEventListener("toggle", () => {
+      try { localStorage.setItem(`paradise.open.${d.dataset.key}`, d.open ? "1" : ""); } catch {}
+    });
   });
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const wrap180 = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
@@ -236,12 +238,12 @@
       const side = jc instanceof JoyConLeft || pid === 0x2006 ? "L" : jc instanceof JoyConRight || pid === 0x2007 ? "R" : null;
       // The library tries every HID device it's allowed to see; only touch Joy-Cons, once each
       // (marked before the await, so a slow Bluetooth setup isn't started twice).
-      if (!side || jc.nudgeSide) continue;
-      jc.nudgeSide = side;
+      if (!side || jc.paradiseSide) continue;
+      jc.paradiseSide = side;
       try {
         await jc.enableVibration();
       } catch (err) {
-        jc.nudgeSide = null; // try again next second
+        jc.paradiseSide = null; // try again next second
         console.warn(`Joy-Con ${side}: couldn't turn on rumble`, err);
         continue;
       }
@@ -446,11 +448,11 @@
     b.onclick = () => startMode({ kind: "test", name: `test ${b.textContent}`, turn: Number(b.dataset.turn) }, 0);
   });
   // Voice (from the chest phone). Only commands count, not everything said nearby: after an
-  // optional "please" / "hey Nudge" / "can you", it has to start with one:
+  // optional "please" / "hey Paradise" / "can you", it has to start with one:
   //   "Waymo", "take me to the Waymo"          → Waymo
   //   "test north", "go to test north"         → that place
   //   "find / get / grab / bring me / where's / where are … <thing>" → find it
-  const POLITE = /^(?:please|hey|hi|ok|okay|nudge|can you|could you|would you|will you)\s+/;
+  const POLITE = /^(?:please|hey|hi|ok|okay|paradise|can you|could you|would you|will you)\s+/;
   const VERB = /^(?:(?:take|bring|get) me to|go to|guide me to|walk me to|navigate to|help me find|look for|find|grab|fetch|bring me|bring|get|where's|wheres|where is|where are|where did i put)\s+/;
   const NOT_A_THING = /^(?:it|that|this|there|here|them|going|started|ready|back|in|on|off|out|up|over|away|lost)\b/;
   function onHeard(text) {

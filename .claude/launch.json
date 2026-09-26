@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "paradise-test", "runtimeExecutable": "node", "runtimeArgs": ["paradise/server.js"], "env": { "PORT": "8081" }, "port": 8081 }
+  ]
+}

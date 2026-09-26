@@ -14,7 +14,7 @@ that light, plus the other cars parked there. They can be phone photos; put them
 below and re-run steps 3–5.
 
 ## Steps
-Run from `nudge/training/`. Everything goes into `data/` (git-ignored).
+Run from `paradise/training/`. Everything goes into `data/` (git-ignored).
 
 ```
 node collect.mjs    # 1. list photo URLs (Commons + Openverse)             → data/lists.json

@@ -1,4 +1,4 @@
-// Nudge object detector: YOLOv10n (80 COCO classes: car, person, chair, …) in a worker, so a
+// Paradise object detector: YOLOv10n (80 COCO classes: car, person, chair, …) in a worker, so a
 // slow phone never stalls the camera preview or the 10-a-second link to the laptop (which gives
 // up after half a second of silence).
 //

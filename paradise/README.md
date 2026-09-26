@@ -1,4 +1,4 @@
-# Nudge
+# Paradise
 
 Touch-only guidance for blind and DeafBlind people. Two Joy-Cons, one on each wrist, buzz to steer
 the wearer: turn left, turn right, walk, stop, you're there. Nothing is ever said out loud or shown
@@ -65,7 +65,7 @@ A mode stays on until another is chosen (or **Stop** is pressed on the laptop pa
   place**, and so on. The Joy-Cons buzz N times back to confirm (the *echo*). A number with no
   choice behind it gets the search buzz and changes nothing.
 - **Voice.** The chest phone listens all the time. Only commands count: what's said has to *start*
-  with one (after an optional "please", "hey Nudge" or "can you"), so people talking nearby don't
+  with one (after an optional "please", "hey Paradise" or "can you"), so people talking nearby don't
   change anything. Full grammar in [7.10](#710-choosing-buttons-voice-typing).
 - **Typing** (for the team): the laptop page's **Find something** box.
 
@@ -219,7 +219,7 @@ water bottle indoors.
 | cloudflared | 2026.9.3 | Mac | The https tunnel. `brew install cloudflared` (Windows: `winget install --id Cloudflare.cloudflared`). |
 | Safari | Current iOS | Phones | Nothing to install. |
 | Loaded by the pages at runtime | `joy-con-webhid` 0.11.0 (laptop page); `onnxruntime-web` 1.22.0 and the YOLOv10n model, `@mediapipe/tasks-vision` 1.0.1 and its hand model (phone) | CDNs: jsDelivr, Hugging Face, Google (`storage.googleapis.com`, the hand model) | Cached by the browser after the first load (~50 MB on the phone: ~30 MB for YOLO, ~20 MB for hand tracking). |
-| Downloaded by the server on first start | Grounding DINO tiny, 8-bit (204 MB); CLIP ViT-B/32, 8-bit (vision 89 MB + text 65 MB); Depth Anything V2 small, 8-bit (27 MB) | Mac, into `nudge/models/` | ~390 MB once, then loaded from disk. |
+| Downloaded by the server on first start | Grounding DINO tiny, 8-bit (204 MB); CLIP ViT-B/32, 8-bit (vision 89 MB + text 65 MB); Depth Anything V2 small, 8-bit (27 MB) | Mac, into `paradise/models/` | ~390 MB once, then loaded from disk. |
 
 No accounts, no API keys, nothing paid.
 
@@ -230,11 +230,11 @@ No accounts, no API keys, nothing paid.
 ### 4.1 Get the code
 
 ```
-git clone https://github.com/Akhileshreddym/Haptik.git
-cd Haptik/nudge
+git clone https://github.com/Akhileshreddym/Paradise.git
+cd Paradise/paradise
 ```
 
-Everything lives in the `nudge/` folder. Run every command below from there.
+Everything lives in the `paradise/` folder. Run every command below from there.
 
 ### 4.2 Install
 
@@ -266,8 +266,8 @@ object finder: ready
 ```
 
 Wait for all three **ready** lines (in any order). On a slow connection the first download can
-take a while (at 0.3 MB/s, ~20 minutes); after that every start loads from `nudge/models/` in a few
-seconds. The
+take a while (at 0.3 MB/s, ~20 minutes); after that every start loads from `paradise/models/` in a
+few seconds. The
 models are git-ignored, so each machine downloads its own copy.
 
 Leave this terminal running. Every 3 s, while a phone is connected, it prints a status line (see
@@ -277,7 +277,7 @@ Leave this terminal running. Every 3 s, while a phone is connected, it prints a 
   another terminal?` Stop the other one, or run on another port: `PORT=8081 npm start` (then use
   that port in the URLs below).
 - **Edited a page** (`public/…`)? Just reload it in the browser; pages are never cached.
-  **Edited a server file** (`*.js` in `nudge/`) or retrained? Stop with Ctrl + C and `npm start`
+  **Edited a server file** (`*.js` in `paradise/`) or retrained? Stop with Ctrl + C and `npm start`
   again.
 
 ### 4.4 Pair the Joy-Cons with the Mac (once)
@@ -977,7 +977,7 @@ photos in Chrome on the Mac (MediaPipe found the fingertips and knuckles).
 **Voice.** The phone recognizes English (US) speech continuously and sends every final phrase to the
 laptop, which decides:
 
-1. Lower-case it, drop punctuation, and drop leading `please`, `hey`, `hi`, `ok`/`okay`, `nudge`,
+1. Lower-case it, drop punctuation, and drop leading `please`, `hey`, `hi`, `ok`/`okay`, `paradise`,
    `can you`, `could you`, `would you`, `will you`.
 2. A leading command verb is noted and removed: `take me to`, `bring me to`, `get me to`, `go to`,
    `guide me to`, `walk me to`, `navigate to`, `help me find`, `look for`, `find`, `grab`, `fetch`,
@@ -994,7 +994,7 @@ laptop, which decides:
 |---|---|
 | "Waymo." / "Take me to the Waymo, please" / "Bring me the Waymo" | Waymo |
 | "Test north" / "Go to test north" | That place |
-| "Find my keys." / "Where are my keys?" / "Hey Nudge, find my phone." / "Get me a water bottle please" / "Where’s the trash can?" | Find: keys / keys / phone / water bottle / trash can |
+| "Find my keys." / "Where are my keys?" / "Hey Paradise, find my phone." / "Get me a water bottle please" / "Where’s the trash can?" | Find: keys / keys / phone / water bottle / trash can |
 | "Let's get started" / "That's way more fun" / "I love Waymo" / "I can't get there" / "Get going" | Nothing (not commands) |
 
 **Typing:** the **Find something** box goes through the same cleanup, then find mode.
@@ -1092,7 +1092,7 @@ All in `public/hands.html` unless noted. Pages: edit and reload. Server files: r
 | `DECLINATION` | top of the script | −6.8 (Miami) | Magnetic declination, east positive ([4.12](#412-set-your-magnetic-declination)) |
 | Buzz strength / margin / GPS radius / stop distance | sliders under **Settings** on the page | 0.7 / ±12° / 6 m / 1.5 m | See [6.1](#61-the-laptop-page) |
 | Obstacles from depth | switch under **Settings** on the page | on | See [7.5](#75-obstacles) |
-| Colours, fonts, spacing | `public/nudge.css` (shared by the three pages) | light and dark | The page look; each page adds its own layout in its `<style>` |
+| Colours, fonts, spacing | `public/paradise.css` (shared by the three pages) | light and dark | The page look; each page adds its own layout in its `<style>` |
 | `PATTERNS` | "Buzz vocabulary" | see [What each buzz means](#what-each-buzz-means) | Each pattern: `buzz(side, strength, ms)`, `both(...)`, `repeat(n, gap, fn)` |
 | `LO_HZ`, `HI_HZ` | Joy-Cons section | 160, 320 Hz | Rumble frequencies of normal buzzes (Joy-Con ranges: 41–626 Hz low, 82–1253 Hz high) |
 | `HIGH`, `LOW` | Joy-Cons section | 320 + 900 Hz, 80 + 160 Hz | The up / down buzzes while reaching (and the touch buzz: `HIGH`) |
@@ -1113,7 +1113,7 @@ All in `public/hands.html` unless noted. Pages: edit and reload. Server files: r
 | `HEIGHTS` | `public/eyes.html` | car 1.6 m, … | Real heights for distance by size |
 | Focal / person height / chest height | phone page | 720 / 1.70 / 1.30 | [4.9](#49-calibrate-distances-once-per-phone) |
 | `OTHERS` | `clip-worker.js` | ~80 labels | Alternatives CLIP compares a found thing against |
-| `waymo-head.json` | `nudge/` | trained weights | Retrain: [9](#9-the-waymo-classifier) |
+| `waymo-head.json` | `paradise/` | trained weights | Retrain: [9](#9-the-waymo-classifier) |
 | `PORT` | environment | 8080 | `PORT=8081 npm start` |
 
 Adding a place, a thing or a voice word is a one-line change. Adding a new buzz pattern: add it to
@@ -1159,7 +1159,7 @@ Then restart `npm start`. To start from scratch (download the web photos again),
 
 | Problem | Fix |
 |---|---|
-| `npm start`: *Could not read package.json* | Run it from `nudge/`, not the repo root. |
+| `npm start`: *Could not read package.json* | Run it from `paradise/`, not the repo root. |
 | `Port 8080 is already in use` | `npm start` is already running in another terminal: stop it, or `PORT=8081 npm start`. |
 | Models download slowly on first start | They're ~390 MB; wait for all three **ready** lines. After that they load from disk. |
 | Tunnel logs `Failed to dial a quic connection` | Use `--protocol http2`. Still stuck: put the Mac on a phone hotspot. |
@@ -1278,7 +1278,7 @@ Say these out loud when presenting:
 ## 14. Files
 
 ```
-nudge/
+paradise/
 ├── README.md                  this file
 ├── package.json               npm start → node server.js; dependencies: ws, @huggingface/transformers
 ├── server.js                  web server (public/ only), WebSocket relay, passes frames/crops to the models, status line
@@ -1294,7 +1294,7 @@ nudge/
 │   ├── hands.html             laptop page: Joy-Cons, choosing, voice commands, all guidance (incl. the last reach), the display
 │   ├── eyes.html              chest phone: camera + YOLO, hand tracking (MediaPipe), compass, tilt, GPS, voice, frames and crops
 │   ├── yolo-worker.js         YOLOv10n in a web worker on the phone (WebGPU or WebAssembly)
-│   ├── nudge.css              the look shared by the three pages (light and dark follow the device)
+│   ├── paradise.css           the look shared by the three pages (light and dark follow the device)
 │   └── beacon.html            beacon phone: shares its GPS location
 └── training/                  the Waymo classifier's training pipeline (see training/README.md)
     ├── README.md

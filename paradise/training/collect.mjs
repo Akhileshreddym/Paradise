@@ -7,7 +7,7 @@ import { fileURLToPath as _path } from "node:url";
 _mkdir(new URL("./data/", import.meta.url), { recursive: true });
 process.chdir(_path(new URL("./data/", import.meta.url)));
 import { writeFileSync } from "node:fs";
-const UA = { "User-Agent": "NudgeTraining/0.1 (hackathon research)" };
+const UA = { "User-Agent": "ParadiseTraining/0.1 (hackathon research)" };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Be polite: a pause before every call, and back off when rate-limited.
 async function getJson(url) {

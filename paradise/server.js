@@ -1,4 +1,4 @@
-// Nudge server: serves the pages in public/, relays WebSocket messages between them
+// Paradise server: serves the pages in public/, relays WebSocket messages between them
 // (phone "eyes" page → laptop "hands" page), recognizes Waymos in car crops (clip.js), finds
 // things described in words (a door handle, a water bottle) in camera frames (object-finder.js,
 // with a second opinion from clip.js), and finds obstacles in the preview frames (depth.js).
