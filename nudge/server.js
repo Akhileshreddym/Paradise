@@ -1,7 +1,7 @@
 // Nudge server: serves the pages in public/, relays WebSocket messages between them
-// (phone "eyes" page → laptop "hands" page), recognizes Waymos in car crops (clip.js) and finds
+// (phone "eyes" page → laptop "hands" page), recognizes Waymos in car crops (clip.js), finds
 // things described in words (a door handle, a water bottle) in camera frames (object-finder.js,
-// with a second opinion from clip.js).
+// with a second opinion from clip.js), and finds obstacles in the preview frames (depth.js).
 //
 //   npm install
 //   npm start
@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { finder, findObjects } from "./object-finder.js";
 import { clip, classifyCars, checkBoxes } from "./clip.js";
+import { depth, findHazards } from "./depth.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 const ROOT = fileURLToPath(new URL("./public/", import.meta.url));
@@ -48,8 +49,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 // Every message from one client goes to all the others, except messages with a "to" field,
-// which only go to pages with that role, or to this server ("to": "server": camera frames and
-// car crops).
+// which only go to pages with that role, or to this server ("to": "server": camera frames, car
+// crops, preview frames).
 const wss = new WebSocketServer({ server, path: "/ws" });
 const latest = { eyes: null, beacon: null, objects: [] }; // for the status line below
 wss.on("connection", (ws, req) => {
@@ -63,7 +64,8 @@ wss.on("connection", (ws, req) => {
     try { msg = JSON.parse(data.toString()); } catch {}
     if (msg?.to === "server") {
       // Anything can arrive here (the tunnel is public): a bad message is logged, never fatal.
-      const job = msg.type === "frame" ? onFrame(msg) : msg.type === "cars" ? onCars(msg) : null;
+      const job = msg.type === "frame" ? onFrame(msg) : msg.type === "cars" ? onCars(msg)
+        : msg.type === "preview" ? onPreview(msg, data) : null;
       job?.catch((err) => console.log(`bad ${msg.type} message: ${err.message}`));
       return;
     }
@@ -113,6 +115,20 @@ async function onCars({ cars, compass }) {
   for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
 }
 
+// A preview frame from the phone (4 a second): on to the laptop page for its display, then (unless
+// the depth model is still busy with the last one) obstacles in the walking path, for the laptop page.
+async function onPreview(msg, raw) {
+  const pages = [...wss.clients].filter((c) => c.role === "hands" && c.readyState === 1);
+  for (const client of pages) client.send(raw);
+  if (!pages.length || !msg.cam || typeof msg.image !== "string") return;
+  const t0 = Date.now();
+  const result = await findHazards(msg.image, msg.cam);
+  if (typeof result === "string") return; // loading or busy: the next frame is a quarter of a second away
+  latest.depth = { ...result, at: Date.now() };
+  const reply = JSON.stringify({ type: "depth", ...result, ms: Date.now() - t0 });
+  for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
+}
+
 // Every 3 s, print what the phones are sending (accuracy and distance only, no coordinates),
 // so problems show up in this terminal.
 const rad = (d) => (d * Math.PI) / 180;
@@ -137,6 +153,9 @@ function printStatus() {
   const fd = latest.found;
   if (clip.status !== "ready") line += ` | clip ${clip.status}`;
   else if (recent(latest.waymo)) line += ` | waymo ${Math.round(latest.waymo.best * 100)}%`;
+  const dz = latest.depth;
+  if (depth.status !== "ready") line += ` | depth ${depth.status}`;
+  else if (recent(dz)) line += ` | depth ${!dz.ok ? dz.why : dz.found.length ? dz.found.map((z) => `${z.kind} ${z.distance} m`).join(", ") : "clear"}`;
   if (finder.status !== "ready") line += ` | object finder ${finder.status}`;
   else if (recent(fd)) line += ` | finding "${fd.prompt}" best ${Math.round(fd.best * 100)}% (${fd.ms} ms)`;
   console.log(line);

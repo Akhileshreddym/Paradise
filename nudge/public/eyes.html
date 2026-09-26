@@ -1,8 +1,9 @@
 <!doctype html>
 <!-- Nudge "eyes": chest phone page. Finds objects with YOLO (cars, people, bikes…) and sends their
-     angle + distance to the laptop, with GPS, compass (the wearer's heading) and what the mic
-     hears. Also sends small camera frames for the laptop's display, and, up close to the car,
-     bigger ones for the server's object finder (door handles, whatever's being looked for). Needs https. -->
+     angle + distance to the laptop, with GPS, compass (the wearer's heading), tilt and what the mic
+     hears. Also sends small camera frames (for the laptop's display and the server's depth model)
+     and, when asked, bigger ones for the server's object finder (door handles, whatever's being
+     looked for). At the target, it tracks the wearer's hand (MediaPipe). Needs https. -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -27,6 +28,7 @@
 <div class="row">Chest height (m): <input id="camH" type="number" step="0.05" value="1.30"></div>
 <div id="yoloInfo" style="font-family: monospace">objects: starts with Start</div>
 <div id="voiceInfo" style="font-family: monospace">voice: starts with Start</div>
+<div id="handsInfo" style="font-family: monospace">hands: starts with Start</div>
 <div id="net" style="font: 700 20px/1.6 monospace; padding: 4px 10px; border-radius: 6px; background: #a00">LAPTOP: NOT CONNECTED</div>
 <div id="sensors" style="font-family: monospace">GPS: off · compass: off</div>
 <div id="info">tap Start</div>
@@ -61,6 +63,7 @@
       try { msg = JSON.parse(e.data); } catch { return; }
       if (msg.type === "frame-please") sendFrame(msg.id, msg.prompt, msg.check);
       if (msg.type === "want-cars") wantCarsUntil = performance.now() + 3000;
+      if (msg.type === "want-hands") wantHandsUntil = performance.now() + 3000;
     };
   }
   connect();
@@ -70,6 +73,13 @@
   // heading that stopped updating.
   let compass = null, compassAt = -Infinity;
   const compassNow = () => (performance.now() - compassAt < 1000 ? compass : null);
+  // ---- Tilt: how far the camera looks down from level, in degrees ----
+  // Distances measured from where things meet the floor depend on it (a chest mount is rarely
+  // perfectly level). Upright in portrait, beta is 90° when level; tipping the top away from the
+  // wearer points the camera down. Unknown or stale: level.
+  let tilt = 0, tiltAt = -Infinity;
+  const tiltNow = () => (performance.now() - tiltAt < 1000 ? tilt : 0);
+  const tiltRad = () => (tiltNow() * Math.PI) / 180;
   async function startCompass() {
     const D = window.DeviceOrientationEvent;
     if (!D) return;
@@ -80,6 +90,7 @@
     // iPhone: webkitCompassHeading is the rear camera's direction when the phone is upright.
     window.addEventListener("deviceorientation", (e) => {
       if (typeof e.webkitCompassHeading === "number") { compass = e.webkitCompassHeading; compassAt = performance.now(); }
+      if (typeof e.beta === "number") { tilt = Math.max(-30, Math.min(60, 90 - e.beta)); tiltAt = performance.now(); }
     });
     // Android: absolute orientation, converted to the rear camera's direction.
     window.addEventListener("deviceorientationabsolute", (e) => {
@@ -109,7 +120,8 @@
   setInterval(() => {
     const g = gps ? `±${gps.acc.toFixed(0)} m` : gpsError || "waiting…";
     const c = compassNow();
-    $("sensors").textContent = `GPS: ${g} · compass: ${c !== null ? c.toFixed(0) + "°" : compass === null ? "—" : "not updating"}`;
+    $("sensors").textContent = `GPS: ${g} · compass: ${c !== null ? c.toFixed(0) + "°" : compass === null ? "—" : "not updating"}` +
+      ` · tilt: ${performance.now() - tiltAt < 1000 ? `${tilt.toFixed(0)}° ${tilt >= 0 ? "down" : "up"}` : "—"}`;
   }, 500);
 
   // ---- Camera ----
@@ -130,6 +142,7 @@
       video.srcObject = stream;
       await video.play();
       requestAnimationFrame(loop);
+      startHands(); // in the background: it's only needed at the target
     } catch (err) {
       // GPS mode still works without the camera.
       $("info").textContent = `camera error: ${err.name}\n${err.message}\n(the page must be https)`;
@@ -156,6 +169,7 @@
     if (view.width !== W) { view.width = W; view.height = H; }
     ctx.drawImage(video, 0, 0, W, H);
     sendFrameToYolo(W);
+    if (hands.tracker && performance.now() < wantHandsUntil && now - hands.last > 80) trackHands(now); // every other frame: ~7 a second
     draw();
     const sign = (a) => `${a >= 0 ? "+" : ""}${a.toFixed(0)}°`;
     const lines = performance.now() - yolo.at < 1500 ? yolo.objects.map((o) =>
@@ -173,6 +187,10 @@
         ctx.fillText(`${b.label} ${Math.round(b.score * 100)}%`, b.x1 + 4, b.y1 + 22);
       }
     }
+    if (performance.now() - hands.at < 300) { // fingertips being tracked
+      ctx.fillStyle = "#f0f";
+      for (const h of hands.list) { ctx.beginPath(); ctx.arc(h.tip[0] * view.width, h.tip[1] * view.height, 10, 0, 7); ctx.fill(); }
+    }
     ctx.strokeStyle = "rgba(255,255,255,.5)";
     ctx.beginPath(); ctx.moveTo(view.width / 2, 0); ctx.lineTo(view.width / 2, view.height); ctx.stroke();
   }
@@ -182,9 +200,9 @@
   // - Size: from the box's height and the thing's usual height (only for classes listed; a box's
   //   height barely changes with viewing angle). Up close the box runs off the frame and this
   //   reads long.
-  // - Ground: where the box meets the ground, for anything standing on it. With the camera at
-  //   chest height looking level, a point y pixels below the middle of the frame is
-  //   chest height × focal / y away. A box cut off at the bottom is at least this close.
+  // - Ground: where the box meets the ground, for anything standing on it. From chest height h,
+  //   a point y pixels below the middle of the frame is h ÷ tan(tilt + atan(y ÷ focal)) away
+  //   (with the camera level: h × focal ÷ y). A box cut off at the bottom is at least this close.
   const HEIGHTS = { car: 1.6, truck: 3.0, bus: 3.2, person: 1.7, chair: 0.9, bench: 0.8, "fire hydrant": 0.7 };
   const yolo = { worker: null, busy: false, scale: 1, boxes: [], objects: [], at: -Infinity, fresh: false };
   function startYolo() {
@@ -228,7 +246,8 @@
   function distanceOf(b, f, H) {
     const bySize = HEIGHTS[b.label] ? (f * HEIGHTS[b.label]) / (b.y2 - b.y1) : Infinity;
     const below = Math.min(b.y2, H) - H / 2; // box bottom, pixels below the middle
-    const byGround = below > 5 ? (camH() * f) / below : Infinity;
+    const down = tiltRad() + Math.atan(below / f); // angle below level to where it meets the floor
+    const byGround = down > 0.02 ? camH() / Math.tan(down) : Infinity;
     const d = Math.min(bySize, byGround);
     return Number.isFinite(d) ? Math.round(d * 100) / 100 : null;
   }
@@ -287,8 +306,9 @@
     }));
   }, 500);
 
-  // ---- Small camera frames for the laptop's display, 4 a second ----
-  // With the latest object boxes (0–1 of the frame) so the display can mark obstacles.
+  // ---- Small camera frames, 4 a second: the server runs the depth model on them, then passes them
+  // on to the laptop's display. With the latest object boxes (0–1 of the frame) so the display can
+  // mark obstacles, and what the depth model needs: focal length in these pixels, chest height, tilt.
   const mini = document.createElement("canvas");
   setInterval(() => {
     if (!video.videoWidth || ws?.readyState !== 1) return;
@@ -298,14 +318,66 @@
     mini.getContext("2d").drawImage(video, 0, 0, mini.width, mini.height);
     const recent = performance.now() - yolo.at < 1000;
     ws.send(JSON.stringify({
-      type: "preview", to: "hands",
+      type: "preview", to: "server",
       image: mini.toDataURL("image/jpeg", 0.6),
+      cam: { focal: (focal() * 360) / 960, camH: camH(), pitch: tiltNow() },
       boxes: recent ? yolo.boxes.map((b, i) => ({
         label: b.label, angle: yolo.objects[i].angle, distance: yolo.objects[i].distance,
         x1: b.x1 / view.width, y1: b.y1 / view.height, x2: b.x2 / view.width, y2: b.y2 / view.height,
       })) : [],
     }));
   }, 250);
+
+  // ---- Hands: MediaPipe hand tracking, for the last reach ----
+  // At the door handle / the thing, the laptop asks (want-hands) and this finds the wearer's hand
+  // in the camera view ~7 times a second: where the fingertips are (0–1 of the frame), and how
+  // wide the knuckles look (960 px frame pixels), which says how far away the hand is.
+  const MEDIAPIPE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1";
+  const HAND_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+  const hands = { tracker: null, list: [], at: -Infinity, last: 0 };
+  let wantHandsUntil = -Infinity;
+  async function startHands() {
+    $("handsInfo").textContent = "hands: loading (about 20 MB the first time)…";
+    try {
+      const { FilesetResolver, HandLandmarker } = await import(`${MEDIAPIPE}/vision_bundle.mjs`);
+      const files = await FilesetResolver.forVisionTasks(`${MEDIAPIPE}/wasm`);
+      let lastErr, tracker = null;
+      for (const delegate of ["GPU", "CPU"]) {
+        try {
+          tracker = await HandLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: HAND_MODEL, delegate }, runningMode: "VIDEO", numHands: 2 });
+          hands.delegate = delegate;
+          break;
+        } catch (err) { lastErr = err; }
+      }
+      if (!tracker) throw lastErr;
+      // The first run sets up the GPU and freezes the page for a few seconds: get it over with now,
+      // at the start, not at the door.
+      const warm = document.createElement("canvas");
+      warm.width = warm.height = 64;
+      tracker.detectForVideo(warm, performance.now());
+      hands.tracker = tracker;
+      $("handsInfo").textContent = `hands: ready (${hands.delegate})`;
+    } catch (err) {
+      $("handsInfo").textContent = `hands: failed to load (${err?.message || err}); no reach guidance`;
+    }
+  }
+  function trackHands(now) {
+    hands.last = now;
+    const t0 = performance.now();
+    let found;
+    try { found = hands.tracker.detectForVideo(video, now); } catch { return; }
+    const r3 = (v) => Math.round(v * 1000) / 1000;
+    hands.list = found.landmarks.map((L) => {
+      const mid = (ids) => [r3(ids.reduce((s, i) => s + L[i].x, 0) / ids.length), r3(ids.reduce((s, i) => s + L[i].y, 0) / ids.length)];
+      return {
+        tip: mid([8, 12]), // index and middle fingertips: what touches first
+        palm: mid([0, 5, 9, 13, 17]),
+        width: Math.round(Math.hypot((L[5].x - L[17].x) * view.width, (L[5].y - L[17].y) * view.height)), // index to little-finger knuckle
+      };
+    });
+    hands.at = performance.now();
+    $("handsInfo").textContent = `hands: ${hands.list.length} in view · ${(hands.at - t0).toFixed(0)} ms`;
+  }
 
   // ---- Voice: "Waymo", a place's name, or "find the water bottle". The phone never speaks back. ----
   // Listens all the time; the laptop decides whether what it heard means anything.
@@ -348,8 +420,10 @@
       // Only when there's a new result: the laptop turns each one into a heading once, and a
       // repeat would be read against wherever the wearer faces by then.
       objects: yolo.fresh ? ((yolo.fresh = false), yolo.objects) : undefined,
-      // What the boxes above are measured in: frame size, focal length, chest height.
-      frame: view.width ? { w: view.width, h: view.height, focal: focal(), camH: camH() } : undefined,
+      // What the boxes above are measured in: frame size, focal length, chest height, tilt.
+      frame: view.width ? { w: view.width, h: view.height, focal: focal(), camH: camH(), pitch: tiltNow() } : undefined,
+      // While the hand is being tracked (at the target): [] means tracking, but no hand in view.
+      hands: performance.now() - hands.at < 300 ? hands.list : undefined,
       compass: compassNow(),
       gps: gps && { lat: gps.lat, lon: gps.lon, acc: gps.acc, age: Math.max(0, Date.now() - gps.time) },
     }));
