@@ -4,7 +4,7 @@
   "description": "Touch-only navigation: Joy-Cons buzz to guide you to a target a chest-mounted phone camera finds.",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node --env-file-if-exists=.env server.js"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

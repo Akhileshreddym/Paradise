@@ -55,6 +55,16 @@
   .ride li { padding-top: 10px; border-top: 3px solid var(--line); font-size: 13px; color: var(--muted); }
   .ride li.done { border-color: var(--accent); color: var(--text); }
 
+  /* Find mode: the room scan, one photo per stop round a circle (top = where the scan started),
+     the stop being looked at, and the photo the AI picked. */
+  .scan .ring { position: relative; height: 250px; margin-top: 10px; }
+  .scan .ring img, .scan .ring .slot { position: absolute; width: 44px; aspect-ratio: 9 / 16; transform: translate(-50%, -50%); border-radius: 8px; border: 2px solid var(--line); object-fit: cover; background: var(--line); }
+  .scan .ring .slot.now { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .scan .ring img.pick { border-color: var(--violet); box-shadow: 0 0 0 4px color-mix(in srgb, var(--violet) 35%, transparent); }
+  .scan .hub { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 40%; text-align: center; white-space: pre-line; font-size: 14px; font-weight: 600; }
+  .scan .ai { margin-top: 8px; font-size: 14px; color: var(--muted); }
+  .scan .ai b { color: var(--violet); }
+
   .controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 20px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   #choices { display: contents; }
@@ -115,7 +125,7 @@
       <div class="wrist" id="wristR"><b>R</b><span>right wrist</span></div>
     </div>
     <div class="stats">
-      <div class="card stat"><div class="label">Mode</div><div class="v" id="modeV">Off</div></div>
+      <div class="card stat"><div class="label">Mode</div><div class="v" id="modeV">Off</div><div class="s" id="modeS"></div></div>
       <div class="card stat"><div class="label">Distance</div><div class="v" id="distV">—</div><div class="s" id="distS"></div></div>
       <div class="card stat" id="obsCard"><div class="label">Obstacle</div><div class="v" id="obsV">None</div><div class="s" id="obsS"></div></div>
     </div>
@@ -123,6 +133,11 @@
       <div class="label">Waymo ride</div>
       <div class="now" id="ride"></div>
       <ol id="rideSteps"><li>Requested</li><li>Arrived</li><li>Found by the camera</li><li>At the door</li></ol>
+    </section>
+    <section class="card scan" id="scanCard" hidden>
+      <div class="label">Room scan</div>
+      <div class="ring" id="ring"><div class="hub" id="ringHub"></div></div>
+      <div class="ai"><b id="aiPick"></b><span id="aiWhy"></span></div>
     </section>
   </div>
 </main>
@@ -151,6 +166,8 @@
       <div class="setting"><label for="arrive">GPS arrival radius</label><input id="arrive" type="range" min="2" max="20" value="6"><span class="val"><span id="arriveV">6</span> m</span></div>
       <div class="setting"><label for="stopDist">Obstacle stop distance</label><input id="stopDist" type="range" min="0.5" max="3" step="0.1" value="1.5"><span class="val"><span id="stopDistV">1.5</span> m</span></div>
       <label class="toggle"><span>Obstacles from depth<small>Walls, poles, doors, boxes: anything close in the walking path</small></span><input type="checkbox" id="depthOn" class="switch" checked></label>
+      <label class="toggle"><span>Ask the AI where to look<small>Find mode: only after a full turn finds nothing, at most 3 times a search. Sends that turn's small photos to Google Gemini</small></span><input type="checkbox" id="aiOn" class="switch" checked></label>
+      <label class="toggle"><span>Follow walking routes<small>Along sidewalks and footpaths to a place or the Waymo, turning at corners (off: a straight line). Routes © OpenStreetMap contributors</small></span><input type="checkbox" id="routeOn" class="switch" checked></label>
     </div>
   </details>
   <details class="card" data-key="testing">
@@ -420,6 +437,7 @@
     mode = m;
     showChoice();
     rideStage = m.kind === "waymo" ? "requested" : "";
+    Object.assign(task, { at: m.kind === "test" ? 0 : performance.now(), done: 0 });
     PATTERNS.echo(echo);
     nextPulse = echoUntil = performance.now() + echo * 300 + 400;
   }
@@ -529,7 +547,7 @@
   const HANDLE_RANGE = 4;    // m
   const HANDLE_WIDTH = 0.25; // m, roughly; seen at an angle the box is narrower, so distance reads long
   const THING_SURE = 0.25;   // object finder score to count (bottles scored 0.27–0.44 in tests, most things 0.6+)
-  const finder = { waiting: null, nextId: 0, retryAt: 0, info: "idle", box: null };
+  const finder = { waiting: null, nextId: 0, answered: 0, retryAt: 0, info: "idle", box: null }; // answered: id of the last frame it looked at
   setInterval(() => {
     const now = performance.now();
     // Near the car: the car (or its handle) seen lately, or we're standing at it.
@@ -553,6 +571,7 @@
     // Busy (still on an earlier frame, e.g. right after a mode change): again shortly. Loading or
     // failed: every 2 s.
     if (!boxes) { finder.retryAt = performance.now() + (reason === "busy" ? 500 : 2000); finder.info = reason; return; }
+    finder.answered = id;
     if (req.purpose === "thing") return onThingBoxes(req, boxes, w, h, focal, ms, note);
     // The model also scores the whole car as "handle"; keep small boxes only, best first.
     const b = boxes.filter((b) => b.x2 - b.x1 < 0.4 * w && b.score >= 0.12).sort((a, b) => b.score - a.score)[0];
@@ -590,6 +609,81 @@
     finder.info = `"${mode.what}": ${ms} ms · ${b ? `${Math.round(b.score * 100)}%` : "not in view"}${note ? ` (${note})` : ""}`;
   }
 
+  // ---- Find mode: scanning the room, and asking the AI where to look next ----
+  // Not in view: the wrists turn the wearer round a full circle, a stop at a time (turn pulses until
+  // lined up, then quiet: hold still while the detectors look), keeping each stop's photo. Found at
+  // any stop: steered to it as usual. Nothing all the way round: the photos go to the AI (ai.js on
+  // the server: Gemini), which says where it can see it, or the best place to walk to and look. The
+  // wearer is walked that way (obstacle stops as always) until something's in the way or they've
+  // gone about as far as the AI guessed, then turns round again. The AI only picks where to go:
+  // "found it" still takes the phone's and the laptop's own detectors. At most AI_CALLS a search.
+  const SCAN_STOPS = 10;                  // 36° apart; the camera sees ~41° across, so they overlap a little
+  const SCAN_LINED = 10;                  // ° from a stop: close enough, hold still
+  const LOOK_MIN = 800, LOOK_MAX = 4000;  // ms at a stop: until the object finder has answered for a frame taken there
+  const AI_CALLS = 3;                     // per search, at most
+  const WALK_SPEED = 0.5;                 // m/s, walking slowly behind the buzzes: how long to keep going toward the AI's pick
+  let scan = null;       // { start, i, phase: "turn" | "look" | "ask" | "done", at, lookId, shots: [{ rel, heading, image, w, focal }], why? }
+  let shownScan = null;  // the scan on the display (stays there once it's over)
+  let explore = null;    // { heading, target, until }: walking to the AI's pick
+  let lastShot = null;   // { image, w, h, focal, at }: the latest preview frame, for the scan's photos
+  const aiAsk = { calls: 0, nextId: 0, waiting: null, pick: null, info: "not asked yet" }; // calls: this search
+  function newScan(now) {
+    scan = shownScan = { start: heading, i: 0, phase: "turn", at: now, lookId: 0, shots: [] };
+  }
+  function scanTick(now, say) {
+    const s = scan, n = `${Math.min(s.i + 1, SCAN_STOPS)} of ${SCAN_STOPS}`;
+    if (s.phase === "done") return say(`NOT FOUND: ${s.why}`);
+    if (s.phase === "ask") {
+      if (now - s.at > 25000) giveUp("not anywhere around you (the AI didn't answer)");
+      return say("THINKING: not anywhere around you; asking the AI where to look");
+    }
+    const err = wrap180(s.start + (s.i * 360) / SCAN_STOPS - heading);
+    if (s.phase === "turn") {
+      if (Math.abs(err) > SCAN_LINED) {
+        if (now >= nextPulse) { nextPulse = now + 400; PATTERNS[err < 0 ? "left" : "right"](); }
+        return say(`SCANNING: turn ${err < 0 ? "left" : "right"} ${Math.abs(err).toFixed(0)}° (stop ${n})`);
+      }
+      Object.assign(s, { phase: "look", at: now, lookId: finder.nextId });
+    }
+    // Holding still until the object finder has answered for a frame taken here (YOLO looks too).
+    if (!(finder.answered > s.lookId && now - s.at >= LOOK_MIN) && now - s.at < LOOK_MAX) return say(`SCANNING: hold still, looking (stop ${n})`);
+    if (lastShot?.focal && now - lastShot.at < 1000) s.shots.push({ rel: (s.i * 360) / SCAN_STOPS, heading, image: lastShot.image, w: lastShot.w, focal: lastShot.focal });
+    Object.assign(s, { phase: "turn", i: s.i + 1 });
+    if (s.i < SCAN_STOPS) return say(`SCANNING: next stop (${s.i + 1} of ${SCAN_STOPS})`);
+    askAi(now);
+    return say(scan.phase === "ask" ? "THINKING: not anywhere around you; asking the AI where to look" : `NOT FOUND: ${scan.why}`);
+  }
+  function askAi(now) {
+    const s = scan;
+    if (!$("aiOn").checked) return giveUp("not anywhere around you (asking the AI is switched off)");
+    if (aiAsk.calls >= AI_CALLS) return giveUp(`not anywhere around you, after asking the AI ${AI_CALLS} times`);
+    if (!s.shots.length || phoneWs?.readyState !== 1) return giveUp("not anywhere around you");
+    aiAsk.calls++;
+    aiAsk.waiting = { id: ++aiAsk.nextId, shots: s.shots, mode, scan: s };
+    aiAsk.info = `asking (call ${aiAsk.calls} of ${AI_CALLS} this search)…`;
+    Object.assign(s, { phase: "ask", at: now });
+    phoneWs.send(JSON.stringify({ type: "ask-ai", to: "server", id: aiAsk.nextId, what: mode.what, shots: s.shots.map(({ rel, image }) => ({ rel, image })) }));
+  }
+  // Nothing more to try: the search buzz once, then quiet (the wearer can choose again).
+  function giveUp(why) {
+    Object.assign(scan, { phase: "done", why });
+    PATTERNS.search();
+  }
+  function onAi({ id, answer, reason }) {
+    const req = aiAsk.waiting;
+    if (req?.id !== id) return;
+    aiAsk.waiting = null;
+    if (req.mode !== mode || scan !== req.scan || scan.phase !== "ask") return;
+    const shot = answer && req.shots.find((s) => s.rel === answer.rel);
+    if (!shot) { aiAsk.info = reason || "no usable answer"; return giveUp(`not anywhere around you (AI: ${aiAsk.info})`); }
+    // Where across that photo → which way that is: the heading the photo was taken at + its angle in it.
+    const target = wrap180(shot.heading + deg((answer.x / 1000 - 0.5) * shot.w, shot.focal));
+    aiAsk.pick = { ...answer, scan };
+    aiAsk.info = `"${answer.target}"${answer.visible ? " (sees it)" : ""} · ${(answer.ms / 1000).toFixed(1)} s · ${answer.tokens} tokens · call ${aiAsk.calls} of ${AI_CALLS}`;
+    explore = { heading: target, target: answer.target, until: performance.now() + (clamp(answer.distance_m ?? 3, 1, 8) / WALK_SPEED) * 1000 + 3000 };
+    scan = null;
+  }
+
   // ---- GPS ----
   function distanceM(a, b) { // haversine
     const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
@@ -623,11 +717,95 @@
     return mode.spot;
   }
 
+  // ---- Walking route (OpenStreetMap) ----
+  // A straight line to a place or the Waymo walks the wearer across streets, into buildings and
+  // over medians. Instead: a walking route from OpenStreetMap's foot router (sidewalks, footpaths,
+  // crossings), followed by steering toward a point a little further along it, or to the next
+  // corner first, so the wearer walks to the corner and turns there instead of cutting across.
+  // Free, no key; it's a shared public server, so ask only for a new target or when off the route.
+  // No route (offline, nothing walkable): the straight line, as before.
+  const ROUTER = "https://routing.openstreetmap.de/routed-foot/route/v1/driving/";
+  const ROUTE_AHEAD = 12;    // m along the route to steer toward (GPS wanders ±5 m or so)
+  const ROUTE_CORNER = 35;   // ° a bend this sharp is a corner: walk to it, then turn
+  const ROUTE_NEAR = 6;      // m from a corner: close enough, turn now
+  const ROUTE_OFF = 30;      // m from the route: off it, ask for a new one from here
+  const ROUTE_EVERY = 15000; // ms between asks, at most
+  let route = null;          // { to, pts: [{ lat, lon }], seg: segment the wearer is on, off: m from the route }
+  const routeAsk = { at: -Infinity, busy: false, info: "—" };
+  async function askRoute(from, to) {
+    Object.assign(routeAsk, { at: performance.now(), busy: true, info: "asking OpenStreetMap…" });
+    try {
+      const r = await fetch(`${ROUTER}${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`);
+      const j = await r.json();
+      if (j.code !== "Ok" || !j.routes?.length) throw new Error(j.message || j.code || `HTTP ${r.status}`);
+      // The router starts and ends on the nearest path; the wearer and the target may be off it
+      // (a building, a car in a parking lot), so the route runs from them and to it.
+      const pts = [{ lat: from.lat, lon: from.lon }, ...j.routes[0].geometry.coordinates.map(([lon, lat]) => ({ lat, lon })), { lat: to.lat, lon: to.lon }];
+      route = { to: { lat: to.lat, lon: to.lon }, pts, seg: 0 };
+      routeAsk.info = `${Math.round(j.routes[0].distance)} m walk, ${pts.length} points`;
+    } catch (err) {
+      route = null;
+      routeAsk.info = `no route (${err.message}): straight line`;
+    }
+    routeAsk.busy = false;
+  }
+  // Direction (magnetic) and distance along the route to a spot; null without a GPS fix or a route
+  // (the caller then goes straight).
+  function routeTo(spot, now) {
+    if (!$("routeOn").checked || !fresh(wearer, now) || !spot) return null;
+    const stale = !route || distanceM(route.to, spot) > 20; // a new target, or the Waymo moved
+    if (!stale) route.pts[route.pts.length - 1] = { lat: spot.lat, lon: spot.lon }; // the beacon's latest fix
+    const aim = stale ? null : routeAim(route, wearer);
+    const off = aim && aim.off > Math.max(ROUTE_OFF, wearer.acc);
+    if ((stale || off) && !routeAsk.busy && now - routeAsk.at > ROUTE_EVERY) askRoute(wearer, spot);
+    if (!aim) return null;
+    route.off = aim.off; // for the details box
+    // Off the route: keep steering back onto it until the new one comes.
+    return { heading: wrap180((Math.atan2(aim.x, aim.y) * 180) / Math.PI - DECLINATION), distance: aim.left, route: true };
+  }
+  // Where the wearer is on the route, and where to steer: meters east (x) and north (y) of them,
+  // flat-earth around the wearer (plenty for a walk).
+  function routeAim(r, me) {
+    const kx = 111320 * Math.cos(rad(me.lat)), ky = 110540;
+    const P = r.pts.map((p) => [(p.lon - me.lon) * kx, (p.lat - me.lat) * ky]);
+    // The nearest point on the route: on the segment the wearer was on, or up to 80 m past its end
+    // (so a route that doubles back near itself doesn't skip ahead).
+    let best = { d: Infinity, i: r.seg, t: 0 };
+    for (let i = r.seg, along = 0; i < P.length - 1 && along < 80; i++) {
+      const [ax, ay] = P[i], dx = P[i + 1][0] - ax, dy = P[i + 1][1] - ay, len2 = dx * dx + dy * dy;
+      const t = len2 ? clamp(-(ax * dx + ay * dy) / len2, 0, 1) : 0;
+      const d = Math.hypot(ax + t * dx, ay + t * dy);
+      if (d < best.d) best = { d, i, t };
+      if (i > r.seg) along += Math.sqrt(len2);
+    }
+    r.seg = best.i;
+    const dir = (a, b) => (Math.atan2(b[0] - a[0], b[1] - a[1]) * 180) / Math.PI;
+    const isCorner = (j) => j < P.length - 1 && Math.hypot(P[j][0] - P[j - 1][0], P[j][1] - P[j - 1][1]) > 0.5 &&
+      Math.hypot(P[j + 1][0] - P[j][0], P[j + 1][1] - P[j][1]) > 0.5 && Math.abs(wrap180(dir(P[j], P[j + 1]) - dir(P[j - 1], P[j]))) > ROUTE_CORNER;
+    // From there, ROUTE_AHEAD m along, stopping at a corner that's still more than ROUTE_NEAR away.
+    const { i, t } = best;
+    let x = P[i][0] + t * (P[i + 1][0] - P[i][0]), y = P[i][1] + t * (P[i + 1][1] - P[i][1]);
+    let budget = ROUTE_AHEAD, aim = null, left = best.d;
+    for (let j = i + 1; j < P.length; j++) {
+      const len = Math.hypot(P[j][0] - x, P[j][1] - y);
+      if (!aim && len >= budget) aim = [x + ((P[j][0] - x) * budget) / len, y + ((P[j][1] - y) * budget) / len];
+      else if (!aim) {
+        budget -= len;
+        if (isCorner(j) && Math.hypot(P[j][0], P[j][1]) > ROUTE_NEAR) aim = P[j];
+      }
+      left += len; [x, y] = P[j];
+    }
+    aim ??= P[P.length - 1];
+    return { x: aim[0], y: aim[1], off: best.d, left };
+  }
+
   // ---- Guidance: every 50 ms ----
   let onTarget = false, arrived = false, nextPulse = 0, connectedBuzzed = false, obstacleNext = 0, echoUntil = 0;
   let rideStage = "", distanceShown = "—", distanceBy = "";
   function resetGuidance() {
-    cam = null; waymoSeen = null; yoloThing = null; lastCar = null;
+    cam = null; waymoSeen = null; yoloThing = null; lastCar = null; route = null; routeAsk.at = -Infinity;
+    scan = shownScan = explore = null;
+    Object.assign(aiAsk, { calls: 0, waiting: null, pick: null });
     onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—"; distanceBy = ""; blockedRuns = 0;
     Object.assign(reach, { view: null, touched: false });
     Object.assign(finder, { waiting: null, retryAt: 0, info: "idle", box: null });
@@ -650,46 +828,59 @@
       return say(phoneOk ? "NO COMPASS from the chest phone (allow motion access)" : "NO SIGNAL from the chest phone");
     }
 
+    // Where to? A camera target counts while it's recent, or for as long as we've arrived at it.
+    const camTarget = (ms) => cam && (now - cam.at < ms || arrived === cam.by);
+
     // Obstacle close ahead: stop, overriding everything else, for as long as it's there. Not while
     // reaching for the handle / the thing: it's right in front, and so is the wearer's own arm.
+    // Not while turning on the spot to look round the room (find mode, nothing seen, not walking to
+    // the AI's pick), either: there's nothing to walk into, and standing in front of a table mustn't
+    // stop the looking.
     const reaching = arrived === "handle" || arrived === "thing";
-    if (obs && !reaching) {
+    const scanning = mode.kind === "find" && !camTarget(3000) && !(explore && now < explore.until);
+    if (obs && !reaching && !scanning) {
+      explore = null; // walking to the AI's pick and something's in the way: likely there; look round again
       if (now >= obstacleNext) { obstacleNext = now + 1200; PATTERNS.obstacle(); }
       nextPulse = now + 400;
       return say(`STOP: ${obs.label}${obs.distance != null ? ` ${obs.distance.toFixed(1)} m` : ""} ahead`);
     }
 
-    // Where to? A camera target counts while it's recent, or for as long as we've arrived at it.
-    const camTarget = (ms) => cam && (now - cam.at < ms || arrived === cam.by);
-    let target = null, distance = null, by = null, waiting = "";
+    let target = null, distance = null, by = null, waiting = "", onRoute = false;
     if (mode.kind === "test") {
       if (mode.heading === undefined) mode.heading = wrap180(heading + mode.turn);
       target = mode.heading; by = "test";
     }
     if (mode.kind === "place") {
-      const g = gpsTo(placeSpot(now), now);
-      if (g) { target = g.heading; distance = g.distance; by = "gps"; }
+      const spot = placeSpot(now), g = routeTo(spot, now) || gpsTo(spot, now);
+      if (g) { target = g.heading; distance = g.distance; by = "gps"; onRoute = !!g.route; }
       else waiting = "waiting for GPS";
     }
     if (mode.kind === "waymo") {
       if (fresh(beacon, now) && rideStage === "requested") rideStage = "here";
-      // Camera first (car, then door handle), else GPS toward the beacon.
-      const g = fresh(beacon, now) ? gpsTo(beacon, now) : null;
+      // Camera first (car, then door handle), else GPS toward the beacon, along the walking route.
+      const g = fresh(beacon, now) ? routeTo(beacon, now) || gpsTo(beacon, now) : null;
       if (camTarget(2000)) { target = cam.heading; distance = cam.distance; by = cam.by; }
-      else if (g) { target = g.heading; distance = g.distance; by = "gps"; }
+      else if (g) { target = g.heading; distance = g.distance; by = "gps"; onRoute = !!g.route; }
       else waiting = fresh(beacon, now) ? "waiting for GPS" : "waiting for the Waymo's location (beacon)";
       // Near the beacon but no Waymo confirmed yet: keep heading for the beacon; the camera will
       // take over as soon as it recognizes the car.
       if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); nextPulse = now + 600; }
     }
     if (mode.kind === "find") {
-      if (camTarget(3000)) { target = cam.heading; distance = cam.distance; by = "thing"; }
-      else waiting = `the ${mode.what}: turn slowly`;
+      // Seen: go to it. Else walking to the AI's pick, for as long as it said. Else (once the
+      // selection echo is over) turn round and look, and if that finds nothing, ask the AI.
+      if (camTarget(3000)) { target = cam.heading; distance = cam.distance; by = "thing"; scan = explore = null; }
+      else if (explore && now < explore.until) { target = explore.heading; by = "explore"; }
+      else if (now < echoUntil) waiting = `the ${mode.what}`;
+      else {
+        if (explore || !scan) { explore = null; newScan(now); }
+        return scanTick(now, say);
+      }
       // Found it (after the selection echo, so the two can't blur together).
       if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; PATTERNS.connected(); nextPulse = now + 600; }
     }
     distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m`;
-    distanceBy = distance == null ? "" : by;
+    distanceBy = distance == null ? "" : onRoute ? "route" : by;
     if (target === null) {
       if (now >= nextPulse) { nextPulse = now + 1600; PATTERNS.search(); }
       return say(`SEARCHING: ${waiting}`);
@@ -720,17 +911,19 @@
     // closer. Otherwise the side to turn to pulses: 150 ms every 400 ms.
     const err = wrap180(target - heading); // − = turn left, + = turn right
     onTarget = Math.abs(err) <= Number($("margin").value) + (onTarget ? 5 : 0);
-    if (now < nextPulse) return say(onTarget ? "APPROACHING" : `TURN ${err < 0 ? "LEFT" : "RIGHT"} ${Math.abs(err).toFixed(0)}°`);
+    const toward = by === "explore" ? ` toward ${explore.target} (the AI's pick)` : "";
+    const walking = `APPROACHING${toward ? `: walk${toward}` : ""}`, turning = `TURN ${err < 0 ? "LEFT" : "RIGHT"} ${Math.abs(err).toFixed(0)}°${toward}`;
+    if (now < nextPulse) return say(onTarget ? walking : turning);
     if (onTarget) {
       const perSec = distance == null ? 1 : by === "handle" || by === "thing" ? clamp(5 / distance, 1, 4)
         : by === "object" ? clamp(15 / distance, 0.7, 4) : clamp(40 / distance, 0.7, 3);
       nextPulse = now + 1000 / perSec;
       PATTERNS.approach();
-      return say("APPROACHING");
+      return say(walking);
     }
     nextPulse = now + 400;
     PATTERNS[err < 0 ? "left" : "right"]();
-    say(`TURN ${err < 0 ? "LEFT" : "RIGHT"} ${Math.abs(err).toFixed(0)}°`);
+    say(turning);
   }
   setInterval(guideTick, 50);
 
@@ -799,9 +992,10 @@
     door: "At the door",
   };
   const RIDE_STEPS = ["requested", "here", "found", "door"];
-  const SOURCES = { gps: "by GPS", object: "to the car, by camera", handle: "to the door handle", thing: "by camera", test: "indoor test" };
+  const SOURCES = { gps: "by GPS", route: "by GPS, along the walking route",object: "to the car, by camera", handle: "to the door handle", thing: "by camera", test: "indoor test" };
   // "TURN RIGHT 12°" → "Turn right" over "12°"; the colour says what kind of message it is.
-  const GUIDE_STATES = [[/^STOP/, "stop"], [/^TURN/, "turn"], [/^APPROACHING/, "go"], [/^(?:ARRIVED|AT THE CAR|TOUCHING)/, "done"], [/^REACH/, "reach"], [/^NO /, "warn"]];
+  const GUIDE_STATES = [[/^STOP/, "stop"], [/^(?:TURN|SCANNING)/, "turn"], [/^APPROACHING/, "go"], [/^(?:ARRIVED|AT THE CAR|TOUCHING)/, "done"],
+    [/^(?:REACH|THINKING)/, "reach"], [/^(?:NO |NOT FOUND)/, "warn"]];
   const put = (id, text) => { const el = $(id); if (el.textContent !== text) el.textContent = text; }; // only touch what changed
   const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
   const EXPLAIN = { APPROACHING: "Facing it: walk forward", ARRIVED: "Within the arrival radius" }; // for messages that are one word
@@ -818,6 +1012,10 @@
     if (heard) put("heard", `Heard: “${heardText}”`);
 
     put("modeV", mode ? mode.name : "Off");
+    // How long the task has taken: from the choice to the touch (or, for a place, arriving).
+    if (mode && task.at && !task.done && (/^TOUCHING/.test(guide) || (mode.kind === "place" && /^ARRIVED/.test(guide)))) task.done = now;
+    put("modeS", mode && task.at ? `${task.done ? "done in " : ""}${clock((task.done || now) - task.at)}` : "");
+    renderScan();
     put("distV", mode ? distanceShown : "—");
     put("distS", mode && distanceBy ? SOURCES[distanceBy] || distanceBy : "");
     put("obsV", obs ? `${capital(obs.label)}${obs.distance != null ? ` · ${obs.distance.toFixed(1)} m` : ""}` : "None");
@@ -840,11 +1038,53 @@
       `phone:   ${lastEyes < 0 ? "no messages yet" : `last message ${(now - lastEyes).toFixed(0)} ms ago`}\n` +
       `heading: ${heading === null ? "— (no compass yet)" : `${to360(heading).toFixed(0)}° magnetic`}\n` +
       `you:     ${pos(wearer)}\nbeacon:  ${pos(beacon)}\n` +
+      `route:   ${!$("routeOn").checked ? "off (straight line)" : route?.off != null ? `${routeAsk.info} · ${Math.round(route.off)} m from it` : routeAsk.info}\n` +
       `camera:  ${(now - latestObjectsAt < 1500 ? latestObjects : []).map((o) => `${o.label} ${o.distance ? o.distance.toFixed(1) + " m" : ""}`).join(", ") || "nothing"}\n` +
       `waymo classifier: ${waymoBest && now - waymoBest.at < 3000 ? `best ${Math.round(waymoBest.prob * 100)}% (sure at ${WAYMO_SURE * 100}%)` : "—"}\n` +
       `object finder: ${finder.info}\n` +
+      `ai:      ${aiAsk.info}\n` +
       `depth:   ${now - depthSeen.at < 2000 ? `${depthSeen.text} · ${depthSeen.ms} ms` : "—"}${$("depthOn").checked ? "" : " (not used: switched off)"}\n` +
       `hand:    ${handsSeen && now - handsSeen.at < 1000 ? `${handsSeen.list.length} in view` : "— (tracked only at the target)"}`);
+  }
+
+  const task = { at: 0, done: 0 }; // when the current choice was made, and when it was reached
+  const clock = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+
+  // The room scan (find mode): each stop's photo round a circle, top = where the scan started; the
+  // stop being looked at; the photo the AI picked, and what it said. Rebuilt only when it changes.
+  let ringKey = "";
+  function renderScan() {
+    const s = mode?.kind === "find" ? shownScan : null;
+    $("scanCard").hidden = !s;
+    if (!s) return;
+    const pick = aiAsk.pick, pickHere = pick?.scan === s;
+    const key = `${s.shots.length}|${s.i}|${s.phase}|${pickHere ? pick.rel : ""}`;
+    if (key !== ringKey) {
+      ringKey = key;
+      const ring = $("ring");
+      ring.querySelectorAll("img, .slot").forEach((el) => el.remove());
+      const place = (el, rel) => {
+        el.style.left = `calc(50% + ${(Math.sin(rad(rel)) * 38).toFixed(1)}%)`;
+        el.style.top = `calc(50% - ${(Math.cos(rad(rel)) * 80).toFixed(0)}px)`;
+        ring.append(el);
+      };
+      for (const shot of s.shots) {
+        const img = new Image();
+        img.src = shot.image; img.alt = "";
+        if (pickHere && pick.rel === shot.rel) img.className = "pick";
+        place(img, shot.rel);
+      }
+      if (scan === s && (s.phase === "turn" || s.phase === "look")) {
+        const slot = document.createElement("div");
+        slot.className = "slot now";
+        place(slot, (s.i * 360) / SCAN_STOPS);
+      }
+    }
+    put("ringHub", scan === s ? { ask: "Asking the AI…", done: "Not found" }[s.phase] || `Looking round\n${s.shots.length} of ${SCAN_STOPS}`
+      : explore ? "Walking to the AI's pick" : "Found it");
+    put("aiPick", pick ? `AI${pickHere ? "" : " (last time)"}: ${pick.visible ? "it's at" : "look at"} ${pick.target}` : "");
+    put("aiWhy", pick ? `${pick.distance_m ? `, about ${pick.distance_m} m away` : ""}. ${pick.reason}`
+      : s.phase === "done" ? capital(s.why) : "The AI is only asked if a full turn finds nothing.");
   }
 
   // ---- Camera feed on the display: small frames from the phone, boxes drawn on top ----
@@ -852,7 +1092,7 @@
   // else. Drawn at screen resolution, so the labels stay sharp on a small frame.
   const feed = $("feed"), fctx = feed.getContext("2d");
   const feedImg = new Image();
-  let feedBoxes = [], previewAt = -Infinity;
+  let feedBoxes = [], previewAt = -Infinity, previewCam = null;
   const RED = "#ff453a", GREEN = "#32d74b", YELLOW = "#ffd60a", WHITE = "rgba(255, 255, 255, 0.85)";
   const rr = (x, y, w, h, r) => (fctx.roundRect ? fctx.roundRect(x, y, w, h, r) : fctx.rect(x, y, w, h));
   function tag(text, x, y, color, px) { // a label on a coloured chip above a box (inside it, at the top edge)
@@ -865,6 +1105,7 @@
   }
   feedImg.onload = () => {
     const W = feedImg.width, H = feedImg.height, shown = feed.getBoundingClientRect();
+    lastShot = { image: feedImg.src, w: W, h: H, focal: previewCam?.focal, at: previewAt }; // a scan photo, if it's needed
     const fit = Math.min(shown.width / W, shown.height / H) || 1; // screen pixels per frame pixel
     const k = Math.min(4, Math.max(1, fit * (window.devicePixelRatio || 1))); // canvas pixels per frame pixel
     if (feed.width !== Math.round(W * k) || feed.height !== Math.round(H * k)) { feed.width = Math.round(W * k); feed.height = Math.round(H * k); }
@@ -899,6 +1140,7 @@
     // Mark the boxes the same way the guidance sees them.
     feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), target: isTarget(b) }));
     previewAt = performance.now();
+    previewCam = msg.cam;
     feedImg.src = msg.image;
   }
 
@@ -961,6 +1203,7 @@
       if (msg.type === "heard") return onHeard(msg.text);
       if (msg.type === "waymo") return onWaymoScores(msg);
       if (msg.type === "depth") return onDepth(msg);
+      if (msg.type === "ai") return onAi(msg);
       if (msg.type !== "eyes") return;
 
       lastEyes = now;
