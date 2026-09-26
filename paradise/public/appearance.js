@@ -1,4 +1,4 @@
-// Apply a saved appearance before first paint. The crimson / blue workspace opens in dark appearance.
+// Apply the saved appearance before first paint. Dark unless this browser chose light; one key, read and written: paradise.appearance.v2.
 (() => {
   const root = document.documentElement;
   try { root.dataset.theme = localStorage.getItem('paradise.appearance.v2') === 'light' ? 'light' : 'dark'; }
