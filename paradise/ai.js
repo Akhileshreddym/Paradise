@@ -12,6 +12,10 @@
 // And one smaller job, text only: a request in plain language ("something to drink", "somewhere to
 // sit") → the thing to look for ("water bottle", "chair"), since the detectors need a thing's name.
 //
+// And spoken commands, text only: what the wearer said after "Paradise" ("take me somewhere to sit",
+// "go to test north", "never mind") → one of the few things the laptop page can do. The page has its
+// own simple grammar too and uses that when this is slow or off.
+//
 // Needs GEMINI_API_KEY in paradise/.env (loaded by npm start). GEMINI_MODEL there picks the model.
 
 const KEY = process.env.GEMINI_API_KEY || "";
@@ -19,11 +23,15 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite"; // fast and c
 const URL_ = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 // Guards for the key and the bill: the pages are reachable through the tunnel (server.js also only
 // takes these from the laptop's own page), and a bug shouldn't be able to call it in a loop.
-const PER_MINUTE = 6, PER_RUN = 100, MAX_SHOTS = 12, MAX_IMAGE = 200_000; // chars of base64 per photo
+// Commands get their own, bigger budget (they're small, text only, and a few a minute is normal
+// talking), so a chatty wearer can't use up the room scans' calls, nor a scan loop the commands'.
+// Commands also give up sooner: the laptop page falls back to its own grammar after 5 s anyway.
+const MAX_SHOTS = 12, MAX_IMAGE = 200_000; // chars of base64 per photo
+const SCANS = { perMinute: 6, perRun: 100, timeout: 20000, recent: [], calls: 0 };
+const COMMANDS = { perMinute: 20, perRun: 400, timeout: 8000, recent: [], calls: 0 };
 
-export const ai = { status: KEY ? `ready (${MODEL})` : "off: no GEMINI_API_KEY in paradise/.env", calls: 0, tokens: 0 };
-console.log(`ai (where to look next): ${ai.status}`);
-const recent = [];
+export const ai = { status: KEY ? `ready (${MODEL})` : "off: no GEMINI_API_KEY in paradise/.env", calls: 0, tokens: 0 }; // all jobs
+console.log(`ai (where to look next, commands): ${ai.status}`);
 
 // ("water bottle", [{ rel: degrees clockwise from the first photo, image: JPEG data URL }, …]) →
 // { visible, view, rel (the chosen photo's), x, target, distance_m, reason, tokens, ms }, or a reason string when there's
@@ -83,21 +91,71 @@ export async function whatToFind(request) {
   return { thing, reason: String(a.reason || "").slice(0, 160), tokens: a.tokens, ms: Date.now() - t0 };
 }
 
-// One call, JSON back: the parsed answer (+ tokens), or a reason string. Shares the limits above.
-async function ask(parts) {
+// What the wearer said after "Paradise" ("take me somewhere to sit"), the saved places' names, and
+// what the device is doing now ('find "cup"', "none") → { intent, place, thing, reason, tokens, ms },
+// or a reason string. intent is one of INTENTS; place is only set for "place" (spelled as in the
+// list), thing only for "find". An answer that doesn't check out (a place that isn't in the list, a
+// thing that isn't a thing's name) is a reason string too, like no answer: the page then tries its
+// own grammar, which may well understand "go to test north" even when Gemini misspelled it. Never
+// a guess: walking the wearer somewhere they didn't ask for isn't safe. Gemini's own "none" stays
+// "none" (not a request, or unclear): the page says it didn't understand.
+const INTENTS = ["waymo", "place", "find", "stop", "repeat", "none"];
+// A place's name as Gemini might write it back: "Test North." → "test north".
+const placeKey = (p) => String(p ?? "").replace(/\s+/g, " ").trim().replace(/^["'“”‘’]+|[\s.,;:!?"'“”‘’]+$/g, "").toLowerCase();
+export async function understandCommand(text, places, current = "none") {
+  text = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  places = (Array.isArray(places) ? places : []).map((p) => String(p ?? "").replace(/\s+/g, " ").trim().slice(0, 40))
+    .filter(Boolean).slice(0, 20);
+  current = String(current || "none").slice(0, 80);
+  if (!text) return "nothing to ask about";
+  const t0 = Date.now();
+  const a = await ask([{ text:
+    `A blind and deaf person wears a guidance device on their chest. They said "Paradise" and then: ` +
+    `${JSON.stringify(text)} (speech to text, so words may be misheard). It is doing now: ${current}. ` +
+    `Their saved places: ${JSON.stringify(places)}.\n` +
+    `Which one command did they mean?\n` +
+    `- "waymo": go to their Waymo, the car, their ride, the taxi.\n` +
+    `- "place": go to one of the saved places; "place" must be copied exactly from the list. ` +
+    `If they named a place that isn't in the list, use "none".\n` +
+    `- "find": find, get, bring or lead them to a physical thing, or "where is …". "thing" is the one ` +
+    `kind of object the camera should look for, in 1 to 3 plain words an object detector understands ` +
+    `("something to drink" → "water bottle", "somewhere to sit" → "chair", "the bin" → "trash can").\n` +
+    `- "stop": stop, cancel, never mind, that's enough.\n` +
+    `- "repeat": what are we doing, say that again, repeat.\n` +
+    `- "none": not a request to the device (talking to someone else, small talk), or unclear.\n` +
+    `Answer with JSON only: {"intent": "waymo"|"place"|"find"|"stop"|"repeat"|"none", ` +
+    `"place": name or null, "thing": "…" or null, "reason": "one short sentence"}` }], COMMANDS);
+  if (typeof a === "string") return a;
+  if (!INTENTS.includes(a?.intent)) return "Gemini's answer wasn't one of the commands";
+  const { intent } = a;
+  let place = null, thing = null;
+  if (intent === "place") {
+    const said = placeKey(a.place);
+    place = said ? places.find((p) => placeKey(p) === said) ?? null : null;
+    if (!place) return said ? `Gemini named "${said.slice(0, 40)}", which isn't a saved place` : "Gemini named no saved place";
+  } else if (intent === "find") {
+    thing = String(a.thing ?? "").toLowerCase().trim();
+    if (!/^[a-z][a-z' -]{1,38}$/.test(thing)) return "Gemini's answer wasn't a thing's name";
+  }
+  return { intent, place, thing, reason: String(a.reason || "").slice(0, 160), tokens: a.tokens, ms: Date.now() - t0 };
+}
+
+// One call, JSON back: the parsed answer (+ tokens), or a reason string. Each job's limits are its
+// own (SCANS, unless told otherwise); ai.calls and ai.tokens count them all.
+async function ask(parts, job = SCANS) {
   if (!KEY) return ai.status;
   const now = Date.now();
-  while (recent.length && now - recent[0] > 60000) recent.shift();
-  if (recent.length >= PER_MINUTE) return `over ${PER_MINUTE} calls a minute: skipped`;
-  if (ai.calls >= PER_RUN) return `over ${PER_RUN} calls since the server started: skipped`;
-  recent.push(now); ai.calls++;
+  while (job.recent.length && now - job.recent[0] > 60000) job.recent.shift();
+  if (job.recent.length >= job.perMinute) return `over ${job.perMinute} calls a minute: skipped`;
+  if (job.calls >= job.perRun) return `over ${job.perRun} calls since the server started: skipped`;
+  job.recent.push(now); job.calls++; ai.calls++;
   let reply;
   try {
     const res = await fetch(URL_, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": KEY },
       body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { response_mime_type: "application/json", temperature: 0.2 } }),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(job.timeout),
     });
     reply = await res.json();
     if (!res.ok) return `Gemini said ${res.status}: ${reply?.error?.message?.slice(0, 120) || "error"}`;

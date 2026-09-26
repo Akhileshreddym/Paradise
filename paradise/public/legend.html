@@ -9,8 +9,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Paradise · Buzz legend</title>
 <link rel="stylesheet" href="paradise.css">
+<script src="appearance.js"></script>
 <style>
-  .wrap.legend { max-width: 920px; }
+  .wrap.legend { max-width: 1080px; }
+  .legend .intro { background: transparent; box-shadow: none; border: 0; padding: 0 0 24px; }
+  .legend .group { box-shadow: none; }
+  .legend .preview { border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+  .legend .now { font-size: 12px; color: var(--accent); }
+  .legend .item { padding: 22px 0; }
+  .legend .item h3 { font-weight: 550; font-size: 15px; }
+  .legend .item p { font-size: 13px; }
+  .legend .top { flex-wrap: wrap; gap: 12px; }
+  @media (max-width: 500px) { .legend #wrists { order: 3; width: 100%; margin-bottom: 16px; } }
   .intro p { margin: 0; color: var(--muted); }
   .intro p + p { margin-top: 8px; }
   .intro strong { color: var(--text); font-weight: 600; }
@@ -64,9 +74,10 @@
 <body>
 <div class="wrap legend">
   <header class="top">
-    <div class="brand"><span class="mark"></span>Paradise <span class="sub">Buzz legend</span></div>
+    <a class="brand" href="/" target="_blank" rel="noopener"><span class="mark" aria-hidden="true"></span>PARADISE</a>
     <span class="pill" id="wrists" title="Open the laptop page in this browser (and stop any mode) to feel each buzz on the Joy-Cons">On screen only</span>
-  </header>
+  <button class="icon-button" data-theme-toggle aria-label="Switch to dark appearance" title="Switch appearance"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 13a8.5 8.5 0 0 1-9.5-9.5A8.5 8.5 0 1 0 20.5 13Z"/></svg></button></header>
+<div class="page-heading"><div><div class="eyebrow">The language of touch</div><h1>The signal library.</h1><p>Learn what each wrist signal means. Play a pattern to try it.</p></div></div>
 
   <section class="card intro">
     <p>Everything the wrists say. The <strong>left</strong> Joy-Con means left, the <strong>right</strong>
@@ -92,17 +103,21 @@
   <div id="groups"></div>
 
   <section class="card notes group">
-    <div class="label">Good to know</div>
+    <div class="label">Understanding the signals</div>
     <ul>
       <li><strong>Quiet</strong> means carry on: after <em>Arrived</em> you're there, and during a room scan it
         means hold still while the camera looks.</li>
       <li><strong>Room scan</strong> (finding something that isn't in view): turn pulses take you round a full
         circle in 10 steps, with a quiet stop at each.</li>
       <li><strong>Stop</strong> beats everything else, in every mode, except while reaching for the thing.</li>
+      <li><strong>Voice</strong> only listens to what starts with “Paradise” (“Paradise, take me to the Waymo”),
+        so people talking nearby change nothing. Every answer is a buzz: <em>Heard you</em> while it works it
+        out, then <em>Got it</em>, <em>Stopped</em>, or <em>Didn't understand</em>.</li>
       <li>Guidance waits until <em>Got it</em> is over, so it can be counted.</li>
       <li>How strong every buzz is follows <em>Buzz strength</em> in the laptop page's settings.</li>
     </ul>
   </section>
+<footer class="footer"><span class="footer-brand"><span class="mark" aria-hidden="true"></span>Touch navigation / Paradise</span><span>Paradise · Prototype</span></footer>
 </div>
 
 <script>
@@ -126,6 +141,8 @@
     reachForward: () => [["LR", 0, 60, 0.4]],
     reachOut: () => [["LR", 0, 250, 0.6]],
     touch: () => [0, 110, 220].map((t) => ["LR", t, 60, 1, "high"]),
+    listening: () => [0, 120].map((t) => ["LR", t, 60, 0.6]),
+    stopped: () => [0, 600].map((t) => ["LR", t, 400, 1]),
   };
 
   // What to show, in order. seq: when to play which pattern (ms from the start), with a few repeats
@@ -135,11 +152,15 @@
   const at = (times, pattern) => times.map((t) => [t, pattern]);
   const fading = (i) => [Math.max(0.4, 1 - i * 0.15)]; // stronger the further off: here, the hand closing in
   const LEGEND = [
-    ["Choosing", [
+    ["Talking to it: buttons and voice", [
+      { name: "Heard you", where: "Both wrists · two quick soft taps", seq: [[0, "listening"]],
+        what: "You said “Paradise” on its own: say what you want within 8 seconds, no need to say Paradise again. Also right after a command that needs thinking about: it's working on it, and the answer (Got it, or Didn't understand) follows in a second or so." },
       { name: "Got it", where: "Both wrists", seq: [[0, "echo", [3]]],
-        what: "Right after you choose: one pulse per press, so you can count it. 1 = the Waymo, 2 and up = your saved places, a thing to find = 1." },
-      { name: "Not a choice", where: "Left, right, left · once", seq: [[0, "search"]],
-        what: "More presses than there are choices. Nothing changes." },
+        what: "Right after you choose, by buttons or by voice: one pulse per press, so you can count it. 1 = the Waymo, 2 and up = your saved places, a thing to find = 1. “Paradise, repeat” plays it again." },
+      { name: "Stopped", where: "Both wrists · two long buzzes", seq: [[0, "stopped"]],
+        what: "You said “Paradise, stop” (or cancel, wait, never mind, anywhere in what you said): guidance is off. Choose again whenever you like." },
+      { name: "Didn't understand", where: "Left, right, left · once", seq: [[0, "search"]],
+        what: "It didn't understand what you said after “Paradise”: say it again. Or more presses than there are choices. Nothing changes." },
     ]],
     ["Walking", [
       { name: "Turn left", where: "Left wrist · every 0.4 s", seq: every(400, 4, "left"),

@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Paradise · Beacon</title>
 <link rel="stylesheet" href="paradise.css">
+<script src="appearance.js"></script>
 <style>
   .stack { display: grid; gap: 16px; }
   .intro p { margin: 0 0 16px; color: var(--muted); }
@@ -20,15 +21,16 @@
 </head>
 <body>
 <div class="wrap narrow">
-  <header class="top">
-    <div class="brand"><span class="mark"></span>Paradise <span class="sub">Beacon</span></div>
+  <header class="top beacon-top">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true"></span>PARADISE <span class="sub">Beacon</span></a>
     <span class="pill" id="net">Connecting…</span>
-  </header>
-  <div class="stack">
+  <button class="icon-button" data-theme-toggle aria-label="Switch to dark appearance" title="Switch appearance"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 13a8.5 8.5 0 0 1-9.5-9.5A8.5 8.5 0 1 0 20.5 13Z"/></svg></button></header>
+  <div class="page-heading"><div><div class="eyebrow">Location beacon</div><h1>Set the destination.</h1><p>Share this phone’s location as the destination.</p></div></div>
+  <main class="stack">
     <section class="card intro" id="intro">
-      <p>This phone plays the Waymo. Put it in or on the car the wearer should walk to, outdoors if you
-        can. Keep the screen on and this page open.</p>
-      <button id="start" class="primary big">Start sharing location</button>
+      <div class="setup-visual" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="10" r="3"/><path d="M19 10c0 5-7 12-7 12S5 15 5 10a7 7 0 0 1 14 0Z"/></svg></div>
+      <ol class="setup-steps"><li><div><strong>Set the destination</strong>Place this phone in or on the car the wearer should walk toward.</div></li><li><div><strong>Keep it connected</strong>Stay outdoors for a better GPS signal. Keep this page open and the screen on.</div></li></ol>
+      <button id="start" class="primary big">Share location <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
     </section>
     <section class="card fix" id="fix" hidden>
       <div class="label">GPS accuracy</div>
@@ -37,19 +39,33 @@
       <div class="mono" id="coords"></div>
     </section>
     <section class="card note" id="info" hidden></section>
-  </div>
+  </main>
+<footer class="footer"><span class="footer-brand"><span class="mark" aria-hidden="true"></span>Touch navigation / Paradise</span><span>Paradise · Prototype</span></footer>
 </div>
 
 <script>
   const $ = (id) => document.getElementById(id);
   const note = (text) => { $("info").textContent = text; $("info").hidden = !text; };
 
-  // The pill in the header: can the server hear us?
+  // The pill in the header: can the server hear us? The link npm start prints ends in ?k=…, a key:
+  // the server only lets a phone in through the tunnel with it (anyone can come across a tunnel
+  // address). Passed on to the WebSocket.
+  const LINK_KEY = new URLSearchParams(location.search).get("k") || "";
+  const REFUSED = "Wrong or missing link: reopen the link printed by npm start (it ends in ?k=…).";
   let ws = null;
   function connect() {
-    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=beacon`);
-    ws.onopen = () => { $("net").textContent = "Connected"; $("net").className = "pill ok"; };
-    ws.onclose = () => { $("net").textContent = "Reconnecting…"; $("net").className = "pill bad"; setTimeout(connect, 1000); };
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=beacon&k=${encodeURIComponent(LINK_KEY)}`);
+    ws.onopen = () => {
+      $("net").textContent = "Connected"; $("net").className = "pill ok";
+      if ($("info").textContent === REFUSED) note("");
+    };
+    // Refused for the key: trying again every second won't help (only the right link will), so every 5 s.
+    ws.onclose = (e) => {
+      const refused = e.code === 4401;
+      $("net").textContent = refused ? "Wrong link" : "Reconnecting…"; $("net").className = "pill bad";
+      if (refused) note(REFUSED);
+      setTimeout(connect, refused ? 5000 : 1000);
+    };
   }
   connect();
 

@@ -8,199 +8,98 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Paradise</title>
 <link rel="stylesheet" href="paradise.css">
-<style>
-  /* Display: camera on the left, what's happening on the right. */
-  .stage { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; }
-  .feed { position: relative; height: min(72vh, 680px); aspect-ratio: 9 / 16; border-radius: 22px; overflow: hidden; background: #000; }
-  .feed canvas { display: block; width: 100%; height: 100%; object-fit: contain; transition: opacity 0.3s; }
-  .feed .empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: #8e8e93; font-size: 14px; }
-  .feed:not(.live) canvas { opacity: 0.25; }
-  .feed.live .empty { display: none; }
-  .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-
-  /* Fills whatever height the camera view leaves, message centred. */
-  .guide { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 190px; padding: 28px 30px; transition: background 0.2s; }
-  .guide .head { font-size: clamp(36px, 4.4vw, 60px); font-weight: 700; letter-spacing: -0.035em; line-height: 1.05; transition: color 0.2s; }
-  .guide .detail { margin-top: 10px; font-size: 19px; color: var(--muted); min-height: 1.45em; }
-  .guide .heard { margin-top: 14px; font-size: 14px; color: var(--muted); }
-  .guide[data-state="stop"] { background: color-mix(in srgb, var(--red) 13%, var(--card)); }
-  .guide[data-state="stop"] .head { color: var(--red); }
-  .guide[data-state="turn"] .head, .guide[data-state="go"] .head { color: var(--accent); }
-  .guide[data-state="done"] { background: color-mix(in srgb, var(--green) 12%, var(--card)); }
-  .guide[data-state="done"] .head { color: var(--green); }
-  .guide[data-state="reach"] { background: color-mix(in srgb, var(--violet) 11%, var(--card)); }
-  .guide[data-state="reach"] .head { color: var(--violet); }
-  .guide[data-state="warn"] .head { color: var(--orange); }
-
-  .wrists { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .wrist {
-    display: grid; place-content: center; justify-items: center; gap: 2px; height: 124px;
-    border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow);
-    transition: background 0.25s, box-shadow 0.25s, border-color 0.25s;
-  }
-  .wrist b { font-size: 42px; line-height: 1; color: var(--faint); transition: color 0.25s; }
-  .wrist span { font-size: 13px; color: var(--muted); }
-  /* Lights up at once, fades out: short buzzes still show. */
-  .wrist.on { background: var(--buzz); border-color: var(--buzz); box-shadow: 0 0 0 6px color-mix(in srgb, var(--buzz) 35%, transparent); transition: none; }
-  .wrist.on b, .wrist.on span { color: #1d1d1f; transition: none; }
-
-  /* Recent buzzes, newest first: which wrist and what it means (for testing without Joy-Cons). */
-  .buzzlog { margin-top: -6px; padding: 0 4px; min-height: 2.9em; white-space: pre-line; font-size: 13px; line-height: 1.45; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .buzzlog.has::first-line { color: var(--text); font-weight: 600; }
-
-  /* The Gemini switch, styled as one of the header pills (violet: the AI's colour on this page). */
-  button.pill { font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
-  button.pill:hover { background: var(--well); }
-  .pill.gemini.ok::before { background: var(--violet); }
-  a.pill { color: var(--text); text-decoration: none; }
-  a.pill::before { display: none; }
-  a.pill:hover { background: var(--well); }
-
-  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-  .stat .v { margin-top: 6px; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
-  .stat .s { font-size: 13px; color: var(--muted); }
-  .stat.alert { border-color: color-mix(in srgb, var(--red) 40%, transparent); }
-  .stat.alert .v { color: var(--red); }
-
-  .ride .now { margin-top: 6px; font-weight: 600; }
-  .ride ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
-  .ride li { padding-top: 10px; border-top: 3px solid var(--line); font-size: 13px; color: var(--muted); }
-  .ride li.done { border-color: var(--accent); color: var(--text); }
-
-  /* Find mode: the room scan, one photo per stop round a circle (top = where the scan started),
-     the stop being looked at, and the photo the AI picked. */
-  .scan .ring { position: relative; height: 250px; margin-top: 10px; }
-  .scan .ring img, .scan .ring .slot { position: absolute; width: 44px; aspect-ratio: 9 / 16; transform: translate(-50%, -50%); border-radius: 8px; border: 2px solid var(--line); object-fit: cover; background: var(--line); }
-  .scan .ring .slot.now { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
-  .scan .ring img.pick { border-color: var(--violet); box-shadow: 0 0 0 4px color-mix(in srgb, var(--violet) 35%, transparent); }
-  .scan .hub { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 40%; text-align: center; white-space: pre-line; font-size: 14px; font-weight: 600; }
-  .scan .ai { margin-top: 8px; font-size: 14px; color: var(--muted); }
-  .scan .ai b { color: var(--violet); }
-
-  /* Before and after (for the demo): the same task without Paradise and with it. */
-  .compare .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-top: 10px; }
-  .compare .row span { color: var(--muted); }
-  .compare b { font-size: 22px; font-variant-numeric: tabular-nums; }
-  .compare em { font-style: normal; font-weight: 600; color: var(--green); }
-
-  .controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 20px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  #choices { display: contents; }
-  .chips .n { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 8px; border-radius: 7px; background: color-mix(in srgb, currentColor 12%, transparent); font-size: 12px; }
-  .find { display: flex; gap: 8px; margin-top: 12px; }
-  .find input { flex: 1; min-width: 0; }
-
-  .more { display: grid; gap: 12px; margin-top: 16px; }
-  .setting { display: grid; grid-template-columns: 190px minmax(0, 1fr) 64px; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
-  .setting:first-child { border-top: 0; }
-  .setting .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
-  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
-  .toggle small { display: block; color: var(--muted); font-size: 13px; }
-  .group + .group { margin-top: 16px; }
-  .group .chips { margin-top: 8px; }
-  .group button { font-weight: 500; }
-
-  @media (max-width: 900px) {
-    .stage { grid-template-columns: minmax(0, 1fr); }
-    .feed { height: min(62vh, 560px); margin: 0 auto; }
-    .controls { grid-template-columns: minmax(0, 1fr); }
-    .setting { grid-template-columns: minmax(0, 1fr) 64px; }
-    .setting input { grid-column: 1 / -1; grid-row: 2; }
-  }
-  @media (max-width: 520px) {
-    .wrap { padding: 16px; }
-    .stats { grid-template-columns: minmax(0, 1fr); }
-  }
-</style>
+<script src="appearance.js"></script>
+<link rel="stylesheet" href="dashboard.css">
 </head>
-<body>
-<div class="wrap">
-
-<header class="top">
-  <div class="brand"><span class="mark"></span>Paradise</div>
-  <div class="pills">
-    <span class="pill" id="phonePill">Phone</span>
-    <span class="pill" id="joyLPill">Joy-Con L</span>
-    <span class="pill" id="joyRPill">Joy-Con R</span>
-    <button id="geminiBtn" class="pill gemini ok" aria-pressed="true" title="Turn Gemini on or off (both jobs: plain-language requests, and where to look)">Gemini on</button>
-    <a class="pill" href="/legend" target="_blank" title="What every buzz means (opens in a new tab: guidance keeps running here)">Buzz legend</a>
-    <button id="connect" class="primary" title="Once per Joy-Con: left wrist = L, right wrist = R">Connect Joy-Con</button>
-  </div>
-</header>
-
-<!-- ============ Display (for onlookers, never the wearer) ============ -->
-<main class="stage">
-  <div class="feed" id="feedBox">
-    <canvas id="feed" width="360" height="640"></canvas>
-    <div class="empty">Waiting for the chest camera…</div>
-  </div>
-  <div class="side">
-    <section class="card guide" id="guide" data-state="idle">
-      <div class="head" id="guideHead">Ready</div>
-      <div class="detail" id="guideDetail"></div>
-      <div class="heard" id="heard" hidden></div>
+<body class="dashboard">
+<a class="skip-link" href="#session">Skip to session</a>
+<aside class="rail" aria-label="Navigation and devices">
+  <a class="brand" href="/" aria-label="Paradise home"><span class="mark" aria-hidden="true"></span>PARADISE<span class="brand-period">®</span></a>
+  <div class="rail-caption">TOUCH NAVIGATION</div>
+  <nav class="rail-nav" aria-label="Main navigation">
+    <a href="#session" aria-current="page"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Overview</span><span class="nav-indicator"></span></a>
+    <a href="/legend" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-7 6 14 3-7h4"/></svg><span>Signal library</span><span class="nav-external">↗</span></a>
+    <button data-open-setup><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4M11 19h2"/></svg><span>Device setup</span></button>
+    <div class="nav-divider"></div>
+    <a href="#testing" data-open-section="testing"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m16 8-3 5-5 3 3-5Z"/></svg><span>Testing</span></a>
+    <a href="#settings" data-open-section="settings"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span>Settings</span></a>
+  </nav>
+  <section class="rail-devices" aria-label="Device connections">
+    <div class="rail-section-label">YOUR DEVICES <span>03</span></div>
+    <span class="pill" id="phonePill" title="Chest camera connection">Chest camera</span>
+    <span class="pill" id="joyLPill">Left Joy-Con</span>
+    <span class="pill" id="joyRPill">Right Joy-Con</span>
+    <button id="connect" title="Connect each Joy-Con, one at a time"><span aria-hidden="true">+</span> Connect Joy-Con</button>
+    <p class="connection-help" id="connectionHelp" role="status" hidden></p>
+  </section>
+  <div class="rail-footer"><span class="rail-avatar">P</span><div>Paradise companion<small>Prototype workspace</small></div></div>
+</aside>
+<div class="workspace">
+  <header class="workspace-top"><div class="breadcrumb">Workspace <span>/</span> <b>Overview</b></div><div class="top-actions"><span class="workspace-caption">A DIFFERENT WAY FORWARD</span><button class="icon-button" data-theme-toggle aria-label="Switch appearance" title="Switch appearance"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></svg></button></div></header>
+  <div class="workspace-content">
+    <div class="page-heading" id="session"><div><div class="eyebrow">YOUR PERSPECTIVE, CONNECTED</div><h1>Control room<span>.</span></h1><p>Everything you need to guide the next step.</p></div><button id="stopMode" class="danger">Stop guidance</button></div>
+    <section class="command-center" aria-labelledby="commandTitle">
+      <div class="command-title"><span class="command-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg></span><div><label id="commandTitle" for="findText">What are we looking for?</label><span>Describe an object to start guiding.</span></div></div>
+      <div class="find"><input id="findText" placeholder="A water bottle, my keys, a door…" autocomplete="off"><button id="findGo" class="primary">Find object <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button></div>
+      <div class="destination-row"><span id="destinationLabel">Or go to</span><div class="chips" role="group" aria-labelledby="destinationLabel"><div id="choices"></div></div><span class="destination-note">Numbers = Joy-Con presses</span></div>
     </section>
-    <div class="wrists">
-      <div class="wrist" id="wristL"><b>L</b><span id="wristLText">left wrist</span></div>
-      <div class="wrist" id="wristR"><b>R</b><span id="wristRText">right wrist</span></div>
-    </div>
-    <div class="buzzlog" id="buzzLog" aria-live="off"></div>
-    <div class="stats">
-      <div class="card stat"><div class="label">Mode</div><div class="v" id="modeV">Off</div><div class="s" id="modeS"></div></div>
-      <div class="card stat"><div class="label">Distance</div><div class="v" id="distV">—</div><div class="s" id="distS"></div></div>
-      <div class="card stat" id="obsCard"><div class="label">Obstacle</div><div class="v" id="obsV">None</div><div class="s" id="obsS"></div></div>
-    </div>
-    <section class="card ride" id="rideCard" hidden>
+    <main class="stage" aria-label="Live guidance">
+      <section class="camera-panel" aria-label="Camera feed"><div class="panel-heading"><span><span class="panel-number">01</span> Camera feed</span><span class="panel-meta">EYES / CHEST VIEW</span></div>
+        <div class="feed" id="feedBox"><canvas id="feed" width="360" height="640" aria-label="Live chest camera feed"></canvas>
+          <div class="feed-top"><span><i class="feed-dot"></i><span class="feed-state">NO CAMERA CONNECTED</span><span class="feed-live-state">LIVE CAMERA</span></span><span>9:16</span></div>
+          <div class="empty"><div class="camera-reticle" aria-hidden="true"><i></i><i></i><i></i><i></i><div class="camera-orbit"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4M11 19h2"/></svg></div></div><h2>A window into their world.</h2><p>Connect the chest camera to bring<br>the live view into focus.</p><button class="camera-setup" data-open-setup><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4M11 19h2"/></svg> Connect camera <span aria-hidden="true">↗</span></button></div>
+          <div class="feed-bottom"><span><i></i> WAITING FOR VIDEO</span><span>PARADISE VISION</span></div>
+        </div>
+        <div class="camera-caption"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m16 8-3 5-5 3 3-5Z"/></svg><span>Live perspective. Local processing.</span><span class="camera-caption-end">CAM 01</span></div>
+      </section>
+      <div class="side">
+        <section class="guide" id="guide" data-state="idle"><div class="panel-heading"><span><span class="panel-number">02</span> Guidance</span><span class="guide-status"><i></i><span id="guidanceState">Standing by</span></span></div><div class="guide-copy"><div class="direction-symbol" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m16 8-3 5-5 3 3-5Z"/></svg></div><div class="head" id="guideHead" role="status" aria-live="polite">Ready</div><div class="detail" id="guideDetail">Choose a destination or find an object to begin.</div><div class="heard" id="heard" hidden></div></div><div class="guide-foot"><span>VOICE SHORTCUT</span><span>Say “Paradise…”</span></div></section>
+        <section class="haptics"><div class="panel-heading"><span><span class="panel-number">03</span> Haptic output</span><a href="/legend" target="_blank" rel="noopener" aria-label="Explore signal patterns"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></a></div><div class="wrists">
+          <div class="wrist" id="wristL"><div class="wrist-title"><span>LEFT WRIST</span><i></i></div><div class="wrist-center"><b>L</b><div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div><span id="wristLText">Standing by</span></div>
+          <div class="wrist" id="wristR"><div class="wrist-title"><span>RIGHT WRIST</span><i></i></div><div class="wrist-center"><b>R</b><div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div><span id="wristRText">Standing by</span></div>
+        </div><div class="buzzlog" id="buzzLog" aria-live="off"></div></section>
+      </div>
+    </main>
+    <section class="telemetry" aria-label="Session readings"><div class="stats">
+      <div class="stat"><div class="label">Navigation mode</div><div class="v" id="modeV">Standby</div><div class="s" id="modeS"></div></div>
+      <div class="stat"><div class="label">Target distance</div><div class="v" id="distV">—</div><div class="s" id="distS"></div></div>
+      <div class="stat" id="obsCard"><div class="label">Obstacle</div><div class="v" id="obsV">None</div><div class="s" id="obsS"></div></div>
+    </div><div class="session-services"><span class="label">Session controls</span><div class="pills"><button id="geminiBtn" class="pill gemini ok" aria-pressed="true" title="Enable or disable Gemini for understanding requests and room searches">Gemini on</button><button id="voiceBtn" class="pill voice ok" aria-pressed="true" title="Enable or disable spoken updates for the audience">Voice on</button></div></div></section>
+    <div class="progress-panels">    <section class="card ride" id="rideCard" hidden>
       <div class="label">Waymo ride</div>
       <div class="now" id="ride"></div>
       <ol id="rideSteps"><li>Requested</li><li>Arrived</li><li>Found by the camera</li><li>At the door</li></ol>
-    </section>
-    <section class="card scan" id="scanCard" hidden>
+    </section>    <section class="card scan" id="scanCard" hidden>
       <div class="label">Room scan</div>
       <div class="ring" id="ring"><div class="hub" id="ringHub"></div></div>
       <div class="ai" id="aiMeant" hidden></div>
       <div class="ai"><b id="aiPick"></b><span id="aiWhy"></span></div>
-    </section>
-    <section class="card compare">
-      <div class="label">The difference</div>
-      <div class="row"><span>Without Paradise</span><b id="beforeV">—</b><button id="beforeBtn" title="Time the same task done without Paradise">Time it</button></div>
-      <div class="row"><span>With Paradise</span><b id="afterV">—</b><em id="fasterV"></em></div>
-    </section>
-  </div>
-</main>
-
-<!-- ============ Choosing (for the team; the wearer uses the Joy-Con buttons or voice) ============ -->
-<section class="controls">
-  <div class="card">
-    <div class="label">Go to</div>
-    <div class="chips"><div id="choices"></div><button id="stopMode" class="danger">Stop</button></div>
-  </div>
-  <div class="card">
-    <div class="label">Find something</div>
-    <div class="find">
-      <input id="findText" placeholder="water bottle, red mug, trash can…" autocomplete="off">
-      <button id="findGo" class="primary">Find</button>
-    </div>
-  </div>
-</section>
-
-<section class="more">
-  <details class="card" data-key="settings">
-    <summary>Settings</summary>
+    </section></div>
+    <section class="compare"><div><span class="label">Session comparison</span><p>Measure the difference.</p></div><div class="row"><span>Without Paradise</span><b id="beforeV">—</b><button id="beforeBtn" title="Time the same task done without Paradise">Time it</button></div><div class="row"><span>With Paradise</span><b id="afterV">—</b><em id="fasterV"></em></div></section>
+    <section class="more" aria-label="Session tools">
+  <details class="card" data-key="settings" id="settings">
+    <summary><span class="summary-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Settings</span><span class="summary-hint">Fine-tune your guidance</span></summary>
     <div class="body">
       <div class="setting"><label for="amp">Buzz strength</label><input id="amp" type="range" min="0.1" max="1" step="0.05" value="0.7"><span class="val"><span id="ampV">0.7</span></span></div>
       <div class="setting"><label for="margin">On-target margin</label><input id="margin" type="range" min="5" max="30" value="12"><span class="val">±<span id="marginV">12</span>°</span></div>
       <div class="setting"><label for="arrive">GPS arrival radius</label><input id="arrive" type="range" min="2" max="20" value="6"><span class="val"><span id="arriveV">6</span> m</span></div>
       <div class="setting"><label for="stopDist">Obstacle stop distance</label><input id="stopDist" type="range" min="0.5" max="3" step="0.1" value="1.5"><span class="val"><span id="stopDistV">1.5</span> m</span></div>
       <label class="toggle"><span>Obstacles from depth<small>Walls, poles, doors, boxes: anything close in the walking path</small></span><input type="checkbox" id="depthOn" class="switch" checked></label>
-      <label class="toggle"><span>Use Gemini<small>Same as the Gemini button at the top. Two jobs, only when needed: what a plain-language request means ("something to drink" → water bottle), and where to look after a full turn finds nothing (at most 3 times a search). Sends that request, or that turn's small photos, to Google. Off: no calls at all</small></span><input type="checkbox" id="aiOn" class="switch" checked></label>
-      <label class="toggle"><span>Any car counts as the Waymo (demo)<small>Only for a demo with no real Waymo there: the car in the beacon's direction counts. The display says so.</small></span><input type="checkbox" id="anyCar" class="switch"></label>
-      <label class="toggle"><span>Follow walking routes<small>Along sidewalks and footpaths to a place or the Waymo, turning at corners (off: a straight line). Routes © OpenStreetMap contributors</small></span><input type="checkbox" id="routeOn" class="switch" checked></label>
+      <label class="toggle"><span>Use Gemini<small>Understand requests and suggest where to look after a room scan. Sends requests and scan photos to Google. Turn off to use built-in commands only.</small></span><input type="checkbox" id="aiOn" class="switch" checked></label>
+      <label class="toggle"><span>Speak for the audience<small>Play spoken updates through the laptop speakers for onlookers. Guidance for the wearer stays on the wrists.</small></span><input type="checkbox" id="voiceOn" class="switch" checked></label>
+      <label class="toggle"><span>Any car counts as the Waymo (demo)<small>For demos without a Waymo: use a car in the beacon’s direction. The ride display will show that demo mode is on.</small></span><input type="checkbox" id="anyCar" class="switch"></label>
+      <label class="toggle"><span>Follow walking routes<small>Follow sidewalks and footpaths, with guidance at corners. Turning this off uses a straight line. Routes © OpenStreetMap contributors.</small></span><input type="checkbox" id="routeOn" class="switch" checked></label>
     </div>
   </details>
-  <details class="card" data-key="testing">
-    <summary>Testing</summary>
+  <details class="card" data-key="testing" id="testing">
+    <summary><span class="summary-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l3-7 6 14 3-7h3"/></svg>Testing</span><span class="summary-hint">Try a signal or a direction</span></summary>
     <div class="body">
+      <div class="group">
+        <div class="label">Voice buzzes</div>
+        <div class="chips">
+          <button data-pattern="listening">Heard you (listening / working on it)</button><button data-pattern="stopped">Stopped</button>
+        </div>
+      </div>
       <div class="group">
         <div class="label">Walking buzzes</div>
         <div class="chips">
@@ -228,13 +127,24 @@
     </div>
   </details>
   <details class="card" data-key="details">
-    <summary>Details</summary>
+    <summary><span class="summary-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/></svg>Details</span><span class="summary-hint">Connection and sensor diagnostics</span></summary>
     <div class="body"><div id="info" class="mono">…</div></div>
   </details>
 </section>
 
+    <footer class="footer"><span>PARADISE <span class="footer-slash">/</span> Touch navigation</span><span>Designed for the next step.</span></footer>
+  </div>
 </div>
-
+<dialog id="setupDialog" aria-labelledby="setupTitle">
+  <button class="icon-button dialog-close" data-close-setup aria-label="Close device setup"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
+  <div class="eyebrow">Get connected</div><h2 id="setupTitle">Connect your devices</h2>
+  <ol class="setup-steps">
+    <li><div><strong>Connect the chest phone</strong>Open the secure Eyes link printed by the Paradise server on your phone. Tap Start camera and allow camera, motion, location, and microphone access.</div></li>
+    <li><div><strong>Pair both wrists</strong>Pair each Joy-Con in your computer’s Bluetooth settings. In Chrome or Edge, use Connect Joy-Con once for each wrist.</div></li>
+    <li><div><strong>Choose where to go</strong>Select a destination or enter an object to find. The wrist tiles show every signal as it happens.</div></li>
+  </ol>
+  <div class="dialog-links"><a class="button-link primary" href="/eyes" target="_blank" rel="noopener">Eyes setup ↗</a><a class="button-link" href="/beacon" target="_blank" rel="noopener">Beacon setup ↗</a></div>
+</dialog>
 <script type="module">
   import { connectJoyCon, connectedJoyCons, JoyConLeft, JoyConRight }
     from "https://cdn.jsdelivr.net/npm/joy-con-webhid@0.11.0/+esm";
@@ -254,6 +164,21 @@
   $("geminiBtn").onclick = () => { $("aiOn").checked = !$("aiOn").checked; showGemini(); };
   $("aiOn").onchange = showGemini;
   showGemini();
+  // Speaking for the audience, the same way: the header button and Settings → Speak for the audience
+  // are one switch, remembered in this browser. Off: silent at once, nothing more asked for.
+  const showVoice = (changed) => {
+    const on = $("voiceOn").checked, b = $("voiceBtn");
+    b.classList.toggle("ok", on);
+    b.textContent = on ? "Voice on" : "Voice off";
+    b.setAttribute("aria-pressed", String(on));
+    try { localStorage.setItem("paradise.voice", on ? "on" : "off"); } catch {}
+    if (changed && on) narrate("Voice on."); // (the click that turns it on also lets Chrome play sound)
+    else if (changed) hush();
+  };
+  try { if (localStorage.getItem("paradise.voice") === "off") $("voiceOn").checked = false; } catch {}
+  $("voiceBtn").onclick = () => { $("voiceOn").checked = !$("voiceOn").checked; showVoice(true); };
+  $("voiceOn").onchange = () => showVoice(true);
+  showVoice();
   // Which sections are open is remembered in this browser.
   document.querySelectorAll("details[data-key]").forEach((d) => {
     try { d.open = localStorage.getItem(`paradise.open.${d.dataset.key}`) === "1"; } catch {}
@@ -282,7 +207,16 @@
   // here we only turn on rumble, listen for buttons, and note which wrist it's on. (Opening it
   // again would add a second input listener: every report handled twice.)
   let joyL = null, joyR = null;
-  $("connect").onclick = () => connectJoyCon();
+  $("connect").onclick = async () => {
+    const help = $("connectionHelp");
+    if (!navigator.hid) {
+      help.textContent = "Joy-Con connection needs Chrome or Edge on a computer. You can still preview wrist signals here.";
+      help.hidden = false;
+      return;
+    }
+    try { await connectJoyCon(); help.hidden = true; }
+    catch { help.textContent = "No Joy-Con connected. Pair it in Bluetooth settings, then try again."; help.hidden = false; }
+  };
   // The header pills: green once that Joy-Con is connected and set up.
   const showJoyStatus = () => {
     $("joyLPill").classList.toggle("ok", !!joyL);
@@ -331,7 +265,7 @@
     const jc = side === "L" ? joyL : joyR;
     rumble(jc, clamp(strength * Number($("amp").value), 0, 1), hz); // keeps going until strength 0
     const icon = $(side === "L" ? "wristL" : "wristR"), label = $(side === "L" ? "wristLText" : "wristRText");
-    const idle = side === "L" ? "left wrist" : "right wrist";
+    const idle = "Standing by";
     icon.classList.add("on");
     label.textContent = meaning || idle;
     clearTimeout(icon.off); clearTimeout(label.off);
@@ -360,15 +294,21 @@
     reachForward: () => both(0.4, 60),                              // lined up: forward (faster as it gets close)
     reachOut: () => both(0.6, 250),                                 // hand not in view yet: reach out (every 1.2 s)
     touch: () => repeat(3, 110, () => both(1, 60, HIGH)),           // touching it: 3 quick high buzzes
+    // Voice: "heard you" (said "Paradise" alone, so listening for the command; or a command gone to
+    // Gemini, so working on it: the answer's buzz follows), and "Paradise, stop" done. Two taps, not
+    // one: a single soft pulse would feel like "walk" or "forward".
+    listening: () => repeat(2, 120, () => both(0.6, 60)),           // heard you: two quick soft taps
+    stopped: () => repeat(2, 600, () => both(1, 400)),              // stopped: two long buzzes, 200 ms apart
   };
   // What each pattern means and where it's felt: the lit L/R tile shows the meaning, and the log
   // under the tiles lists the latest few, newest first ("R · turn right ×6"). For testing without
   // Joy-Cons, and for onlookers.
   const MEANING = {
     left: "turn left", right: "turn right", approach: "walk", arrived: "arrived", obstacle: "STOP",
-    search: "searching", connected: "found it", echo: (n) => `got it (${n} pulse${n > 1 ? "s" : ""})`,
+    search: (why) => why || "searching", connected: "found it", echo: (n) => `got it (${n} pulse${n > 1 ? "s" : ""})`,
     reachLeft: "hand left", reachRight: "hand right", reachUp: "hand up (high buzz)", reachDown: "hand down (low buzz)",
     reachForward: "hand forward", reachOut: "reach out", touch: "touching",
+    listening: (why) => why || "heard you: listening", stopped: "stopped",
   };
   const WHERE = { left: "L", right: "R", reachLeft: "L", reachRight: "R", search: "L, R, L" }; // the rest: both
   const buzzLog = []; // [{ text, n, at }], newest first
@@ -443,8 +383,9 @@
   ];
   // What was said or typed → just the thing: no punctuation (speech recognition adds it) or filler
   // ("Get me a water bottle, please." → "water bottle").
+  const words = (text) => text.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9' -]+/g, " ").replace(/\s+/g, " ").trim();
   function cleanThing(text) {
-    let t = text.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9' -]+/g, " ").replace(/\s+/g, " ").trim(), prev;
+    let t = words(text), prev;
     do {
       prev = t;
       t = t.replace(/^(?:me|us|the|a|an|my|our|your|some)\s+/, "").replace(/\s+(?:please|for me|for us|now|thanks|thank you)$/, "").trim();
@@ -462,19 +403,23 @@
   }
   // Plain language ("something to drink", "somewhere to sit") isn't a thing the detectors can look
   // for: the AI (ai.js) names one ("water bottle", "chair"). One short text call, only for these;
-  // meanwhile the mode is on (the echo plays) but nothing's looked for yet (prompt null).
+  // meanwhile the mode is on (the echo plays) but nothing's looked for yet (prompt null). This is for
+  // what's typed in the Find box: by voice, Gemini already names the thing while reading the command,
+  // and when it can't (off, no answer) the grammar looks for the words as said (askAi false).
   const VAGUE = /^(?:something|anything|somewhere|anywhere|some ?place|place|thing|stuff)\b/; // after cleanThing ("a place to sit" → "place to sit")
-  function findThing(text) {
+  // askAi false: look for the words as said, whatever they are (no Gemini call).
+  function findThing(text, askAi = true) {
     const what = cleanThing(cleanThing(text).replace(VERB, "")); // typed like it's said: "find me something to drink"
-    if (!what) return;
-    if (VAGUE.test(what) && $("aiOn").checked && phoneWs?.readyState === 1) {
+    if (!what) return false;
+    if (VAGUE.test(what) && askAi && $("aiOn").checked && phoneWs?.readyState === 1) {
       const id = ++aiAsk.nextId;
       startMode({ kind: "find", ...thingFields(what), prompt: null, asked: what, askId: id }, 1);
       aiAsk.info = `asking what "${what}" means…`;
       phoneWs.send(JSON.stringify({ type: "ask-what", to: "server", id, request: what }));
-      return;
+      return true;
     }
     startMode({ kind: "find", ...thingFields(what) }, 1);
+    return true;
   }
   function onAiWhat({ id, thing, reason, tokens, ms }) {
     if (mode?.kind === "find" && mode.askId === id && mode.prompt === null) settleWhat(thing, reason, tokens, ms);
@@ -514,7 +459,6 @@
   // 1 = Waymo, 2 = first place, 3 = second place… Confirmation: N short pulses back.
   const CHOICES = [{ name: "Waymo" }, ...PLACES];
   let mode = null; // { kind: "waymo" | "place" | "find" | "test", name, place?, what?, turn? }
-  let heardText = "", heardAt = -Infinity;
   // Only the wrist's own buttons count. The library's button report also carries raw bytes
   // (_raw, _hex: always "truthy"), and a Joy-Con it doesn't recognize by name reports the other
   // side's bits as noise. (The small SL/SR rail buttons are read from both sides' bits, so they're
@@ -536,18 +480,24 @@
   }
   // Every new choice: start fresh, buzz the echo, and hold guidance buzzes until the echo is over
   // so the wearer can count it.
+  // (A voice command still waiting for Gemini is dropped: whatever was chosen since wins.)
   function startMode(m, echo) {
     resetGuidance();
+    dropCommand();
     mode = m;
     showChoice();
     rideStage = m.kind === "waymo" ? "requested" : "";
     Object.assign(task, { at: m.kind === "test" ? 0 : performance.now(), done: 0 });
-    PATTERNS.echo(echo);
-    nextPulse = echoUntil = performance.now() + echo * 300 + 400;
+    playEcho(echo);
+    if (m.kind !== "test") narrate(modeSentence(m), true);
+  }
+  function playEcho(n) {
+    PATTERNS.echo(n);
+    nextPulse = echoUntil = performance.now() + n * 300 + 400;
   }
   function choose(n) {
     const c = CHOICES[n - 1];
-    if (!c) { PATTERNS.search(); return; } // no such choice
+    if (!c) { PATTERNS.search("not a choice"); return; }
     startMode(n === 1 ? { kind: "waymo", name: "Waymo" } : { kind: "place", name: c.name, place: c }, n);
   }
   // One button per choice, numbered like the presses that pick it; the one in use is highlighted.
@@ -556,36 +506,294 @@
     n.className = "n";
     n.textContent = i + 1;
     b.append(n, c.name);
+    b.setAttribute("aria-pressed", "false");
     b.onclick = () => choose(i + 1);
     $("choices").append(b);
     return b;
   });
   function showChoice() {
-    choiceButtons.forEach((b, i) => b.classList.toggle("active",
-      i === 0 ? mode?.kind === "waymo" : mode?.kind === "place" && mode.place === CHOICES[i]));
+    choiceButtons.forEach((b, i) => {
+      const active = !!(i === 0 ? mode?.kind === "waymo" : mode?.kind === "place" && mode.place === CHOICES[i]);
+      b.classList.toggle("active", active);
+      b.setAttribute("aria-pressed", String(active));
+    });
   }
-  $("stopMode").onclick = () => { mode = null; resetGuidance(); showChoice(); };
+  // Presses still being counted are dropped too: a press just before "Paradise, stop" (or the Stop
+  // button) mustn't choose something 1.5 s after the stop.
+  function stopGuidance() {
+    mode = null; resetGuidance(); dropCommand(); showChoice();
+    clearTimeout(presses.timer); presses.count = 0;
+  }
+  $("stopMode").onclick = stopGuidance;
   // Relative to where the chest faces; pinned down once the compass is there (guideTick).
   document.querySelectorAll("[data-turn]").forEach((b) => {
     b.onclick = () => startMode({ kind: "test", name: `test ${b.textContent}`, turn: Number(b.dataset.turn) }, 0);
   });
-  // Voice (from the chest phone). Only commands count, not everything said nearby: after an
-  // optional "please" / "hey Paradise" / "can you", it has to start with one:
-  //   "Waymo", "take me to the Waymo"          → Waymo
-  //   "test north", "go to test north"         → that place
+
+  // ---- Voice (from the chest phone) ----
+  // The phone hears everything said nearby and sends every phrase. Only phrases that start with the
+  // wake word count ("Paradise, take me to the Waymo"), after up to two filler words ("so", "um",
+  // "hey"…), so people talking nearby don't change anything. Speech recognition doesn't know the
+  // word, so it's taken however it tends to come out ("pair of dice", "parodies"). "Paradise" on its
+  // own: the "heard you" taps, and the next phrase in 8 s counts without it. The wearer hears
+  // nothing, so every command is answered on the wrists: the "got it" echo, the stopped buzz, or the
+  // search buzz for "didn't understand, say it again".
+  const WAKE_WORD = "(?:paradise|paradis|para[ -]?dice|pair[ -](?:of|a)[ -]dice|parodies)";
+  const FILLER = "(?:so|um|uh|okay|ok|hey|hi|and|well)"; // said before it without thinking: "So, Paradise, stop"
+  const WAKE = new RegExp(`^(?:${FILLER}[\\s-]+){0,2}${WAKE_WORD}(?=[\\s-]|$)[\\s-]*`); // on words(): lower case, no punctuation
+  const WAKE_ANYWHERE = new RegExp(`(?:^|[\\s-])${WAKE_WORD}(?=[\\s-]|$)`, "g");
+  const ARMED_FOR = 8000; // ms after "Paradise" alone
+  let armedUntil = 0;
+  let heard = null; // { text, said, result, at }: the last phrase heard, the command in it, what came of it (for the display)
+  // What was said after the wake word ("" for the wake word alone), or null without one.
+  function wakeWord(text) {
+    const t = words(text), m = t.match(WAKE);
+    return m ? t.slice(m[0].length).trim() : null;
+  }
+  // What was said after the last "Paradise" anywhere in the phrase, or null if it's not in it. iOS
+  // sometimes runs several things said into one phrase ("take me to the Waymo Paradise stop"), and a
+  // stop mustn't be lost that way. Only for stop: other commands still need the wake word first.
+  function afterLastWake(text) {
+    const t = words(text);
+    let end = -1;
+    for (const m of t.matchAll(WAKE_ANYWHERE)) end = m.index + m[0].length;
+    return end < 0 ? null : t.slice(end).trim();
+  }
+  // The command as it was said, for the display: "Paradise, I'm thirsty." → "I'm thirsty".
+  const unwake = (text) => text.replace(new RegExp(`^[^a-z]*(?:${FILLER}[^a-z]+){0,2}${WAKE_WORD}(?![a-z])[^a-z0-9]*`, "i"), "").replace(/[\s.!?,]+$/, "");
+  const POLITE = /^(?:please|hey|hi|ok|okay|can you|could you|would you|will you)\s+/;
+  const plain = (t) => { let prev; do { prev = t; t = t.replace(POLITE, ""); } while (t !== prev); return t; };
+  // Stop never waits for the network: said, it's done. Any of these words anywhere in the command
+  // counts ("stop walking", "I said stop", "Paradise stops", "wait"): stopping when it wasn't meant
+  // costs a second to choose again; not stopping when it was can walk the wearer into something.
+  const STOP = /(?:^|[\s-])(?:stop|stops|stopped|stopping|cancel|halt|quit|pause|wait|enough|never ?mind|that'?s it|forget it)(?=[\s-]|$)/; // on words()
+  const REPEAT = /^(?:repeat(?: that| it)?|again|say (?:that|it) again|what was that|come again)(?:\s+please)?$/;
+  const IGNORED = "ignored (no wake word)";
+  function onHeard(text) {
+    const now = performance.now();
+    text = String(text ?? "");
+    if (!words(text)) return;
+    let command = wakeWord(text);
+    if (command === null && now < armedUntil) command = words(text); // said right after "Paradise"
+    if (command === null) {
+      // "… Paradise, stop" at the end of a longer phrase: stop (and only stop).
+      const after = afterLastWake(text);
+      if (after && STOP.test(after)) command = after;
+    }
+    if (command === null) {
+      // Talk nearby: shown, but it doesn't push a command's answer off the display straight away.
+      if (!(heard && heard.result !== IGNORED && now - heard.at < 5000)) heard = { text, result: IGNORED, at: now };
+      return;
+    }
+    heard = { text, said: unwake(text), result: "", at: now };
+    if (!command) {
+      armedUntil = now + ARMED_FOR;
+      heard.result = "listening…";
+      PATTERNS.listening();
+      return;
+    }
+    armedUntil = 0;
+    runCommand(command, heard);
+  }
+  // Anything but stop: Gemini says what it means when it can ("I'm thirsty" → find a water bottle,
+  // "the first place" → test north), else the built-in grammar (localCommand): Gemini switched off,
+  // no link to the server, no answer in 5 s, or an answer that can't be used (no key, over the limit,
+  // a place that isn't saved, not a thing's name). While Gemini thinks, the wrists get the "heard
+  // you" taps, so a second of nothing isn't taken for "didn't hear". Only the latest request counts: an answer to an older one, or one that
+  // comes after the 5 s, is dropped, and so is the request itself once something else is chosen.
+  const COMMAND_WAIT = 5000; // ms
+  const commandAsk = { nextId: 0, waiting: null, info: "none yet" }; // waiting: { id, text, heard, timer }
+  function runCommand(text, h) {
+    dropCommand();
+    if (STOP.test(plain(text))) {
+      commandAsk.info = `"${text}" → stop (at once, no Gemini)`;
+      h.result = applyCommand({ intent: "stop" });
+      return;
+    }
+    if (!$("aiOn").checked || phoneWs?.readyState !== 1) {
+      commandAsk.info = `"${text}": ${$("aiOn").checked ? "no link to the server" : "Gemini off"}, so the built-in grammar`;
+      h.result = localCommand(text);
+      return;
+    }
+    const id = ++commandAsk.nextId, w = (commandAsk.waiting = { id, text, heard: h });
+    w.timer = setTimeout(() => {
+      if (commandAsk.waiting !== w) return;
+      commandAsk.waiting = null;
+      fallBack(w, `no answer in ${COMMAND_WAIT / 1000} s`);
+    }, COMMAND_WAIT);
+    commandAsk.info = `asking what "${text}" means…`;
+    h.result = "understanding…";
+    phoneWs.send(JSON.stringify({ type: "ask-command", to: "server", id, text, places: PLACES.map((p) => p.name), current: modeText() }));
+    PATTERNS.listening("heard you: working on it");
+  }
+  function onAiCommand({ id, command, reason, tokens, ms }) {
+    const w = commandAsk.waiting;
+    if (w?.id !== id) return; // an older request, or one already given up on
+    clearTimeout(w.timer);
+    commandAsk.waiting = null;
+    const result = command ? applyCommand(command, w.heard.said) : null;
+    if (!result) return fallBack(w, command ? `can't use "${command.intent}${command.place ? ` ${command.place}` : ""}"` : reason || "no answer");
+    commandAsk.info = `"${w.text}" → ${result} · ${((ms || 0) / 1000).toFixed(1)} s · ${tokens ?? "?"} tokens`;
+    w.heard.result = result;
+  }
+  function fallBack(w, why) {
+    commandAsk.info = `"${w.text}": ${why}, so the built-in grammar`;
+    w.heard.result = localCommand(w.text);
+  }
+  function dropCommand() {
+    const w = commandAsk.waiting;
+    if (!w) return;
+    clearTimeout(w.timer);
+    commandAsk.waiting = null;
+    w.heard.result = "dropped: something else was chosen";
+  }
+  // The built-in grammar. After the wake word and an optional "please" / "can you":
+  //   "stop", "cancel", "wait", "never mind"… anywhere  → stop
+  //   "repeat", "again", "say that again"                → the confirmation again
+  //   "Waymo", "take me to the Waymo"                    → Waymo
+  //   "test north", "go to test north"                   → that place
   //   "find / get / grab / bring me / where's / where are … <thing>" → find it
-  const POLITE = /^(?:please|hey|hi|ok|okay|paradise|can you|could you|would you|will you)\s+/;
+  //   anything else                                      → didn't understand
+  // It never asks Gemini anything: it's what decides when Gemini is off, unreachable or no help. So a
+  // plain-language thing ("something to drink") is looked for in the words as said.
   const VERB = /^(?:(?:take|bring|get) me to|take me|lead me to|show me|go to|guide me to|walk me to|navigate to|help me find|look for|find|grab|fetch|bring me|bring|get|where's|wheres|where is|where are|where did i put)\s+/;
   const NOT_A_THING = /^(?:it|that|this|there|here|them|home|going|started|ready|back|in|on|off|out|up|over|away|lost)\b/;
-  function onHeard(text) {
-    heardText = text; heardAt = performance.now();
-    let t = text.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9' -]+/g, " ").replace(/\s+/g, " ").trim(), prev;
-    do { prev = t; t = t.replace(POLITE, ""); } while (t !== prev);
+  function localCommand(text) {
+    const t = plain(words(text));
+    if (STOP.test(t)) return applyCommand({ intent: "stop" });
+    if (REPEAT.test(t)) return applyCommand({ intent: "repeat" });
     const asked = VERB.test(t), thing = cleanThing(t.replace(VERB, ""));
-    if (/^(?:way ?mo|way more)$/.test(thing)) return choose(1);
-    const place = CHOICES.findIndex((c, i) => i > 0 && thing === c.name.toLowerCase());
-    if (place > 0) return choose(place + 1);
-    if (asked && thing && !NOT_A_THING.test(thing)) findThing(thing);
+    if (/^(?:way ?mo|way more)$/.test(thing)) return applyCommand({ intent: "waymo" });
+    const place = PLACES.find((p) => thing === cleanThing(p.name));
+    if (place) return applyCommand({ intent: "place", place: place.name });
+    if (asked && thing && !NOT_A_THING.test(thing) && findThing(thing, false)) return mode.name;
+    return applyCommand({ intent: "none" });
+  }
+  // What a command does, from Gemini or the grammar. Returns what it did (for the display), or null,
+  // before doing anything, if it can't be done (a place there isn't, no thing): then the grammar tries.
+  // Waymo, a place, a thing: the usual "got it" echo is the wearer's confirmation.
+  function applyCommand(c, said) {
+    if (c.intent === "waymo") { choose(1); return "Waymo"; }
+    if (c.intent === "place") {
+      const i = CHOICES.findIndex((ch, i) => i > 0 && cleanThing(ch.name) === cleanThing(String(c.place || "")));
+      if (i < 1) return null;
+      choose(i + 1);
+      return CHOICES[i].name;
+    }
+    if (c.intent === "find") {
+      // Gemini has already named a thing the detectors can look for: straight to find mode (no second
+      // "what does it mean" call), and the display shows what was said and what it was taken to mean.
+      const what = cleanThing(String(c.thing || ""));
+      if (!what) return null;
+      startMode({ kind: "find", ...thingFields(what) }, 1);
+      if (said) aiAsk.meant = { asked: said, what, reason: c.reason || "" };
+      return mode.name;
+    }
+    if (c.intent === "stop") {
+      stopGuidance();
+      PATTERNS.stopped();
+      narrate("Stopping.", true);
+      return "stop";
+    }
+    if (c.intent === "repeat") {
+      // The current choice's echo again (the Waymo 1, a place its number, a thing 1), or, with
+      // nothing chosen, the search buzz.
+      if (!mode) { PATTERNS.search("nothing to repeat"); return "repeat: nothing chosen"; }
+      playEcho(mode.kind === "place" ? CHOICES.indexOf(mode.place) + 1 : 1);
+      if (mode.kind !== "test") narrate(modeSentence(mode), true);
+      return `repeat: ${mode.name}`;
+    }
+    if (c.intent === "none") {
+      PATTERNS.search("didn't understand");
+      narrate("Sorry, I didn't catch that.", true);
+      return "didn't understand";
+    }
+    return null;
+  }
+  // The current choice in a few words, for Gemini ("going to the Waymo") and the audience.
+  const modeText = () => !mode ? "none" : mode.kind === "waymo" ? "going to the Waymo" : mode.kind === "place" ? `going to the place "${mode.name}"`
+    : mode.kind === "find" ? `finding "${mode.prompt === null ? mode.asked : mode.what}"` : "an indoor steering test";
+  function modeSentence(m) {
+    if (m.kind === "waymo") return "Going to the Waymo.";
+    if (m.kind === "place") return `Going to ${m.name}.`;
+    return m.prompt === null ? `Looking for ${m.asked}.` : `Looking for the ${m.what}.`; // "Looking for something to drink."
+  }
+
+  // ---- Speaking for the audience ----
+  // The wearer can't hear; everyone around can. The laptop's speakers say what's happening in a few
+  // words, from fixed sentences (never Gemini): what was asked for, found it, stop, arrived, touching,
+  // not found. Never every turn pulse. One clip at a time; while one plays only the newest two wait
+  // (older news is stale); the same sentence at most once in 8 s (so an obstacle that stays, or comes
+  // and goes, isn't announced with every stop buzz). The server makes the audio (ElevenLabs, cached);
+  // no audio in 4 s, or none to be had (no key, no server), and this browser's own voice says it.
+  const SAY_AGAIN = 8000, SAY_WAIT = 4000; // ms
+  const narrator = { queue: [], job: null, nextId: 0, said: new Map(), info: "nothing said yet" }; // said: sentence → when
+  // fresh: a new command or choice, so whatever was still waiting to be said is about the old one:
+  // dropped first, whatever happens next (an old "Stopping." must never follow "Going to the Waymo.").
+  // And it's said even if it was said a moment ago: it answers something just asked ("Paradise,
+  // repeat"), unlike an obstacle that's still there.
+  function narrate(text, fresh) {
+    if (!$("voiceOn").checked) return;
+    const now = performance.now();
+    text = text.slice(0, 200);
+    if (fresh) narrator.queue.length = 0;
+    for (const [t, at] of narrator.said) if (now - at >= SAY_AGAIN) narrator.said.delete(t);
+    if (narrator.said.has(text) && !fresh) return;
+    narrator.said.set(text, now);
+    narrator.queue.push(text);
+    if (narrator.queue.length > 2) narrator.queue.shift();
+    speakNext();
+  }
+  function speakNext() {
+    if (narrator.job || !narrator.queue.length) return;
+    const job = (narrator.job = { id: ++narrator.nextId, text: narrator.queue.shift(), started: false, audio: null });
+    // Ended, failed or timed out: a clip that's somehow still playing is cut off, so it can't run on
+    // over the next one (or, stale, say something no longer true).
+    job.done = () => {
+      if (narrator.job !== job) return;
+      clearTimeout(job.timer);
+      narrator.job = null;
+      job.audio?.pause();
+      if (job.utterance) speechSynthesis.cancel();
+      speakNext();
+    };
+    if (phoneWs?.readyState !== 1) return browserVoice(job, "no server");
+    phoneWs.send(JSON.stringify({ type: "say", to: "server", id: job.id, text: job.text }));
+    job.timer = setTimeout(() => browserVoice(job, `no audio in ${SAY_WAIT / 1000} s`), SAY_WAIT);
+  }
+  function onSpeech({ id, audio, cached, reason }) {
+    const job = narrator.job;
+    if (job?.id !== id || job.started) return; // late: the browser's voice already has it
+    clearTimeout(job.timer);
+    // Only audio in the message itself, never a link (which could point anywhere). Only the server
+    // sends these (server.js doesn't pass one on from another page), but the page doesn't rely on it.
+    if (typeof audio !== "string" || !audio.startsWith("data:audio/")) return browserVoice(job, reason || "no audio");
+    job.started = true;
+    narrator.info = `"${job.text}" · ElevenLabs${cached ? " (cached)" : ""}`;
+    const a = (job.audio = new Audio(audio));
+    a.onended = a.onerror = job.done;
+    a.play().catch(job.done); // Chrome plays nothing until the page has been clicked: skip it
+    job.timer = setTimeout(job.done, 20000); // never stuck on a clip that doesn't end
+  }
+  function browserVoice(job, why) {
+    if (narrator.job !== job || job.started) return;
+    job.started = true;
+    clearTimeout(job.timer);
+    narrator.info = `"${job.text}" · browser voice (${why})`;
+    if (!("speechSynthesis" in window)) return job.done();
+    const u = (job.utterance = new SpeechSynthesisUtterance(job.text));
+    u.onend = u.onerror = job.done;
+    speechSynthesis.speak(u);
+    job.timer = setTimeout(job.done, 15000); // Chrome sometimes never says it ended
+  }
+  function hush() {
+    narrator.queue.length = 0;
+    const job = narrator.job;
+    narrator.job = null;
+    if (!job) return;
+    clearTimeout(job.timer);
+    job.audio?.pause();
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
   }
 
   // ---- What the chest phone tells us ----
@@ -772,7 +980,8 @@
   // Nothing more to try: the search buzz once, then quiet (the wearer can choose again).
   function giveUp(why) {
     Object.assign(scan, { phase: "done", why });
-    PATTERNS.search();
+    PATTERNS.search("not found");
+    narrate(`Couldn't find the ${mode.what} nearby.`);
   }
   function onAi({ id, answer, reason }) {
     const req = aiAsk.waiting;
@@ -945,7 +1154,11 @@
     const scanning = mode.kind === "find" && !camTarget(3000) && !(explore && now < explore.until);
     if (obs && !reaching && !scanning) {
       explore = null; // walking to the AI's pick and something's in the way: likely there; look round again
-      if (now >= obstacleNext) { obstacleNext = now + 1200; PATTERNS.obstacle(); }
+      if (now >= obstacleNext) {
+        obstacleNext = now + 1200;
+        PATTERNS.obstacle();
+        narrate(`Stop. ${capital(obs.label.replace(/ \(.*\)$/, ""))} ahead.`); // "something close (no floor in view)" → "Something close"
+      }
       nextPulse = now + 400;
       return say(`STOP: ${obs.label}${obs.distance != null ? ` ${obs.distance.toFixed(1)} m` : ""} ahead`);
     }
@@ -969,7 +1182,7 @@
       else waiting = fresh(beacon, now) ? "waiting for GPS" : "waiting for the Waymo's location (beacon)";
       // Near the beacon but no Waymo confirmed yet: keep heading for the beacon; the camera will
       // take over as soon as it recognizes the car.
-      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); nextPulse = now + 600; }
+      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); narrate("Waymo found."); nextPulse = now + 600; }
     }
     if (mode.kind === "find" && mode.prompt === null) { // waiting to hear what "something to drink" means
       if (now - task.at > 15000) settleWhat(null, "the AI didn't answer");
@@ -986,7 +1199,7 @@
         return scanTick(now, say);
       }
       // Found it (after the selection echo, so the two can't blur together).
-      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; PATTERNS.connected(); nextPulse = now + 600; }
+      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; PATTERNS.connected(); narrate(`Found the ${mode.what}.`); nextPulse = now + 600; }
     }
     distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m`;
     distanceBy = distance == null ? "" : onRoute ? "route" : by;
@@ -1005,6 +1218,7 @@
       if (!arrived && distance <= radius) {
         arrived = by;
         PATTERNS.arrived();
+        narrate(by === "handle" ? "At the door handle." : by === "thing" ? `The ${mode.what} is within reach.` : by === "object" ? "At the car." : "Arrived.");
         Object.assign(reach, { startAt: now + 1000, next: 0, touched: false, view: null }); // reaching starts after the buzz
         if (mode.kind === "waymo" && by === "handle") rideStage = "door";
       }
@@ -1050,6 +1264,9 @@
   }, 1000);
   function reachTick(now, say) {
     const what = arrived === "handle" ? "door handle" : mode.what;
+    // "Paradise, repeat" while reaching plays the echo again: no reach buzzes over it, or it can't
+    // be counted. (The display keeps saying where to reach.)
+    const quiet = now < echoUntil;
     const where = reachWords(wrap180(cam.heading - heading), cam.up);
     const fr = lastFrame, hs = handsSeen && now - handsSeen.at < 400 ? handsSeen.list : null;
     reach.view = null;
@@ -1062,7 +1279,7 @@
     const [x1, y1, x2, y2] = cam.box;
     const tx = (x1 + x2) / 2 - (Math.tan(rad(wrap180(heading - cam.boxHeading))) * fr.focal) / fr.w, ty = (y1 + y2) / 2;
     if (!hs.length) {
-      if (now >= reach.next) { reach.next = now + 1200; PATTERNS.reachOut(); }
+      if (now >= reach.next && !quiet) { reach.next = now + 1200; PATTERNS.reachOut(); }
       return say(`REACH OUT toward the ${what}: ${where}. Hand not in view yet`);
     }
     const hand = hs.reduce((a, b) => (Math.hypot(b.tip[0] - tx, b.tip[1] - ty) < Math.hypot(a.tip[0] - tx, a.tip[1] - ty) ? b : a));
@@ -1074,17 +1291,17 @@
     const lined = Math.abs(ax) <= tolX && Math.abs(ay) <= tolY;
     // Touching: lined up and about as far away as the target (with some slack once it's touching).
     if (lined && gap != null && gap <= (reach.touched ? 0.25 : 0.12)) {
-      if (!reach.touched) { reach.touched = true; PATTERNS.touch(); reach.next = now + 800; }
+      if (!reach.touched && !quiet) { reach.touched = true; PATTERNS.touch(); narrate(`Touching the ${what}.`); reach.next = now + 800; }
       return say(`TOUCHING the ${what}`);
     }
     reach.touched = false;
     if (!lined) {
       const sideways = Math.abs(ax) / tolX >= Math.abs(ay) / tolY; // the bigger miss first
       const off = sideways ? Math.abs(ax) : Math.abs(ay), dir = sideways ? (ax < 0 ? "left" : "right") : (ay < 0 ? "up" : "down");
-      if (now >= reach.next) { reach.next = now + 300; PATTERNS[{ left: "reachLeft", right: "reachRight", up: "reachUp", down: "reachDown" }[dir]](Math.min(1, 0.4 + off / 30)); }
+      if (now >= reach.next && !quiet) { reach.next = now + 300; PATTERNS[{ left: "reachLeft", right: "reachRight", up: "reachUp", down: "reachDown" }[dir]](Math.min(1, 0.4 + off / 30)); }
       return say(`REACH: move your hand ${dir} ${off.toFixed(0)}°`);
     }
-    if (now >= reach.next) { reach.next = now + 1000 / (gap != null ? clamp(1 / Math.max(gap, 0.05), 2, 6) : 2); PATTERNS.reachForward(); }
+    if (now >= reach.next && !quiet) { reach.next = now + 1000 / (gap != null ? clamp(1 / Math.max(gap, 0.05), 2, 6) : 2); PATTERNS.reachForward(); }
     return say(`REACH: forward${gap != null ? ` (${Math.max(0, gap).toFixed(2)} m to go)` : ""}`);
   }
   // Where to reach, in words for the display ("a little left, low").
@@ -1113,19 +1330,22 @@
     const reaching = arrived === "handle" || arrived === "thing";
     const m = guide.match(/^([A-Z]+(?: [A-Z]+)*)\b:?\s*(.*)$/);
     put("guideHead", !mode ? "Ready" : m ? capital(m[1].toLowerCase()) : guide);
-    put("guideDetail", !mode ? "Press a Joy-Con button: 1 = Waymo, 2 or more = a place" : m ? m[2] || EXPLAIN[m[1]] || "" : "");
+    put("guideDetail", !mode ? "Choose a destination, find an object, or say “Paradise” to get started." : m ? m[2] || EXPLAIN[m[1]] || "" : "");
     const state = (mode && GUIDE_STATES.find(([re]) => re.test(guide))?.[1]) || "idle";
     if ($("guide").dataset.state !== state) $("guide").dataset.state = state;
-    const heard = now - heardAt < 10000;
-    $("heard").hidden = !heard;
-    if (heard) put("heard", `Heard: “${heardText}”`);
+    put("guidanceState", !mode ? "Standing by" : state === "stop" ? "Obstacle detected" : state === "done" ? "Destination reached" : "Guidance active");
+    // The last phrase heard (10 s), and what came of it: ignored, listening, understanding, or the command.
+    const showHeard = heard && now - heard.at < 10000;
+    $("heard").hidden = !showHeard;
+    const result = heard?.result === "listening…" && now >= armedUntil ? "listened: nothing more said" : heard?.result;
+    if (showHeard) put("heard", `Heard: “${heard.text}”${result ? ` → ${result}` : ""}`);
 
     // What the wrists felt lately (newest first), and, with no Joy-Con connected, that the tiles are
     // standing in for them.
     put("buzzLog", [...buzzLog.map((b) => `${b.text}${b.n > 1 ? ` ×${b.n}` : ""}`),
-      ...(!joyL && !joyR ? ["No Joy-Cons connected: the L and R tiles show what each wrist would feel."] : [])].join("\n"));
+      ...(!joyL && !joyR ? ["Preview mode · Connect Joy-Cons to feel these signals."] : [])].join("\n"));
     $("buzzLog").classList.toggle("has", buzzLog.length > 0);
-    put("modeV", mode ? mode.name : "Off");
+    put("modeV", mode ? mode.name : "Standby");
     // How long the task has taken: from the choice to the touch (or, for a place, arriving).
     if (mode && task.at && !task.done && (/^TOUCHING/.test(guide) || (mode.kind === "place" && /^ARRIVED/.test(guide)))) {
       task.done = now;
@@ -1167,6 +1387,8 @@
       `waymo classifier: ${waymoBest && now - waymoBest.at < 3000 ? `best ${Math.round(waymoBest.prob * 100)}% (sure at ${WAYMO_SURE * 100}%)` : "—"}\n` +
       `object finder: ${finder.info}\n` +
       `ai:      ${aiAsk.info}\n` +
+      `command: ${commandAsk.info}\n` +
+      `speaker: ${$("voiceOn").checked ? narrator.info : "off"}\n` +
       `depth:   ${now - depthSeen.at < 2000 ? `${depthSeen.text} · ${depthSeen.ms} ms` : "—"}${$("depthOn").checked ? "" : " (not used: switched off)"}\n` +
       `hand:    ${handsSeen && now - handsSeen.at < 1000 ? `${handsSeen.list.length} in view` : "— (tracked only at the target)"}`);
   }
@@ -1329,8 +1551,11 @@
 
   // ---- Link to the phones (WebSocket relay in server.js) ----
   let phoneWs = null;
+  // On the laptop itself no link key is needed. Opened through the tunnel (a teammate watching), the
+  // page needs the key like the phones do: /?k=… (the one npm start prints), passed on here.
+  const LINK_KEY = new URLSearchParams(location.search).get("k") || "";
   function connectPhoneLink() {
-    const ws = (phoneWs = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=hands`));
+    const ws = (phoneWs = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=hands${LINK_KEY ? `&k=${encodeURIComponent(LINK_KEY)}` : ""}`));
     ws.onmessage = (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
@@ -1343,6 +1568,8 @@
       if (msg.type === "depth") return onDepth(msg);
       if (msg.type === "ai") return onAi(msg);
       if (msg.type === "ai-what") return onAiWhat(msg);
+      if (msg.type === "ai-command") return onAiCommand(msg);
+      if (msg.type === "speech") return onSpeech(msg);
       if (msg.type !== "eyes") return;
 
       lastEyes = now;
@@ -1379,7 +1606,7 @@
       const obs = msg.objects.filter((o) => o !== car && isObstacle(o)).sort((a, b) => a.distance - b.distance)[0];
       if (obs) setObstacle(obs.label, obs.distance, "yolo", now);
     };
-    ws.onclose = () => setTimeout(connectPhoneLink, 1000);
+    ws.onclose = (e) => setTimeout(connectPhoneLink, e.code === 4401 ? 5000 : 1000); // 4401: refused for the key; no hurry
   }
   connectPhoneLink();
 </script>

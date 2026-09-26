@@ -2,14 +2,18 @@
 // (phone "eyes" page → laptop "hands" page), recognizes Waymos in car crops (clip.js), finds
 // things described in words (a door handle, a water bottle) in camera frames (object-finder.js,
 // with a second opinion from clip.js), finds obstacles in the preview frames (depth.js), and, only
-// when a scan of the room found nothing, asks Gemini where to look next (ai.js).
+// when a scan of the room found nothing, asks Gemini where to look next (ai.js). It also turns what
+// the wearer said after "Paradise" into a command (ai.js), and sentences into speech for the people
+// around them (tts.js).
 //
 //   npm install
 //   npm start
-//   laptop: http://localhost:8080/               (hands.html)
-//   phone:  https://<tunnel address>/eyes.html   (the camera needs https; see README.md)
+//   laptop: http://localhost:8080/                  (hands.html)
+//   phone:  https://<tunnel address>/eyes?k=<key>   (the camera needs https; npm start prints the
+//                                                    link with its key; see README.md)
 
 import http from "node:http";
+import { randomInt, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,9 +21,21 @@ import { WebSocketServer } from "ws";
 import { finder, findObjects } from "./object-finder.js";
 import { clip, classifyCars, checkBoxes } from "./clip.js";
 import { depth, findHazards } from "./depth.js";
-import { ai, whereToLook, whatToFind } from "./ai.js";
+import { ai, whereToLook, whatToFind, understandCommand } from "./ai.js";
+import { tts, speak } from "./tts.js";
 
 const PORT = Number(process.env.PORT) || 8080;
+// The phones come in through a public tunnel address, which anyone can find or be sent. So a page
+// that isn't the laptop's own must bring this key (the ?k= in the phone links printed below, which
+// the phone pages pass on to their WebSocket): without it, it can't see the camera, hear what's
+// said, or send the laptop page anything. PARADISE_TOKEN in paradise/.env keeps the same key (and
+// links) from one start to the next; otherwise every start makes a new one. No look-alike letters
+// (l, 1, o, 0, i): it may be typed on a phone.
+const TOKEN = process.env.PARADISE_TOKEN?.trim() || Array.from({ length: 8 }, () => "abcdefghjkmnpqrstuvwxyz23456789"[randomInt(31)]).join("");
+const tokenOk = (k) => { // compared in constant time, so the key can't be guessed a letter at a time
+  const a = Buffer.from(String(k ?? "")), b = Buffer.from(TOKEN);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
 const ROOT = fileURLToPath(new URL("./public/", import.meta.url));
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -51,40 +67,77 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Every message from one client goes to all the others, except messages with a "to" field,
-// which only go to pages with that role, or to this server ("to": "server": camera frames, car
-// crops, preview frames).
+// Pages talk to each other through here, but each page may only send what that page sends, and
+// only to the page that uses it: anything else is dropped. Otherwise a phone (or anyone with the
+// link) could send the laptop page the server's own answers (a fake "speech" clip, a Gemini
+// "ai-command", a clear "depth") or fake another page. The server's own answers (found, waymo,
+// depth, preview, ai, ai-what, ai-command, speech) come only from the functions below.
+//   role → { message type: the role it goes to }
+const RELAY = {
+  eyes: { eyes: "hands", heard: "hands" },                                          // updates, what the mic heard
+  beacon: { beacon: "hands" },                                                      // the Waymo's location
+  hands: { "frame-please": "eyes", "want-cars": "eyes", "want-hands": "eyes" },     // requests to the chest phone
+};
+// Messages for the server itself ("to": "server"), and which page may send each.
+const JOBS = {
+  eyes: { frame: onFrame, cars: onCars, preview: onPreview },
+  hands: { "ask-ai": onAskAi, "ask-what": onAskWhat, "ask-command": onAskCommand, say: onSay },
+};
+const own = (o, k) => (o && Object.hasOwn(o, k) ? o[k] : null); // (not "constructor" and the like: both come from outside)
 const wss = new WebSocketServer({ server, path: "/ws" });
 const latest = { eyes: null, beacon: null, objects: [] }; // for the status line below
+const dropped = new Set(); // role + type: each kind of dropped message is logged once, not every time
+const refused = { n: 0, loggedAt: -Infinity }; // pages turned away for the key (logged at most every 10 s)
 wss.on("connection", (ws, req) => {
-  const role = new URL(req.url, "http://x").searchParams.get("role") || "unknown";
+  const params = new URL(req.url, "http://x").searchParams;
+  const role = params.get("role") || "unknown";
   ws.role = role;
   // The laptop's own page, not something reaching us through the tunnel (cloudflared connects from
-  // this machine too, but adds Cf-Connecting-Ip): only it may spend the Gemini key.
+  // this machine too, but adds Cf-Connecting-Ip): only it may spend the Gemini key, and only it
+  // needs no link key.
   ws.local = !req.headers["cf-connecting-ip"] && /^(?:127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || "");
   const device = /iPhone|Android|Windows|Mac/.exec(req.headers["user-agent"] || "")?.[0] || "?";
+  if (!ws.local && !tokenOk(params.get("k"))) {
+    // A custom close code (4000–4999) the page can read: it then says to reopen the printed link.
+    ws.role = null; // (never relayed to while it closes)
+    ws.close(4401, "wrong or missing link key");
+    refused.n++;
+    if (Date.now() - refused.loggedAt > 10000) {
+      refused.loggedAt = Date.now();
+      console.log(`refused ${aRole(role)} page (${device}) from outside: wrong or missing link key (?k=…); ${refused.n} refused since start`);
+    }
+    return;
+  }
   console.log(`${role} page connected (${device}); ${wss.clients.size} connected`);
   ws.on("close", () => console.log(`${role} page disconnected (${device}); ${wss.clients.size} connected`));
-  ws.on("message", (data, isBinary) => {
+  ws.on("message", (data) => {
     let msg = null;
     try { msg = JSON.parse(data.toString()); } catch {}
+    const type = typeof msg?.type === "string" ? msg.type : "";
     if (msg?.to === "server") {
       // Anything can arrive here (the tunnel is public): a bad message is logged, never fatal.
-      const job = msg.type === "frame" ? onFrame(msg) : msg.type === "cars" ? onCars(msg)
-        : msg.type === "preview" ? onPreview(msg, data) : msg.type === "ask-ai" ? onAskAi(msg, ws)
-        : msg.type === "ask-what" ? onAskWhat(msg, ws) : null;
-      job?.catch((err) => console.log(`bad ${msg.type} message: ${err.message}`));
+      const job = own(own(JOBS, role), type);
+      if (!job) return drop(role, `${type || "?"} to the server`);
+      job(msg, ws, data).catch((err) => console.log(`bad ${type} message: ${err.message}`));
       return;
     }
+    const to = own(own(RELAY, role), type);
+    if (!to) return drop(role, type || "?");
     for (const client of wss.clients) {
-      if (client === ws || client.readyState !== 1) continue;
-      if (msg?.to && client.role !== msg.to) continue;
-      client.send(data, { binary: isBinary });
+      if (client !== ws && client.role === to && client.readyState === 1) client.send(data, { binary: false });
     }
-    if (msg?.type === "eyes" || msg?.type === "beacon") latest[msg.type] = { msg, at: Date.now() };
-    if (msg?.type === "eyes" && msg.objects) latest.objects = msg.objects; // only sent when new
+    if (type === "eyes" || type === "beacon") latest[type] = { msg, at: Date.now() };
+    if (type === "eyes" && msg.objects) latest.objects = msg.objects; // only sent when new
   });
 });
+function drop(role, what) {
+  role = String(role).slice(0, 20); what = String(what).slice(0, 40);
+  const key = `${role}\n${what}`;
+  if (dropped.has(key) || dropped.size >= 100) return; // (bounded: the kinds come from outside)
+  dropped.add(key);
+  console.log(`[relay] dropped "${what}" from ${aRole(role)} page: not something that page sends (logged once)`);
+}
+const aRole = (role) => { role = String(role).slice(0, 20); return `${/^[aeiou]/i.test(role) ? "an" : "a"} ${role}`; }; // "an eyes", "a beacon"
 
 // A camera frame from the phone → boxes for what the laptop page asked to find in it ("prompt",
 // e.g. "a car door handle."). With "check" ({ what, same }), CLIP gives its second opinion on the
@@ -124,7 +177,7 @@ async function onCars({ cars, compass }) {
 
 // A preview frame from the phone (4 a second): on to the laptop page for its display, then (unless
 // the depth model is still busy with the last one) obstacles in the walking path, for the laptop page.
-async function onPreview(msg, raw) {
+async function onPreview(msg, _ws, raw) {
   const pages = [...wss.clients].filter((c) => c.role === "hands" && c.readyState === 1);
   for (const client of pages) client.send(raw, { binary: false }); // as text, like it came: a page can't parse a binary frame
   if (!pages.length || !msg.cam || typeof msg.image !== "string") return;
@@ -151,6 +204,27 @@ async function onAskWhat({ id, request }, ws) {
   latest.ai = { text: typeof answer === "string" ? answer : `"${answer.thing}" (${answer.ms} ms, ${answer.tokens} tokens)`, at: Date.now() };
   console.log(`[ai] what "${String(request).slice(0, 40)}" means: ${latest.ai.text} · ${ai.calls} calls, ${ai.tokens} tokens since start`);
   if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ai-what", id, ...(typeof answer === "string" ? { reason: answer } : answer) }));
+}
+
+// What the wearer said after "Paradise", the saved places and what the device is doing now → a
+// command (ai.js). The page acts on it only if it's still waiting; after 5 s it uses its own grammar.
+async function onAskCommand({ id, text, places, current }, ws) {
+  const answer = !ws.local ? NOT_LOCAL : await understandCommand(text, places, current);
+  const what = typeof answer === "string" ? "" : answer.place ? ` "${answer.place}"` : answer.thing ? ` "${answer.thing}"` : "";
+  latest.ai = { text: typeof answer === "string" ? answer : `${answer.intent}${what} (${answer.ms} ms, ${answer.tokens} tokens)`, at: Date.now() };
+  console.log(`[ai] command "${String(text).slice(0, 40)}": ${latest.ai.text} · ${ai.calls} calls, ${ai.tokens} tokens since start`);
+  if (ws.readyState === 1) ws.send(JSON.stringify(typeof answer === "string" ? { type: "ai-command", id, reason: answer }
+    : { type: "ai-command", id, command: { intent: answer.intent, place: answer.place, thing: answer.thing, reason: answer.reason }, tokens: answer.tokens, ms: answer.ms }));
+}
+
+// A sentence for the people around the wearer → an MP3 to play on the laptop (tts.js). Same key
+// rule as the AI: only the laptop's own page spends the credits.
+async function onSay({ id, text }, ws) {
+  const answer = !ws.local ? NOT_LOCAL : await speak(text);
+  latest.tts = { at: Date.now() };
+  console.log(`[tts] "${String(text).slice(0, 40)}": ${typeof answer === "string" ? answer
+    : `${answer.chars} chars${answer.cached ? ", cached" : ""} (${answer.ms} ms)`} · ${tts.chars} chars since start`);
+  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "speech", id, ...(typeof answer === "string" ? { reason: answer } : { audio: answer.audio, cached: answer.cached }) }));
 }
 
 // Every 3 s, print what the phones are sending (accuracy and distance only, no coordinates),
@@ -183,6 +257,7 @@ function printStatus() {
   if (finder.status !== "ready") line += ` | object finder ${finder.status}`;
   else if (recent(fd)) line += ` | finding "${fd.prompt}" best ${Math.round(fd.best * 100)}% (${fd.ms} ms)`;
   if (recent(latest.ai)) line += ` | ai ${latest.ai.text}`;
+  if (recent(latest.tts) && tts.chars) line += ` | tts ${tts.chars} chars`;
   console.log(line);
 }
 
@@ -193,6 +268,10 @@ wss.on("error", (err) => {
   process.exit(1);
 });
 server.listen(PORT, () => {
+  const k = encodeURIComponent(TOKEN);
   console.log(`Laptop (hands): http://localhost:${PORT}/`);
-  console.log(`Phone (eyes):   https://<tunnel address>/eyes.html`);
+  console.log(`Phone (eyes):   https://<tunnel address>/eyes?k=${k}`);
+  console.log(`Beacon:         https://<tunnel address>/beacon?k=${k}`);
+  console.log(process.env.PARADISE_TOKEN?.trim() ? "(link key from PARADISE_TOKEN in .env)"
+    : "(a new link key every start: reopen the phone links after a restart, or set PARADISE_TOKEN in .env)");
 });

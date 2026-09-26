@@ -2,7 +2,9 @@
 
 Touch-only guidance for blind and DeafBlind people. Two Joy-Cons, one on each wrist, buzz to steer
 the wearer: turn left, turn right, walk, stop, you're there. Nothing is ever said out loud or shown
-to the wearer. A phone on the chest is the eyes; a laptop in a backpack does the thinking.
+to the wearer (the laptop's screen and speakers are for the people around them). A phone on the
+chest is the eyes; a laptop in a backpack does the thinking. The wearer can speak to it:
+"Paradise, take me to the Waymo".
 
 It does three things:
 
@@ -61,11 +63,12 @@ boxes).
 
 | Mode | How the wearer picks it | What guides them | How it ends |
 |---|---|---|---|
-| **Go to a place** | Press a Joy-Con button 2, 3… times (one number per saved place), or say the place's name | GPS + the phone's compass | One long buzz within the arrival radius (default 6 m) |
-| **Go to the Waymo** | Press once, or say "Waymo" | GPS toward the car's location, then the camera: a classifier that recognizes Waymos, then a door-handle finder, then hand tracking | One long buzz at arm's length from the door handle, then buzzes that steer the hand onto it, and a "touch" buzz on contact |
-| **Find a thing** | Say "find the water bottle", or type it on the laptop page | The camera: an object finder that looks for exactly the words given (plus YOLO for everyday things), then hand tracking. Not in view: the wrists turn you round the room, a stop at a time; only if that finds nothing, an AI (Gemini) picks where to go and look ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)) | One long buzz at about 1 m (arm's reach), then hand steering and a "touch" buzz, as above |
+| **Go to a place** | Press a Joy-Con button 2, 3… times (one number per saved place), or say "Paradise, go to <the place's name>" | GPS + the phone's compass | One long buzz within the arrival radius (default 6 m) |
+| **Go to the Waymo** | Press once, or say "Paradise, take me to the Waymo" | GPS toward the car's location, then the camera: a classifier that recognizes Waymos, then a door-handle finder, then hand tracking | One long buzz at arm's length from the door handle, then buzzes that steer the hand onto it, and a "touch" buzz on contact |
+| **Find a thing** | Say "Paradise, find the water bottle" (or "Paradise, I'm thirsty"), or type it on the laptop page | The camera: an object finder that looks for exactly the words given (plus YOLO for everyday things), then hand tracking. Not in view: the wrists turn you round the room, a stop at a time; only if that finds nothing, an AI (Gemini) picks where to go and look ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)) | One long buzz at about 1 m (arm's reach), then hand steering and a "touch" buzz, as above |
 
-A mode stays on until another is chosen (or **Stop** is pressed on the laptop page).
+A mode stays on until another is chosen, the wearer says "Paradise, stop", or **Stop** is pressed on
+the laptop page.
 
 ### Choosing
 
@@ -74,9 +77,17 @@ A mode stays on until another is chosen (or **Stop** is pressed on the laptop pa
   the same number. 1.5 s after the last press it counts: **1 = Waymo, 2 = first place, 3 = second
   place**, and so on. The Joy-Cons buzz N times back to confirm (the *echo*). A number with no
   choice behind it gets the search buzz and changes nothing.
-- **Voice.** The chest phone listens all the time. Only commands count: what's said has to *start*
-  with one (after an optional "please", "hey Paradise" or "can you"), so people talking nearby don't
-  change anything. Full grammar in [7.10](#710-choosing-buttons-voice-typing).
+- **Voice.** The chest phone listens all the time, but only what starts with the wake word
+  **"Paradise"** counts ("Paradise, take me to the Waymo", "Hey Paradise, find my keys", "So,
+  Paradise, stop"), so people talking nearby don't change anything. "Paradise" on its own gets the
+  *heard you* buzz (two quick soft taps): say the command within 8 s. **"Paradise, stop"** stops at
+  once, with two long buzzes, and so does any command with *stop*, *cancel*, *wait*, *never mind*…
+  anywhere in it ("Paradise, stop walking", "Paradise, I said stop"). Anything else, Gemini works out
+  what it means ("Paradise, I'm thirsty" → find a water bottle), and the wrists get the *heard you*
+  taps while it does; with Gemini off or not answering within 5 s, a built-in grammar does. The
+  wearer hears nothing, so every command is answered on the wrists: the echo, the stopped buzz, or
+  the search buzz once for "didn't understand, say it again". Details in
+  [7.10](#710-choosing-buttons-voice-typing).
 - **Typing** (for the team): the laptop page's **Find something** box.
 
 ### What each buzz means
@@ -92,7 +103,10 @@ A mode stays on until another is chosen (or **Stop** is pressed on the laptop pa
 | Looking round the room (find mode) | Left or right | Turn pulses (as above) to the next stop, then **quiet: hold still** while it looks | Full |
 | Not found (find mode gave up) | Left, right, left | The search buzz once, then quiet | 60% |
 | Waymo connected / found it | Both | 2 × 80 ms pulses, 180 ms apart | Full |
-| Selection echo | Both | N × 120 ms pulses, 300 ms apart (N = the choice) | 80% |
+| Selection echo ("got it") | Both | N × 120 ms pulses, 300 ms apart (N = the choice) | 80% |
+| Heard you (said "Paradise" alone: listening; or a command gone to Gemini: working on it) | Both | 2 × 60 ms taps, 120 ms apart | 60% |
+| Stopped (said "Paradise, stop") | Both | 2 × 400 ms buzzes, 200 ms apart | Full |
+| Didn't understand / not a choice | Left, right, left | The search buzz once: say it again (or too many presses) | 60% |
 
 **While reaching** (at the door handle or the thing, steering the hand onto it):
 
@@ -125,8 +139,9 @@ The wearer never looks at a screen. The laptop page is for everyone else:
   line. With no frames for 2 s it dims and says *Waiting for the chest camera…*;
 - **what the wearer is being told right now**, in big letters, coloured by kind: *Turn right* (blue),
   *Approaching*, *Stop* (red), *Arrived* / *Touching* (green), *Reach* (purple), *No signal*
-  (orange), with the details underneath (*12°*, *person 1.0 m ahead*), and the last voice command
-  heard;
+  (orange), with the details underneath (*12°*, *person 1.0 m ahead*), and the last thing the phone
+  heard, with what came of it (`Heard: “Paradise, I'm thirsty” → find "water bottle"`, or
+  `→ ignored (no wake word)`);
 - **two wrist tiles, L and R**, that light up yellow exactly when that wrist buzzes (even with no
   Joy-Con connected, which is handy for demos and for testing without Joy-Cons), and say what the
   buzz means (`turn right`, `walk`, `STOP`, `hand up (high buzz)`…) for a moment after;
@@ -141,9 +156,13 @@ The wearer never looks at a screen. The laptop page is for everyone else:
   the stop being looked at, and, if the AI was asked, the photo it picked (violet) with what it said
   ("look at the desk, about 2 m away. Keys are often left on desks.");
 - in Waymo mode, the ride's progress (simulated): *Requested → Arrived → Found by the camera → At
-  the door*, with the current step spelled out (*Your Waymo has arrived: guiding you to it*).
+  the door*, with the current step spelled out (*Your Waymo has arrived: guiding you to it*);
+- and **out loud**, through the laptop's speakers, a few words when something happens: *Going to the
+  Waymo.*, *Looking for the water bottle.*, *Found the water bottle.*, *Stop. Person ahead.*, *The
+  water bottle is within reach.*, *Touching the water bottle.* ([7.10a](#710a-speaking-for-the-audience)).
 
-Above it: pills for the **Phone** and each **Joy-Con** (green when connected). Below it: the team's
+Above it: pills for the **Phone** and each **Joy-Con** (green when connected), and the **Gemini**
+and **Voice** switches. Below it: the team's
 controls (where to go, find something) and three sections that open with a click: **Settings**,
 **Testing** (every buzz, the indoor steering test) and **Details** (what the guidance sees). Light
 or dark follows the Mac's setting.
@@ -244,9 +263,12 @@ water bottle indoors.
 | Loaded by the pages at runtime | `joy-con-webhid` 0.11.0 (laptop page); `onnxruntime-web` 1.22.0 and the YOLOv10n model, `@mediapipe/tasks-vision` 1.0.1 and its hand model (phone) | CDNs: jsDelivr, Hugging Face, Google (`storage.googleapis.com`, the hand model) | Cached by the browser after the first load (~50 MB on the phone: ~30 MB for YOLO, ~20 MB for hand tracking). |
 | Downloaded by the server on first start | Grounding DINO tiny, 8-bit (204 MB); CLIP ViT-B/32, 8-bit (vision 89 MB + text 65 MB); Depth Anything V2 small, 8-bit (27 MB) | Mac, into `paradise/models/` | ~390 MB once, then loaded from disk. |
 
-No accounts, no API keys, nothing paid, except one optional part: when find mode can't see the thing
-anywhere around you, it can ask Google Gemini where to look next. That needs an API key
-([4.2a](#42a-optional-a-gemini-api-key)); without one, everything else works the same.
+No accounts, no API keys, nothing paid, except two optional parts. Google Gemini understands voice
+commands in plain words, and, when find mode can't see the thing anywhere around you, says where to
+look next; that needs a Gemini API key ([4.2a](#42a-optional-a-gemini-api-key)). ElevenLabs gives
+the audience narration a natural voice; that needs an ElevenLabs API key
+([4.2b](#42b-optional-an-elevenlabs-api-key-audience-voice)). Without them, everything else works
+the same (voice commands use a built-in grammar, and the laptop speaks with the browser's own voice).
 
 ---
 
@@ -272,8 +294,9 @@ native ONNX runtime and the `sharp` image library). It takes a minute and a few 
 
 ### 4.2a Optional: a Gemini API key
 
-Only for asking the AI where to look ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)).
-Get a key at Google AI Studio (<https://aistudio.google.com/apikey>), then create a file named `.env`
+Only for understanding voice commands in plain words ([7.10](#710-choosing-buttons-voice-typing)),
+plain-language requests ([7.8b](#78b-plain-language-requests)) and asking the AI where to look
+([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)). Get a key at Google AI Studio (<https://aistudio.google.com/apikey>), then create a file named `.env`
 in the `paradise/` folder with:
 
 ```
@@ -281,12 +304,28 @@ GEMINI_API_KEY=your-key-here
 ```
 
 - `npm start` reads it (`node --env-file-if-exists=.env`, Node.js 22.9 or newer). The start-up
-  output says `ai (where to look next): ready (gemini-3.5-flash-lite)`, or `off: no
+  output says `ai (where to look next, commands): ready (gemini-3.5-flash-lite)`, or `off: no
   GEMINI_API_KEY…`.
 - `.env` is git-ignored: the key never goes into the repository. Each machine needs its own file.
 - Never put the key anywhere in `public/`: those files are served to anyone with the tunnel address.
   Only the server uses it.
 - Another model: add `GEMINI_MODEL=gemini-3.8-flash` (stronger, slower) to the same file.
+
+### 4.2b Optional: an ElevenLabs API key (audience voice)
+
+Only for the laptop's spoken narration for onlookers ([7.10a](#710a-speaking-for-the-audience)).
+Without it, the laptop page speaks with the browser's own voice instead. Create an API key in
+your ElevenLabs account (<https://elevenlabs.io>), then add it to the same `paradise/.env` file:
+
+```
+ELEVENLABS_API_KEY=your-key-here
+```
+
+- Optional, same file: `ELEVENLABS_VOICE_ID=…` (another voice, from the ElevenLabs voice library)
+  and `ELEVENLABS_MODEL=…` (another speech model).
+- Cost: roughly 1 credit per character spoken. Each sentence is short (*Stop. Person ahead.* is 19
+  characters), and the server caches the audio, so a sentence said again costs nothing.
+- Like the Gemini key: git-ignored, used only by the server, never in `public/`.
 
 ### 4.3 First start: the models download
 
@@ -299,7 +338,9 @@ depth model download silently):
 
 ```
 Laptop (hands): http://localhost:8080/
-Phone (eyes):   https://<tunnel address>/eyes.html
+Phone (eyes):   https://<tunnel address>/eyes?k=h7mqx2ta
+Beacon:         https://<tunnel address>/beacon?k=h7mqx2ta
+(a new link key every start: reopen the phone links after a restart, or set PARADISE_TOKEN in .env)
 object finder model: downloading 20 / 204 MB
 object finder model: downloading 40 / 204 MB
 …
@@ -307,6 +348,10 @@ depth: ready
 clip (waymo classifier, second opinions): ready
 object finder: ready
 ```
+
+The `k=…` at the end of the phone links is the **link key** (a different one every start):
+the phones need it to connect through the tunnel ([4.6](#46-give-the-laptop-an-https-address-cloudflare-tunnel)).
+Keep these two lines at hand.
 
 Wait for all three **ready** lines (in any order). On a slow connection the first download can
 take a while (at 0.3 MB/s, ~20 minutes); after that every start loads from `paradise/models/` in a
@@ -363,15 +408,27 @@ may be far away on cellular. A free Cloudflare quick tunnel solves both. In a **
 cloudflared tunnel --protocol http2 --url http://localhost:8080
 ```
 
-It prints an address like `https://words-words-words-words.trycloudflare.com`. Copy it.
+It prints an address like `https://words-words-words-words.trycloudflare.com`. Copy it. **The phone
+links** are that address plus the rest of the links `npm start` printed, key included:
+`https://words-words-words-words.trycloudflare.com/eyes?k=h7mqx2ta` for the chest phone, `…/beacon?k=h7mqx2ta`
+for the beacon.
 
 - `--protocol http2`: many venue and campus networks block the default (UDP/QUIC) connection. With
   it blocked and without this flag, cloudflared retries forever with `Failed to dial a quic
   connection`.
 - The address **changes every time** the tunnel restarts. Reopen the phone pages with the new one.
-- **Anyone with the address can open the pages** (and see the camera view on the laptop page).
-  Stop the tunnel (Ctrl + C) when you're done.
-- The laptop page itself can stay on `http://localhost:8080/`.
+- **The link key (`?k=…`).** Anyone with the tunnel address can load the pages, but a page coming in
+  through the tunnel can only connect to the server with the key: without it, nothing to see (no
+  camera view, nothing heard) and nothing it sends reaches the laptop. The phone pages pass the
+  key from their own address on to the server; opened without it (or with an old one), the chest
+  phone's **Laptop** row says `Wrong or missing link: reopen the link printed by npm start`, and
+  the beacon's pill says **Wrong link**. The key is new on **every `npm start`**, so after a restart
+  reopen both phone links. To keep one key (and the same links) across restarts, put
+  `PARADISE_TOKEN=pick-a-key` in `paradise/.env` (letters and digits are easiest to type).
+  Only the laptop's own page (`localhost`) needs no key.
+- Stop the tunnel (Ctrl + C) when you're done.
+- The laptop page itself can stay on `http://localhost:8080/`. (A teammate watching it through the
+  tunnel opens `https://<tunnel address>/?k=<the key>`.)
 
 ### 4.7 Set up the chest iPhone
 
@@ -384,7 +441,9 @@ Once, in iPhone **Settings**:
 
 Then, each time:
 
-1. In **Safari**, open `https://<your tunnel address>/eyes.html`.
+1. In **Safari**, open the chest phone's link: `https://<your tunnel address>/eyes?k=<the key>`, as
+   `npm start` printed it ([4.6](#46-give-the-laptop-an-https-address-cloudflare-tunnel)). Without the
+   right key the **Laptop** row says `Wrong or missing link…`.
 2. Tap **Start** and **allow every prompt**: microphone (speech), motion & orientation (the compass
    and tilt), location, camera. The first load downloads ~50 MB (use Wi-Fi).
 3. Check the status rows; each gets a green dot once it works:
@@ -431,7 +490,8 @@ chest height are saved on the phone and survive reloads.
 ### 4.10 Set up the beacon phone
 
 1. Location Services as in [4.7](#47-set-up-the-chest-iphone) (Precise Location on).
-2. In Safari, open `https://<your tunnel address>/beacon.html`.
+2. In Safari, open the beacon's link: `https://<your tunnel address>/beacon?k=<the key>`, as `npm
+   start` printed it. (Wrong or missing key: the pill says **Wrong link**.)
 3. Tap **Start sharing location** and allow location. (Refused by mistake? The button comes back:
    allow location in Safari's site settings and tap it again.)
 4. Put the phone **in or on the car** you'll walk to, outdoors, screen on, page open.
@@ -482,7 +542,8 @@ camera-guided stages (Waymo car, door handle, found things) don't use it.
 ### 4.13 Before every demo: checklist
 
 - [ ] `npm start` shows all three **ready** lines (object finder, clip, depth).
-- [ ] Tunnel running with `--protocol http2`; phone pages opened with **today's** address.
+- [ ] Tunnel running with `--protocol http2`; phone pages opened with **today's** address and the
+      link key from **this** `npm start` (`?k=…`).
 - [ ] Laptop page: both Joy-Con pills green; every buzz under **Testing** felt on the right wrist.
 - [ ] Chest phone: every status row green (Laptop, Objects, Hands, Voice, GPS, Compass, Tilt);
       mounted upright, camera forward, **Tilt** 10–20° down; focal and chest height set.
@@ -490,6 +551,9 @@ camera-guided stages (Waymo car, door handle, found things) don't use it.
 - [ ] Beacon phone: accuracy ±10 m or better (green), in/on the car, screen on.
 - [ ] Laptop page **Details**: `phone: last message` under 200 ms; `heading` changes when the wearer
       turns (turning right makes it go **up**).
+- [ ] Voice: "Paradise" gets the *heard you* taps (two quick soft ones); "Paradise, stop" the two long buzzes.
+- [ ] Audience voice: click anywhere on the laptop page once (Chrome plays no sound before a click),
+      then the **Voice** pill off and on: the speakers say *Voice on.*
 - [ ] Spotter ready. Cane in hand.
 
 ---
@@ -525,13 +589,13 @@ over *person 1.0 m ahead*.
 
 ### 3. Chest phone and compass (indoors is fine)
 
-- Tunnel on, `eyes.html` on the chest phone, **Start**, then mount it.
+- Tunnel on, the chest phone's link (`/eyes?k=…`) open on the chest phone, **Start**, then mount it.
 - ✅ Phone: **Laptop** and **Objects** rows green. Laptop: the camera view appears, **Phone** pill
   green.
 - Stand still and press **90° right** (**Testing → Indoor steering test**).
 - ✅ Right wrist pulses; turn right. At about 90°: approaching pulses (1 a second). If it steers the
   wrong way, watch **Details**: turning right should make `heading` go **up**.
-- Close `eyes.html`. ✅ Within a second: `NO SIGNAL from the chest phone` and slow L-R-L buzzes.
+- Close the phone page. ✅ Within a second: `NO SIGNAL from the chest phone` and slow L-R-L buzzes.
 
 ### 4. Obstacles
 
@@ -551,10 +615,25 @@ over *person 1.0 m ahead*.
 
 ### 5. Voice
 
-- Say "Waymo", then "take me to test north", then "find the water bottle".
-- ✅ The phone's **Voice** row shows `Heard “…”`; the laptop shows `Heard: “…”` under the big
-  message; an echo; the mode changes each time.
-- Say "let's get started" and "that's way more fun". ✅ `Heard:` updates, the mode doesn't.
+- Say "Paradise, Waymo", then "Paradise, take me to test north", then "Paradise, find the water
+  bottle".
+- ✅ The phone's **Voice** row shows `Heard “…”`; the laptop shows `Heard: “…” → understanding…`
+  under the big message (and the *heard you* taps: Gemini is working on it), then `→ Waymo`,
+  `→ test north`, `→ find "water bottle"`; an echo each time; the mode changes; the speakers say
+  *Going to the Waymo.* and so on.
+- Say "find the water bottle" and "let's get started" (no wake word). ✅ `→ ignored (no wake word)`;
+  nothing changes.
+- Say "Paradise", wait for the *heard you* taps, then "take me to test east". ✅ `→ listening…`, then
+  `→ test east` and three echo pulses.
+- Say "Paradise, stop". ✅ At once: two long buzzes, **Mode** `Off`, `→ stop`. Same for "So,
+  Paradise, stop", "Paradise, stop walking", "Paradise, wait", and "take me to the Waymo… Paradise,
+  stop" said in one breath.
+- Say "Paradise, repeat" while a place is chosen. ✅ Its echo again, and the speakers say its
+  sentence again (*Going to test east.*), even right after the first time.
+- Say "Paradise, sing me a song". ✅ The search buzz once, `→ didn't understand`, *Sorry, I didn't
+  catch that.*
+- Turn **Gemini** off and say "Paradise, take me to test north". ✅ Same result straight away (the
+  built-in grammar); **Details** `command:` says which one decided.
 
 ### 6. Go to a place (outdoors)
 
@@ -583,7 +662,7 @@ over *person 1.0 m ahead*.
 ### 8. Find a thing (indoors)
 
 - Put a water bottle on a table 3–5 m away. Type **water bottle** under *Find something* and press
-  Find (or say "find the water bottle").
+  Find (or say "Paradise, find the water bottle").
 - ✅ One echo; **Mode** `find "water bottle"`; search buzz while it's out of view.
 - ✅ Once in view: **Details** `object finder: "water bottle": ~1200 ms · NN%`; a dashed green box;
   2 quick pulses ("found it"); steering toward it.
@@ -625,7 +704,10 @@ ride progress. See [What onlookers see](#what-onlookers-see-the-laptop-page-is-t
 **Big message**: what the wearer is being told right now: the guide message (list below), split in
 two (`TURN RIGHT 12°` shows as **Turn right** over *12°*), coloured by kind: blue steering, red stop,
 green arrived or touching, purple reaching, orange no signal or no compass, grey waiting or
-searching. Under it, for 10 s: `Heard: “…”`, the last thing the phone heard.
+searching. Under it, for 10 s: `Heard: “…”`, the last thing the phone heard, and what came of it:
+`→ ignored (no wake word)`, `→ listening…` (said "Paradise" alone), `→ understanding…` (waiting for
+Gemini), then `→ Waymo`, `→ test north`, `→ find "water bottle"`, `→ stop`, `→ repeat: …` or
+`→ didn't understand`. Talk nearby that's ignored doesn't replace a command's answer for 5 s.
 
 **Tiles**
 
@@ -637,8 +719,8 @@ searching. Under it, for 10 s: `Heard: “…”`, the last thing the phone hear
 | **Waymo ride** | Waymo mode only: *Requested → Arrived → Found by the camera → At the door* |
 
 **Header pills**: **Phone** (green: a message in the last second; red: it was connected and went
-quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected and set up), and
-**Buzz legend**, which opens [the legend](#65-the-buzz-legend-page) in a new tab (so guidance keeps
+quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected and set up), the
+**Gemini** and **Voice** switches (below), and **Buzz legend**, which opens [the legend](#65-the-buzz-legend-page) in a new tab (so guidance keeps
 running here).
 
 **Controls**
@@ -647,17 +729,18 @@ running here).
 |---|---|---|
 | Connect Joy-Con (top right) | — | Chrome's device picker; once per Joy-Con |
 | Go to: `1 Waymo`, `2 test north`, … | — | Same as pressing a Joy-Con button that many times; the one in use is highlighted |
-| Stop | — | Mode off |
+| Stop | — | Mode off (Joy-Con presses still being counted are dropped too, so they can't choose something a moment later) |
 | Find something + Find (or Enter) | — | Starts find mode for the typed thing |
 | Settings → Buzz strength | 0.7 (0.1–1) | Multiplies every buzz's strength |
 | Settings → On-target margin | ±12° (5–30) | How close to straight ahead counts as "facing it" (+5° extra once facing, so it doesn't flicker) |
 | Settings → GPS arrival radius | 6 m (2–20) | Arrival distance for places |
 | Settings → Obstacle stop distance | 1.5 m (0.5–3) | Anything closer than this, straight ahead, is an obstacle |
 | Settings → Obstacles from depth | on | Also stop for anything the depth model sees close in the walking path, not just what YOLO recognizes ([7.5](#75-obstacles)) |
-| **Gemini on / off** (header button) = Settings → Use Gemini | on (remembered in the browser) | Both of Gemini's jobs: plain-language requests ([7.8b](#78b-plain-language-requests)) and, after a full turn finds nothing, where to look (at most 3 times a search, [7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)). Off: no Gemini calls at all; requests are taken literally and find mode says "not found" after one turn |
+| **Gemini on / off** (header button) = Settings → Use Gemini | on (remembered in the browser) | All of Gemini's jobs: what a voice command means ([7.10](#710-choosing-buttons-voice-typing)), plain-language requests ([7.8b](#78b-plain-language-requests)) and, after a full turn finds nothing, where to look (at most 3 times a search, [7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)). Off: no Gemini calls at all; voice commands use the built-in grammar, requests are taken literally and find mode says "not found" after one turn |
+| **Voice on / off** (header button) = Settings → Speak for the audience | on (remembered in the browser) | The laptop's speakers say what's happening in a few words, for onlookers ([7.10a](#710a-speaking-for-the-audience)). Off: silent at once |
 | Settings → Any car counts as the Waymo (demo) | off | Only for a demo with no real Waymo there: any car the phone sees counts as the Waymo (the one in the beacon's direction). The ride card says `(demo: any car counts as the Waymo)` while it's on, so nobody is misled ([7.7](#77-mode-2-the-waymo)) |
 | Settings → Follow walking routes | on | Steer along an OpenStreetMap walking route to a place or the Waymo, turning at corners; off: a straight line ([7.6a](#76a-walking-routes)) |
-| Testing → Walking buzzes, Reaching buzzes | — | Plays each pattern |
+| Testing → Voice buzzes, Walking buzzes, Reaching buzzes | — | Plays each pattern |
 | Testing → Indoor steering test: 90° left, 45° right, 90° right, Behind | — | Steers to a direction relative to where the chest faces (no GPS needed); no arrival |
 
 **Settings**, **Testing** and **Details** open with a click; the browser remembers which are open.
@@ -673,6 +756,8 @@ running here).
 | `camera:` | `person 2.4 m, car 11.8 m` | What YOLO saw in the last 1.5 s |
 | `waymo classifier:` | `best 96% (sure at 90%)` | Highest Waymo score in the last 3 s |
 | `object finder:` | `door handle: 1180 ms · 22%` or `"water bottle": 1250 ms · not in view` | The object finder's last answer; `(second opinion unavailable: …)` if CLIP isn't ready |
+| `command:` | `"i'm thirsty" → find "water bottle" · 0.9 s · 180 tokens` or `"take me to test north": no answer in 5 s, so the built-in grammar` | The last voice command: what Gemini made of it, or why the built-in grammar decided |
+| `speaker:` | `"Stop. Person ahead." · ElevenLabs (cached)` or `… · browser voice (no audio in 4 s)` | The last sentence spoken for the audience, and whose voice; `off` when the Voice switch is off |
 | `depth:` | `clear (floor 78%) · 85 ms`, `obstacle 1.32 m +4° · 88 ms` or `floor not visible (something close in front?) · 90 ms` | The depth model's last answer (up to 4 a second): what it found in the walking path (`obstacle` / `drop`, distance, angle), or why it couldn't judge. `(not used: switched off)` when the checkbox is off |
 | `hand:` | `1 in view` | Hand tracking; only runs while reaching (`— (tracked only at the target)` otherwise) |
 
@@ -704,13 +789,13 @@ running here).
 
 ### 6.2 The chest phone page
 
-`https://<tunnel>/eyes.html` (`public/eyes.html`).
+`https://<tunnel>/eyes?k=<the key>` (`public/eyes.html`; the link `npm start` prints).
 
 | Element | What it is |
 |---|---|
 | Start | Starts everything; asks for every permission. Tap once (it then goes away). |
 | Status rows | One per part, with a dot: green working, orange waiting or unsure, red failed, grey not started yet |
-| **Laptop** | `Connected · N updates` means the phone reaches the **server**; check the laptop page's **Phone** pill to be sure the laptop page is open too |
+| **Laptop** | `Connected · N updates` means the phone reaches the **server**; check the laptop page's **Phone** pill to be sure the laptop page is open too. `Wrong or missing link: reopen the link printed by npm start`: the server refused it, since the `?k=…` in the page's address isn't this `npm start`'s key ([4.6](#46-give-the-laptop-an-https-address-cloudflare-tunnel)); it tries again every 5 s |
 | **Objects** | YOLO: `Loading (about 30 MB the first time)…`, `Ready (webgpu)` or `Ready (wasm)`, then `webgpu · N ms a frame` |
 | **Hands** | Hand tracking: `Loading (about 20 MB the first time)…`, `Ready (GPU)` or `Ready (CPU)`, then while reaching `N in view · M ms`; or `Failed to load (…): no reach guidance` |
 | **Voice** | `Listening`, `Heard “…”`, or an error (`not-allowed` etc.: voice turns itself off; buttons still work) |
@@ -722,26 +807,33 @@ running here).
 
 ### 6.3 The beacon page
 
-`https://<tunnel>/beacon.html` (`public/beacon.html`). **Start sharing location** → a big accuracy
+`https://<tunnel>/beacon?k=<the key>` (`public/beacon.html`; the link `npm start` prints). **Start sharing location** → a big accuracy
 number (green at ±10 m or better, orange up to ±100 m, red beyond, with a hint to turn on Precise
 Location), *Updated N s ago*, and the coordinates. The pill at the top says **Connected** when it
-reaches the server. It sends its latest fix once a second.
+reaches the server, or **Wrong link** (with a note to reopen the printed link) when the server
+refuses its key. It sends its latest fix once a second.
 
 ### 6.4 The server terminal
 
 | Line | Meaning |
 |---|---|
+| `Phone (eyes): https://<tunnel address>/eyes?k=h7mqx2ta`, `Beacon: …/beacon?k=h7mqx2ta` | At start: the phone links with this run's link key ([4.6](#46-give-the-laptop-an-https-address-cloudflare-tunnel)) |
 | `eyes page connected (iPhone); 3 connected` | A page connected (role, device type, total) |
+| `refused an eyes page (iPhone) from outside: wrong or missing link key (?k=…); 4 refused since start` | A page came through the tunnel without this run's key (an old link, or someone else): closed. At most one line every 10 s |
+| `[relay] dropped "speech" from an eyes page: not something that page sends (logged once)` | A page sent something it never sends (a fake server answer, a message for another page): dropped, and this kind is logged only the first time ([7.11](#711-the-server)) |
 | `object finder model: downloading 40 / 204 MB` | First start only |
 | `object finder: ready`, `clip (waymo classifier, second opinions): ready`, `depth: ready` | Models loaded |
 | `object finder: failed: stopped (SIGKILL), starting it again` | A model process crashed; it restarts (up to 3 times) |
 | `bad cars message: …` | A malformed message was ignored |
+| `[ai] command "i'm thirsty": find "water bottle" (850 ms, 180 tokens) · …` | A voice command Gemini read, with the running totals |
+| `[tts] "Stop. Person ahead.": 19 chars, cached (2 ms) · …` | A sentence for the audience, and the ElevenLabs characters used since the start |
 | `[status] chest phone 0s ago: gps ±5 m, compass 187°, sees person, car \| beacon 1s ago: ±4 m \| distance 32 m \| waymo 96% \| depth clear \| finding "a car door handle." best 22% (1180 ms)` | Every 3 s while a phone has sent something in the last 10 s. `depth` is `clear`, what's in the walking path (`obstacle 1.32 m`), or why it can't judge. **No coordinates are ever printed.** |
 
 ### 6.5 The buzz legend page
 
-`http://localhost:8080/legend` (`public/legend.html`), or `https://<tunnel>/legend` on a phone. Every
-buzz the wrists can play, grouped (choosing, walking, stop and wait, reaching), each with:
+`http://localhost:8080/legend` (`public/legend.html`), or `https://<tunnel>/legend` on a phone (it needs no key). Every
+buzz the wrists can play, grouped (talking to it: buttons and voice; walking; stop and wait;
+reaching), each with:
 
 - a strip of its rhythm over 1.8 s: two lanes (L, R), one mark per pulse; purple = high buzz,
   orange = low buzz, fainter = softer;
@@ -1088,7 +1180,9 @@ Node then trusts the system's certificates, as browsers do.
 
 The detectors need a thing's name; people say what they need. "Something to drink", "somewhere to
 sit", "something to write with" (`findThing()`, `onAiWhat()` in `hands.html`; `whatToFind()` in
-`ai.js`):
+`ai.js`). This is for what's **typed** in the **Find something** box; **said**, Gemini already
+names the thing while working out the command ([7.10](#710-choosing-buttons-voice-typing)), and when it
+can't (switched off, no answer) the built-in grammar looks for the words as said:
 
 1. Find mode starts at once (the echo buzz), but nothing is looked for yet (`THINKING: what to look
    for, for "something to drink"`).
@@ -1128,7 +1222,8 @@ At the door handle or a found thing, the wrists steer the wearer's hand onto it 
    = within half the target's box both ways (at least ±4°). **The hand's distance** = `f × 0.08 m ÷
    knuckle width` (an adult's index-to-little-finger knuckles are about 8 cm apart); **gap** = the
    target's distance − the hand's.
-4. **Buzzes** (the first one 1 s after the arrival buzz, so the two don't blur together):
+4. **Buzzes** (the first one 1 s after the arrival buzz, so the two don't blur together; none while
+   an echo plays, e.g. after "Paradise, repeat", so it can be counted):
    - no hand in view: *reach out*, every 1.2 s;
    - not lined up: the bigger miss first (measured against the tolerance): *left* / *right* on that
      wrist, *up* / *down* as a high / low buzz on both, every 300 ms; strength `0.4 + degrees ÷ 30`
@@ -1159,35 +1254,121 @@ photos in Chrome on the Mac (MediaPipe found the fingertips and knuckles).
   1.5 s after the last press, the count is chosen.
 
 **Voice.** The phone recognizes English (US) speech continuously and sends every final phrase to the
-laptop, which decides:
+laptop (`heard`), which decides (`onHeard()`, `runCommand()`, `localCommand()`, `applyCommand()` in
+`hands.html`; `ai.js` on the server):
 
-1. Lower-case it, drop punctuation, and drop leading `please`, `hey`, `hi`, `ok`/`okay`, `paradise`,
-   `can you`, `could you`, `would you`, `will you`.
-2. A leading command verb is noted and removed: `take me to`, `bring me to`, `get me to`,
-   `take me`, `lead me to`, `show me`, `go to`,
-   `guide me to`, `walk me to`, `navigate to`, `help me find`, `look for`, `find`, `grab`, `fetch`,
-   `bring me`, `bring`, `get`, `where's`, `where is`, `where are`, `where did i put`.
-3. Filler is removed: leading `me us the a an my our your some`, trailing `please`, `for me`,
-   `for us`, `now`, `thanks`, `thank you`.
-4. What's left:
-   - exactly `waymo` (or `way mo` / `way more`, how dictation sometimes spells it) → **Waymo**;
-   - exactly a place's name → **that place**;
-   - otherwise, *if there was a command verb*, and it isn't a word like `it`, `there`, `going`,
-     `started`, `ready`… → **find it**. Plain language instead of a thing's name (it starts with
-     `something`, `anything`, `somewhere`, `anywhere`, `place`, `thing` or `stuff`: "something to
-     drink", "a place to sit") → the AI names the thing first ([7.8b](#78b-plain-language-requests)).
+1. **The wake word.** Only a phrase that *starts* with "Paradise" counts, after at most two filler
+   words (`so`, `um`, `uh`, `ok`/`okay`, `hey`, `hi`, `and`, `well`: "So, Paradise, …", "Um
+   Paradise …", "Okay so Paradise …"). Dictation doesn't know the word, so it also takes
+   `pair of dice`, `pair a dice`, `para dice`, `paradice`, `parodies` and `paradis`. It's
+   lower-cased, punctuation dropped, and the wake word removed: "Hey, Paradise. Find my keys!" →
+   `find my keys`. Anything else is ignored (the display still shows it: `→ ignored (no wake
+   word)`), so talk nearby changes nothing, and "the paradise hotel was nice" doesn't count either.
+2. **"Paradise" on its own:** the *heard you* buzz (two quick soft taps), and the next phrase within
+   **8 s** counts without the wake word.
+3. **Stop, at once.** A command with any of `stop`, `stops`, `stopped`, `stopping`, `cancel`,
+   `halt`, `quit`, `pause`, `wait`, `enough`, `never mind`/`nevermind`, `that's it` or `forget it`
+   as a word **anywhere** in it ("stop walking", "stop the guidance", "I said stop", "Paradise
+   stops.") never waits for the network: the mode goes off exactly as with the **Stop** button,
+   Joy-Con presses still being counted are dropped, and the wrists get the *stopped* buzz (two long
+   buzzes). Stopping when it wasn't meant costs a second to choose again; not stopping when it was
+   can walk the wearer into something. So "Paradise, find the stop sign" stops too.
+   **Also mid-phrase:** iOS sometimes runs several things said into one phrase ("take me to the
+   Waymo Paradise stop"). So if "Paradise" comes *anywhere* in a phrase and what follows its last
+   "Paradise" is a stop (as above), it stops. Only stop works that way: every other command needs
+   the wake word at the start.
+4. **Anything else, with Gemini on:** the sentence goes to the server (`ask-command`) with the saved
+   places' names and what's going on now, and Gemini answers with one of `waymo`, `place` (which
+   one), `find` (a thing the camera can look for: "I'm thirsty" → water bottle), `stop`, `repeat` or
+   `none`. Meanwhile the display says `→ understanding…` and the wrists get the *heard you* taps
+   (working on it), so a second of nothing isn't taken for "didn't hear".
+5. **The built-in grammar** decides instead when Gemini is off, the server isn't connected, there's
+   no answer within **5 s**, or the answer can't be used (no key, over the limit, a place that isn't
+   saved, a "thing" that isn't a thing's name; `ai.js` compares places ignoring case, extra spaces,
+   quotes and trailing punctuation). Gemini's own `none` (not a request, or unclear) is final:
+   *didn't understand*. An answer that comes later is ignored, and only the latest request counts
+   (so is one for which something else was chosen meanwhile, by a button, say). The grammar never
+   asks Gemini anything. It:
+   1. drops leading `please`, `hey`, `hi`, `ok`/`okay`, `can you`, `could you`, `would you`,
+      `will you`;
+   2. a stop word anywhere (step 3) → **stop**; `repeat`, `again`, `say that again`, `what was that`,
+      `come again` → **repeat**;
+   3. notes and removes a leading command verb: `take me to`, `bring me to`, `get me to`,
+      `take me`, `lead me to`, `show me`, `go to`, `guide me to`, `walk me to`, `navigate to`,
+      `help me find`, `look for`, `find`, `grab`, `fetch`, `bring me`, `bring`, `get`, `where's`,
+      `where is`, `where are`, `where did i put`;
+   4. removes filler: leading `me us the a an my our your some`, trailing `please`, `for me`,
+      `for us`, `now`, `thanks`, `thank you`;
+   5. what's left: exactly `waymo` (or `way mo` / `way more`, how dictation sometimes spells it) →
+      **Waymo**; exactly a place's name → **that place**; otherwise, *if there was a command verb*,
+      and it isn't a word like `it`, `there`, `going`, `started`, `ready`… → **find it**, the
+      words as said (plain language too: "find me something to drink" looks for *something to
+      drink*; only typed requests ask Gemini what those mean, [7.8b](#78b-plain-language-requests));
+      anything else → **didn't understand**.
+6. **What each does, and what the wearer feels:**
+
+| Command | What happens | The wrists |
+|---|---|---|
+| `waymo` | Waymo mode, as if pressed once | Echo: 1 pulse |
+| `place` | That place, as if pressed its number | Echo: its number (test north 2, test east 3) |
+| `find` | Find mode for that thing, straight away (no second Gemini call). The scan card shows `AI: “I'm thirsty” means water bottle.` and Gemini's reason | Echo: 1 pulse |
+| `stop` | Mode off | Stopped: 2 long buzzes |
+| `repeat` | The current choice's confirmation again | Its echo again (Waymo 1, a place its number, a thing 1); nothing chosen: the search buzz once |
+| `none` | Nothing changes | The search buzz once: "didn't understand, say it again" |
 
 | Said | Result |
 |---|---|
-| "Waymo." / "Take me to the Waymo, please" / "Bring me the Waymo" | Waymo |
-| "Test north" / "Go to test north" | That place |
-| "Find my keys." / "Where are my keys?" / "Hey Paradise, find my phone." / "Get me a water bottle please" / "Where’s the trash can?" | Find: keys / keys / phone / water bottle / trash can |
-| "Take me a bottle" / "Take me to the water bottle" / "Lead me to a chair" / "Show me the door" | Find: bottle / water bottle / chair / door |
-| "Find me something to drink" / "Help me find somewhere to sit" | Find: water bottle / chair (named by the AI) |
-| "Let's get started" / "That's way more fun" / "I love Waymo" / "I can't get there" / "Get going" / "Take me home" | Nothing (not commands) |
+| "Paradise, Waymo." / "Hey Paradise, take me to the Waymo, please" / "Paradise, bring me the Waymo" | Waymo |
+| "Paradise, test north" / "OK Paradise, go to test north" | That place |
+| "Paradise, find my keys." / "Paradise, where are my keys?" / "Hey Paradise, find my phone." / "Paradise, get me a water bottle please" / "Paradise, where’s the trash can?" | Find: keys / keys / phone / water bottle / trash can |
+| "Paradise, take me a bottle" / "Paradise, lead me to a chair" / "Paradise, show me the door" | Find: bottle / chair / door |
+| "Paradise, I'm thirsty" / "Paradise, I need to sit down" (Gemini; its answers can vary) | Find: water bottle / chair |
+| "Paradise, find me something to drink" | Gemini on: find: water bottle. Gemini off (the grammar): find: "something to drink", the words as said |
+| "Paradise, stop" / "Pair of dice, cancel" / "Paradise. Never mind." / "Paradise, stop walking" / "Paradise, I said stop" / "Paradise stops." / "Paradise, wait" | Stop |
+| "So, Paradise, stop" / "Um Paradise stop" / "Okay, Paradise, that's it" | Stop (up to two filler words before "Paradise") |
+| "Take me to the Waymo. Paradise, stop." (one phrase) | Stop ("Paradise" mid-phrase counts only for stop) |
+| "Paradise" … (up to 8 s later) "find my keys" | *Heard you* taps, then find: keys |
+| "Find my keys" / "Take me to the Waymo" / "The paradise hotel was nice" / "I love Waymo" / "I told Paradise to find my keys" | Nothing (no wake word at the start, and not a stop) |
+| "Paradise, sing me a song" / "Paradise, take me home" | Didn't understand: the search buzz once |
 
-**Typing:** the **Find something** box goes through the same cleanup (steps 2 and 3, so "find me
-something to drink" works typed too), then find mode.
+**Typing:** the **Find something** box goes through the same cleanup (the grammar's command verbs
+and filler, so "find me something to drink" works typed too), then find mode. No wake word needed.
+
+### 7.10a Speaking for the audience
+
+The wearer can't hear; everyone around can. So the laptop's speakers say what's happening in a few
+words (`narrate()` in `hands.html`; `tts.js` on the server). Fixed sentences, never Gemini:
+
+| When | Said |
+|---|---|
+| A choice (voice, buttons or typed) | *Going to the Waymo.* / *Going to test north.* / *Looking for the water bottle.* (*Looking for something to drink.* while the AI works out what that is) |
+| "Paradise, stop" / not understood | *Stopping.* / *Sorry, I didn't catch that.* |
+| Found by the camera | *Waymo found.* / *Found the water bottle.* |
+| Obstacle stop | *Stop. Person ahead.* / *Stop. Something ahead.* / *Stop. Drop-off ahead.* |
+| Arrived | *Arrived.* (a place) / *At the car.* / *At the door handle.* / *The water bottle is within reach.* |
+| The hand on it | *Touching the water bottle.* / *Touching the door handle.* |
+| Find mode gave up | *Couldn't find the water bottle nearby.* |
+
+Never the turn pulses, the approach pulses or "no signal": only events.
+
+- **One clip at a time.** While one plays, only the newest two sentences wait; older ones are
+  dropped (old news), and a new command or choice clears the queue first, so its sentence comes next
+  and nothing older follows it (no stale *Stopping.* after *Going to the Waymo.*). A clip that
+  hasn't ended when its time is up (20 s; the browser's voice 15 s) is cut off, so it can't play on
+  over the next one.
+- **The same sentence at most once in 8 s**, so an obstacle that stays (its stop buzz repeats every
+  1.2 s) or comes and goes is announced once per 8 s, per kind of obstacle. Not for a command's own
+  sentence: "Paradise, repeat" says it again, however recently it was said.
+- **The voice:** the page asks the server for the audio (`say`); the server gets it from
+  ElevenLabs ([4.2b](#42b-optional-an-elevenlabs-api-key-audience-voice)) and caches it, so a
+  sentence said before costs nothing and comes back at once. No audio within **4 s**, or none to be
+  had (no key, an error, no link to the server): the browser's own voice (`speechSynthesis`) says it
+  instead, so it works with no key at all.
+- **Chrome plays no sound until the page has been clicked** (any click: connecting the Joy-Cons
+  counts). Sentences before that are skipped silently.
+- **Voice on / off** (header pill = Settings → Speak for the audience, remembered in the browser):
+  off stops at once, and nothing more is asked of the server. Turning it on says *Voice on.*
+- The laptop page's **Details** `speaker:` line shows the last sentence and whose voice said it.
 
 ### 7.11 The server
 
@@ -1195,9 +1376,19 @@ something to drink" works typed too), then find mode.
   an address without an extension is that page (`/legend` is `legend.html`, `/eyes` is `eyes.html`);
   never cached (`Cache-Control: no-store`); malformed addresses get 400, anything else 404. The
   models and server code are never served.
-- **Relay:** every WebSocket message goes to all other connected pages, except messages with a `to`
-  field, which go only to pages with that role (`eyes`, `hands`, `beacon`), or to the server itself
-  (`to: "server"`). A page's role is the `?role=` in its WebSocket address.
+- **Link key:** a page that isn't the laptop's own (it comes through the tunnel, which adds
+  Cloudflare's `Cf-Connecting-Ip` header, or from another machine) must have this run's key in its
+  WebSocket address (`&k=…`), or it's closed straight away (code 4401, *wrong or missing link key*).
+  The key is `PARADISE_TOKEN` from `.env`, or 8 random letters and digits made at each start
+  (compared in constant time). The phone pages take it from their own address (`?k=…`).
+- **Relay, by allowlist:** each page may send only what that page sends, and it goes only to the page
+  that uses it: from `eyes`, `eyes` and `heard` (to `hands`); from `beacon`, `beacon` (to `hands`);
+  from `hands`, `frame-please`, `want-cars` and `want-hands` (to `eyes`). Anything else is dropped
+  (and each kind logged once): a page can't pass off a server answer (`speech`, `ai-command`,
+  `depth`, `found`…) or another page's message as real. Messages for the server itself
+  (`to: "server"`) are checked the same way: `frame`, `cars`, `preview` only from `eyes`; `ask-ai`,
+  `ask-what`, `ask-command`, `say` only from `hands` (and those four only from the laptop's own
+  page, to spend the keys). A page's role is the `?role=` in its WebSocket address.
 - **Preview frames** come to the server: it passes each one on to the laptop pages as it is (for
   the display), then, while a laptop page is connected, runs the depth model on it and sends the
   result (`depth`) to the laptop pages.
@@ -1214,18 +1405,20 @@ something to drink" works typed too), then find mode.
 
 ### 7.12 Message protocol
 
-All messages are JSON over one WebSocket per page: `ws(s)://<host>/ws?role=eyes|hands|beacon`.
+All messages are JSON over one WebSocket per page: `ws(s)://<host>/ws?role=eyes|hands|beacon&k=<link key>`
+(the key only through the tunnel, [7.11](#711-the-server)). The "To" column is where the server
+passes each on; anything not listed is dropped.
 Images are JPEG data URLs.
 
 **From the chest phone (`role=eyes`)**
 
 | `type` | To | When | Fields |
 |---|---|---|---|
-| `eyes` | everyone | 10 a second | `seq`; `compass` (degrees, or `null` if stale); `gps` `{lat, lon, acc, age}` or `null` (`age` in ms); `frame` `{w, h, focal, camH, pitch}` (what boxes are measured in; `pitch` = tilt, degrees down); `objects` (only when there's a new YOLO result): `[{label, score, angle, distance, box: [x1, y1, x2, y2] as 0–1}]`; `hands` (only while tracking hands): `[{tip: [x, y], palm: [x, y] as 0–1, width (knuckles, 960-px frame pixels)}]`, `[]` = no hand in view |
+| `eyes` | `hands` | 10 a second | `seq`; `compass` (degrees, or `null` if stale); `gps` `{lat, lon, acc, age}` or `null` (`age` in ms); `frame` `{w, h, focal, camH, pitch}` (what boxes are measured in; `pitch` = tilt, degrees down); `objects` (only when there's a new YOLO result): `[{label, score, angle, distance, box: [x1, y1, x2, y2] as 0–1}]`; `hands` (only while tracking hands): `[{tip: [x, y], palm: [x, y] as 0–1, width (knuckles, 960-px frame pixels)}]`, `[]` = no hand in view |
 | `preview` | `server` (which passes it on to `hands`) | 4 a second | `image` (360 px, JPEG quality 0.6); `cam` `{focal (in this image's pixels), camH, pitch}` (for the depth model); `boxes` `[{label, angle, distance, x1, y1, x2, y2 as 0–1}]` |
 | `frame` | `server` | When asked | `id`, `prompt`, `check` `{what, same}` (find mode), `image` (800 px, quality 0.7), `w`, `h`, `focal` (in this image's pixels) |
 | `cars` | `server` | Twice a second, while asked | `compass`; `cars` `[{image (224 × 224, quality 0.85), angle, distance}]` |
-| `heard` | everyone | Each spoken phrase | `text` |
+| `heard` | `hands` | Each spoken phrase | `text` |
 
 **From the laptop page (`role=hands`)**
 
@@ -1234,24 +1427,34 @@ Images are JPEG data URLs.
 | `frame-please` | `eyes` | One at a time, while a frame is needed and the phone is connected | `id`, `prompt` (`"a car door handle."` or `"a <thing>."`), `check` |
 | `want-cars` | `eyes` | Every second in Waymo mode | — (the phone sends car crops for the next 3 s) |
 | `want-hands` | `eyes` | Every second while reaching | — (the phone tracks hands for the next 3 s) |
+| `ask-command` | `server` | A voice command after the wake word (not stop), Gemini on | `id`; `text` (after the wake word, lower case: `"i'm thirsty"`); `places` (the saved places' names, not the Waymo); `current` (what's going on now, e.g. `going to the Waymo`, or `none`) |
+| `ask-what` | `server` | A plain-language find request, Gemini on | `id`, `request` (`"something to drink"`) |
+| `ask-ai` | `server` | A full turn found nothing (at most 3 a search) | `id`, `what`, `shots` `[{rel (degrees from where the turn started), image}]` |
+| `say` | `server` | A sentence for the audience, Voice on (one at a time) | `id`, `text` (up to 200 characters) |
 
 **From the beacon (`role=beacon`)**
 
 | `type` | To | When | Fields |
 |---|---|---|---|
-| `beacon` | everyone | Once a second | `lat`, `lon`, `acc`, `age` |
+| `beacon` | `hands` | Once a second | `lat`, `lon`, `acc`, `age` |
 
-**From the server (to every `hands` page)**
+**From the server (to every `hands` page; the AI and speech answers only to the page that asked)**
 
 | `type` | When | Fields |
 |---|---|---|
 | `found` | After each `frame` | `id`; `boxes` `[{score, x1, y1, x2, y2 in pixels, verified?}]` or `null`; `reason` (why `null`: `busy`, `loading`, `failed: …`); `note` (e.g. `second opinion unavailable: …`); `w`, `h`, `focal`, `ms` |
 | `waymo` | After each `cars` | `compass`; `cars` `[{angle, distance, prob}]` |
 | `preview` | 4 a second | The phone's `preview` message, passed on as it is |
+| `ai-command` | After each `ask-command` | `id`; `command` `{intent: "waymo" \| "place" \| "find" \| "stop" \| "repeat" \| "none", place, thing, reason}`, `tokens`, `ms`; or `reason` alone when there's no usable answer (no key, over the limit, not the laptop's own page, network, a place that isn't saved, a thing that isn't a thing's name…: the page's grammar decides) |
+| `ai-what` | After each `ask-what` | `id`; `thing`, `reason`, `tokens`, `ms`; or `reason` alone |
+| `ai` | After each `ask-ai` | `id`; `answer` `{rel, x (0–1000 across the photo), target, visible, distance_m, reason, tokens, ms}`, or `reason` alone |
+| `speech` | After each `say` | `id`; `audio` (`data:audio/mpeg;base64,…`) and `cached`; or `reason` alone (no key, an error…: the page uses the browser's voice) |
 | `depth` | After each preview frame the depth model took (up to 4 a second) | `ok`; `why` (when not ok: `no floor in view (…)` or `floor not visible (…)`); `floor` (0–1, how much of where the floor should be looks like floor); `found` `[{kind: "obstacle" or "drop", distance (m), angle (degrees, + = right)}]`; `ms` |
 
 The laptop page ignores a `found` answer if the mode changed since it asked (it's about something
-else), and gives up on a request after 5 s.
+else), and gives up on a request after 5 s. Likewise an `ai-command` answer counts only for the
+latest command and within 5 s (then the built-in grammar decides), and `speech` only within 4 s
+(then the browser's voice speaks).
 
 ### 7.13 Speed and bandwidth
 
@@ -1300,7 +1503,11 @@ All in `public/hands.html` unless noted. Pages: edit and reload. Server files: r
 | Walking corridor, obstacle heights, floor fit | `depth-worker.js`, `analyze()` | ±0.4 m wide, 0.3–4 m ahead, 0.12–2.1 m high; drop below −0.12 m; floor fitted 1–4 m ahead, 25% to count | What the depth model calls an obstacle |
 | Depth model input size | `depth-worker.js` | 364 px | Bigger is sharper and slower (the model's default, 518 px: ~200 ms a frame) |
 | Hand tracking rate | `public/eyes.html`, the camera loop | every other frame (~7 a second) | `now - hands.last > 80` |
-| `POLITE`, `VERB`, `NOT_A_THING` | "Voice" | [7.10](#710-choosing-buttons-voice-typing) | The voice grammar |
+| `WAKE_WORD`, `FILLER`, `ARMED_FOR` | "Voice" | "Paradise" and how dictation spells it; up to two of `so um uh okay ok hey hi and well` before it; 8 s | The wake word, what may come before it, and how long "Paradise" alone listens for the command |
+| `STOP`, `REPEAT`, `POLITE`, `VERB`, `NOT_A_THING` | "Voice" | [7.10](#710-choosing-buttons-voice-typing) | The built-in voice grammar (`STOP`: the words that stop, anywhere in a command) |
+| `COMMAND_WAIT` | "Voice" | 5000 ms | How long a voice command waits for Gemini before the built-in grammar decides |
+| `SAY_AGAIN`, `SAY_WAIT` | "Speaking for the audience" | 8000 ms, 4000 ms | The same sentence at most once in this long; how long to wait for ElevenLabs audio before the browser's voice |
+| Audience sentences | `startMode()`, `applyCommand()`, `guideTick()`, `reachTick()`, `giveUp()` | [7.10a](#710a-speaking-for-the-audience) | What's said, and when (`narrate(…)`) |
 | `HEIGHTS` | `public/eyes.html` | car 1.6 m, … | Real heights for distance by size |
 | Focal / person height / chest height | phone page | 720 / 1.70 / 1.30 | [4.9](#49-calibrate-distances-once-per-phone) |
 | `OTHERS` | `clip-worker.js` | ~80 labels | Alternatives CLIP compares a found thing against |
@@ -1308,7 +1515,8 @@ All in `public/hands.html` unless noted. Pages: edit and reload. Server files: r
 | `PORT` | environment | 8080 | `PORT=8081 npm start` |
 
 Adding a place, a thing or a voice word is a one-line change. Adding a new buzz pattern: add it to
-`PATTERNS`, then call it from `guideTick()`.
+`PATTERNS` (and what it means to `MEANING`, and which wrist to `WHERE` if not both), then call it
+from `guideTick()`; add it to `PULSES` and `LEGEND` in `public/legend.html` too.
 
 ---
 
@@ -1355,6 +1563,7 @@ Then restart `npm start`. To start from scratch (download the web photos again),
 | Models download slowly on first start | They're ~390 MB; wait for all three **ready** lines. After that they load from disk. |
 | Tunnel logs `Failed to dial a quic connection` | Use `--protocol http2`. Still stuck: put the Mac on a phone hotspot. |
 | Phone: **Laptop** `Not connected` | Is `npm start` running? Is the tunnel running, with the address you typed? It changes on every restart. |
+| Phone: **Laptop** `Wrong or missing link: reopen the link printed by npm start` / beacon: **Wrong link** | The page's address has no `?k=…`, or the key of an earlier `npm start` (a new one every start). Open the links `npm start` printed this time ([4.6](#46-give-the-laptop-an-https-address-cloudflare-tunnel)), or set `PARADISE_TOKEN` in `.env` to keep one key. The server terminal says `refused an eyes page … wrong or missing link key`. |
 | Phone: `camera error` | Use the https tunnel address, not `http://…`. Allow the camera in Safari's site settings (**aA → Website Settings**). |
 | Phone: **Objects** `Failed to load` | The phone needs internet for the first load (~30 MB from jsDelivr and Hugging Face). Reload. |
 | `GPS error: User denied Geolocation` | Allow location ([4.7](#47-set-up-the-chest-iphone)); reload and tap Start again. |
@@ -1364,9 +1573,13 @@ Then restart `npm start`. To start from scratch (download the web photos again),
 | GPS targets consistently a bit off | Set `DECLINATION` for your location ([4.12](#412-set-your-magnetic-declination)). |
 | Joy-Con won't connect or buzz | Quit Steam/BetterJoy; re-pair; use Chrome; press a button on the Joy-Con to wake it. |
 | Button presses don't count | Use a face button, trigger or stick click (not SL/SR); wait 1.5 s after the last press. |
-| `NO SIGNAL` while the phone is on | Keep the phone screen on and `eyes.html` in front; check its signal. |
+| `NO SIGNAL` while the phone is on | Keep the phone screen on and its page in front; check its signal, and that its **Laptop** row says `Connected` (not `Wrong or missing link`). |
 | Phone: **Voice** `not-allowed` / `service-not-allowed` | Allow the microphone for the site; turn on Dictation (**Settings → General → Keyboard**). Buttons always work. |
-| Voice ignores what I say | It must start with a command ([7.10](#710-choosing-buttons-voice-typing)); check the `Heard:` text for how it was transcribed. |
+| Voice ignores what I say (`→ ignored (no wake word)`) | It must start with "Paradise" (at most two words like "so" or "um" before it; [7.10](#710-choosing-buttons-voice-typing)); check the `Heard:` text for how it was transcribed. If dictation spells the word some other way, add that spelling to `WAKE_WORD`. |
+| Guidance stops by itself after something was said | A stop word (`stop`, `wait`, `cancel`…) came after "Paradise", anywhere: **Heard:** shows the phrase and `→ stop`. That's on purpose ([7.10](#710-choosing-buttons-voice-typing)); choose again. |
+| Voice commands always `→ didn't understand` | Gemini off or failing (**Details** `command:` says why) and the grammar doesn't know the words: start with a command verb ("find…", "take me to…") or a place's name. |
+| No sound from the laptop | Click anywhere on the laptop page once (Chrome plays nothing before a click); **Voice** pill on; the Mac's volume. **Details** `speaker:` shows what was last said and how. |
+| The laptop speaks with a robotic voice | That's the browser's voice: no ElevenLabs key ([4.2b](#42b-optional-an-elevenlabs-api-key-audience-voice)), or it didn't answer within 4 s (**Details** `speaker:` says which). |
 | Stops for no reason: `STOP: person…`, `STOP: chair…` | Something YOLO recognized is within the stop distance ahead; lower **Obstacle stop distance**. |
 | Stops for no reason: `STOP: something…` | The depth model. Check the phone's `tilt` (10–20° down is best), **Chest height** and **Focal** ([4.8](#48-mount-the-chest-iphone), [4.9](#49-calibrate-distances-once-per-phone)): it measures against the floor, so wrong values put the floor in the wrong place. Still wrong: untick **Obstacles from depth**. |
 | `STOP: something close (no floor in view)` with nothing there, or `depth: no floor in view (tilt the phone down a little)` | The camera doesn't see the floor ahead: it's tilted up, or a jacket or strap covers the lower part of the lens. Tilt it down 10–20°. |
@@ -1404,7 +1617,11 @@ Say these out loud when presenting:
   every ~1.2 s. Distance to unknown things assumes they're on the floor.
 - **Arrival at a found thing is about 1 m** (arm's reach); from there the hand is steered, and
   the fingers finish by feel.
-- **Voice** needs clean mic pickup; buttons always work.
+- **Voice** needs clean mic pickup; buttons always work. Dictation may spell "Paradise" in ways the
+  wake word doesn't know yet, and a phrase from someone nearby within 8 s of "Paradise" alone counts
+  as the command. Stop is deliberately eager: a stop word anywhere after "Paradise" stops guidance,
+  even from someone nearby ("…in Paradise, wait for me"). Gemini's reading of a command takes about a second, up to 5 s before the grammar
+  steps in; "stop" never waits.
 - **Not a real Waymo integration:** the beacon phone stands in for the car's location, and the ride
   status on the display is simulated.
 - **Tested so far** with simulated phones, real photos, rendered depth scenes and hand photos (in
@@ -1422,18 +1639,31 @@ Say these out loud when presenting:
   runs on the phone; only fingertip positions leave it.
 - The phone downloads its models and libraries from jsDelivr, Hugging Face and Google's storage
   (the hand model). Those are downloads only: no camera data goes to them.
-- **The one exception: asking the AI** ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)).
+- **Asking the AI where to look** ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)).
   With a Gemini key set and the **Gemini** button on, a find that sees nothing
   all the way round sends that turn's 10 small photos of the room to Google's Gemini API. Tell
   whoever wears it; switch it off, or leave out the key, to keep everything local. **On Gemini's
   free tier, Google may use what's sent to improve its products** (its pricing page, September
   2026); on the paid tier it doesn't. Fine for a demo; for real users' homes, use a paid key.
-- The Gemini key lives only in `paradise/.env` on the Mac (git-ignored), is used only by the
-  server, and only requests from the laptop's own page can use it.
+- **Voice commands** (after "Paradise", with Gemini on) go to Gemini as text: the words after the
+  wake word, the saved places' names and the current mode. Nothing is sent for phrases without the
+  wake word.
+- **The audience voice** sends its fixed sentences (which can name the thing being found) to
+  ElevenLabs when there's a key ([4.2b](#42b-optional-an-elevenlabs-api-key-audience-voice)).
+- The Gemini and ElevenLabs keys live only in `paradise/.env` on the Mac (git-ignored) and are used
+  only by the server, and only requests from the laptop's own page can use them.
+- **The link key.** Through the tunnel, a page can only connect with this run's key (`?k=…` in the
+  links `npm start` prints; [4.6](#46-give-the-laptop-an-https-address-cloudflare-tunnel)): without
+  it, it gets nothing (no camera view, nothing heard, no locations) and can send nothing. Treat the
+  phone links like a password: whoever has one (with the tunnel address) sees what the chest camera
+  sees. A restart makes a new key (unless `PARADISE_TOKEN` is set), which locks out every old link.
+- **Even with the key,** a page can only send what that kind of page sends ([7.11](#711-the-server)):
+  nobody can fake the server's answers (speech, a Gemini command, "no obstacle") to the laptop page,
+  or a spoken command without a chest phone's microphone.
 - Walking routes: the laptop page sends the wearer's position and the target's to OpenStreetMap's
   router ([7.6a](#76a-walking-routes)).
-- **The tunnel address is public:** anyone who has it can open the pages and see the camera view.
-  Stop the tunnel when you're done; a new tunnel gets a new address.
+- **The tunnel address is public:** anyone who has it can open the pages (the HTML), but without the
+  link key they connect to nothing. Stop the tunnel when you're done; a new tunnel gets a new address.
 - The server terminal never prints coordinates, only GPS accuracy and distances.
 - Phone settings (focal, heights) are saved in the phone's browser storage only.
 
@@ -1482,9 +1712,10 @@ Say these out loud when presenting:
 paradise/
 ├── README.md                  this file
 ├── package.json               npm start → node server.js (with .env); dependencies: ws, @huggingface/transformers
-├── .env                       your Gemini key, if any (you create it; git-ignored; 4.2a)
-├── server.js                  web server (public/ only), WebSocket relay, passes frames/crops to the models, status line
-├── ai.js                      asks Gemini where to look next (only after a full turn finds nothing) and what a plain-language request means, with limits
+├── .env                       your Gemini and ElevenLabs keys, if any (you create it; git-ignored; 4.2a, 4.2b)
+├── server.js                  web server (public/ only), WebSocket relay (link key, allowlist), passes frames/crops to the models, status line
+├── ai.js                      asks Gemini what a voice command means, what a plain-language request means, and where to look next (only after a full turn finds nothing), with limits
+├── tts.js                     the audience voice: ElevenLabs text-to-speech, cached
 ├── object-finder.js           starts and talks to the object finder process (restarts it if it crashes)
 ├── object-finder-worker.js    the object finder: Grounding DINO tiny (8-bit), finds things described in words
 ├── clip.js                    starts and talks to the CLIP process (restarts it if it crashes)
@@ -1494,7 +1725,7 @@ paradise/
 ├── waymo-head.json            trained Waymo classifier weights (512 means, 512 spreads, 512 weights, 1 bias)
 ├── models/                    downloaded models (git-ignored; ~390 MB, fetched on the first npm start)
 ├── public/                    the pages (served to browsers)
-│   ├── hands.html             laptop page: Joy-Cons, choosing, voice commands, all guidance (incl. the last reach), the display
+│   ├── hands.html             laptop page: Joy-Cons, choosing, voice commands, all guidance (incl. the last reach), the display, the audience voice
 │   ├── eyes.html              chest phone: camera + YOLO, hand tracking (MediaPipe), compass, tilt, GPS, voice, frames and crops
 │   ├── yolo-worker.js         YOLOv10n in a web worker on the phone (WebGPU or WebAssembly)
 │   ├── paradise.css           the look shared by the pages (light and dark follow the device)
