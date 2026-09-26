@@ -1,7 +1,8 @@
 <!doctype html>
-<!-- Nudge "eyes": phone page. Finds objects with YOLO (cars, people, chairs…) and sends their
-     angle + distance to the laptop, with GPS and compass. Up close to the car, the laptop asks
-     for camera frames, and the server finds the door handle in them. Needs https. -->
+<!-- Nudge "eyes": chest phone page. Finds objects with YOLO (cars, people, bikes…) and sends their
+     angle + distance to the laptop, with GPS, compass (the wearer's heading) and what the mic
+     hears. Also sends small camera frames for the laptop's display, and, up close to the car,
+     bigger ones for the server's door handle finder. Needs https. -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -23,7 +24,9 @@
   Person height (m): <input id="personH" type="number" step="0.01" value="1.70"><br>
   <button id="calib">Calibrate: that person standing exactly 3.00 m away</button>
 </div>
+<div class="row">Chest height (m): <input id="camH" type="number" step="0.05" value="1.30"></div>
 <div id="yoloInfo" style="font-family: monospace">objects: starts with Start</div>
+<div id="voiceInfo" style="font-family: monospace">voice: starts with Start</div>
 <div id="net" style="font: 700 20px/1.6 monospace; padding: 4px 10px; border-radius: 6px; background: #a00">LAPTOP: NOT CONNECTED</div>
 <div id="sensors" style="font-family: monospace">GPS: off · compass: off</div>
 <div id="info">tap Start</div>
@@ -37,10 +40,12 @@
   try {
     if (localStorage.getItem("focal960")) $("focal").value = localStorage.getItem("focal960");
     if (localStorage.getItem("personH")) $("personH").value = localStorage.getItem("personH");
+    if (localStorage.getItem("camH")) $("camH").value = localStorage.getItem("camH");
   } catch {}
   const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
   $("focal").onchange = () => save("focal960", $("focal").value); // focal is in 960 px frame pixels
   $("personH").onchange = () => save("personH", $("personH").value);
+  $("camH").onchange = () => save("camH", $("camH").value);
 
   // ---- Link to the laptop ----
   let ws = null;
@@ -103,6 +108,7 @@
     $("start").style.display = "none";
     await startCompass(); // first, while the tap still counts on iPhone
     startGps();
+    startVoice(); // also needs the tap on iPhone
     startYolo();
     try { await navigator.wakeLock?.request("screen"); } catch {} // keep the screen on
     try {
@@ -152,9 +158,13 @@
   }
 
   // ---- Objects: YOLOv10n in yolo-worker.js ----
-  // Distance comes from the box's height, which barely changes with viewing angle (a car is
-  // 1.9 m wide head-on but 4.7 m long from the side). Up close the box runs off the frame, so
-  // the distance then reads long. Heights in meters; classes not listed get no distance.
+  // Distance, two ways, taking the nearer:
+  // - Size: from the box's height and the thing's usual height (only for classes listed; a box's
+  //   height barely changes with viewing angle). Up close the box runs off the frame and this
+  //   reads long.
+  // - Ground: where the box meets the ground, for anything standing on it. With the camera at
+  //   chest height looking level, a point y pixels below the middle of the frame is
+  //   chest height × focal / y away. A box cut off at the bottom is at least this close.
   const HEIGHTS = { car: 1.6, truck: 3.0, bus: 3.2, person: 1.7, chair: 0.9, bench: 0.8, "fire hydrant": 0.7 };
   const yolo = { worker: null, busy: false, scale: 1, boxes: [], objects: [], at: -Infinity, fresh: false };
   function startYolo() {
@@ -186,11 +196,19 @@
       label: b.label,
       score: Math.round(b.score * 100) / 100,
       angle: (Math.atan(((b.x1 + b.x2) / 2 - W / 2) / f) * 180) / Math.PI,
-      distance: HEIGHTS[b.label] ? (f * HEIGHTS[b.label]) / (b.y2 - b.y1) : null,
+      distance: distanceOf(b, f, view.height),
     }));
     yolo.at = performance.now();
     yolo.fresh = true;
     $("yoloInfo").textContent = error ? `objects: ${error}` : `objects: ${backend}, ${ms.toFixed(0)} ms a frame`;
+  }
+
+  function distanceOf(b, f, H) {
+    const bySize = HEIGHTS[b.label] ? (f * HEIGHTS[b.label]) / (b.y2 - b.y1) : Infinity;
+    const below = Math.min(b.y2, H) - H / 2; // box bottom, pixels below the middle
+    const byGround = below > 5 ? ((Number($("camH").value) || 1.3) * f) / below : Infinity;
+    const d = Math.min(bySize, byGround);
+    return Number.isFinite(d) ? Math.round(d * 100) / 100 : null;
   }
 
   // Calibration: a person of known height exactly 3.00 m away → focal = box height × 3.00 / height.
@@ -218,6 +236,46 @@
       image: snap.toDataURL("image/jpeg", 0.7),
       focal: (Number($("focal").value) * 800) / 960, // in this frame's pixels
     }));
+  }
+
+  // ---- Small camera frames for the laptop's display, 4 a second ----
+  // With the latest object boxes (0–1 of the frame) so the display can mark obstacles.
+  const mini = document.createElement("canvas");
+  setInterval(() => {
+    if (!video.videoWidth || ws?.readyState !== 1) return;
+    const k = 360 / Math.max(video.videoWidth, video.videoHeight);
+    mini.width = Math.round(video.videoWidth * k);
+    mini.height = Math.round(video.videoHeight * k);
+    mini.getContext("2d").drawImage(video, 0, 0, mini.width, mini.height);
+    const recent = performance.now() - yolo.at < 1000;
+    ws.send(JSON.stringify({
+      type: "preview", to: "hands",
+      image: mini.toDataURL("image/jpeg", 0.6),
+      boxes: recent ? yolo.boxes.map((b, i) => ({
+        label: b.label, angle: yolo.objects[i].angle, distance: yolo.objects[i].distance,
+        x1: b.x1 / view.width, y1: b.y1 / view.height, x2: b.x2 / view.width, y2: b.y2 / view.height,
+      })) : [],
+    }));
+  }, 250);
+
+  // ---- Voice: "Waymo" or a place's name. The phone never speaks back. ----
+  // Listens all the time; the laptop decides whether what it heard means anything.
+  function startVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { $("voiceInfo").textContent = "voice: not available in this browser (use the buttons)"; return; }
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.onresult = (e) => {
+      const text = e.results[e.results.length - 1][0].transcript.trim();
+      $("voiceInfo").textContent = `voice: heard "${text}"`;
+      if (ws?.readyState === 1) ws.send(JSON.stringify({ type: "heard", text }));
+    };
+    rec.onerror = (e) => ($("voiceInfo").textContent = `voice: ${e.error}`);
+    // It stops after a while of silence; start it again.
+    rec.onend = () => setTimeout(() => { try { rec.start(); } catch {} }, 300);
+    try { rec.start(); $("voiceInfo").textContent = "voice: listening"; } catch (err) { $("voiceInfo").textContent = `voice: ${err.message}`; }
   }
 
   // ---- Send ~10 updates a second ----
