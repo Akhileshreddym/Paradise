@@ -56,6 +56,7 @@
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
       if (msg.type === "frame-please") sendFrame(msg.id);
+      if (msg.type === "want-cars") wantCarsUntil = performance.now() + 3000;
     };
   }
   connect();
@@ -237,6 +238,32 @@
       focal: (Number($("focal").value) * 800) / 960, // in this frame's pixels
     }));
   }
+
+  // ---- Car crops for the server's Waymo classifier, twice a second, in Waymo mode ----
+  // Cut exactly like the training crops (training/crop.mjs): the car's box widened 5% each side
+  // and extended 35% of its height upward so the roof sensors are in it, squashed to 224 × 224.
+  let wantCarsUntil = -Infinity;
+  const crop = document.createElement("canvas");
+  crop.width = crop.height = 224;
+  setInterval(() => {
+    if (performance.now() > wantCarsUntil || performance.now() - yolo.at > 600 || ws?.readyState !== 1) return;
+    const k = view.width / video.videoWidth; // 960 px frame → camera pixels
+    const cars = yolo.boxes.map((b, i) => ({ b, o: yolo.objects[i] }))
+      .filter(({ b }) => ["car", "truck", "bus"].includes(b.label) && b.x2 - b.x1 > 40)
+      .sort((p, q) => (q.b.x2 - q.b.x1) * (q.b.y2 - q.b.y1) - (p.b.x2 - p.b.x1) * (p.b.y2 - p.b.y1))
+      .slice(0, 3);
+    if (!cars.length) return;
+    ws.send(JSON.stringify({
+      type: "cars", to: "server", compass,
+      cars: cars.map(({ b, o }) => {
+        const w = b.x2 - b.x1, h = b.y2 - b.y1;
+        const x1 = Math.max(0, b.x1 - 0.05 * w), x2 = Math.min(view.width, b.x2 + 0.05 * w);
+        const y1 = Math.max(0, b.y1 - 0.35 * h), y2 = Math.min(view.height, b.y2);
+        crop.getContext("2d").drawImage(video, x1 / k, y1 / k, (x2 - x1) / k, (y2 - y1) / k, 0, 0, 224, 224);
+        return { image: crop.toDataURL("image/jpeg", 0.85), angle: o.angle, distance: o.distance };
+      }),
+    }));
+  }, 500);
 
   // ---- Small camera frames for the laptop's display, 4 a second ----
   // With the latest object boxes (0–1 of the frame) so the display can mark obstacles.

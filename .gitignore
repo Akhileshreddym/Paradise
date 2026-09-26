@@ -1,3 +1,4 @@
 node_modules/
 nudge/tools/
 nudge/models/
+nudge/training/data/

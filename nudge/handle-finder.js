@@ -6,13 +6,16 @@
 // time (sometimes the charging-port flap). It also scores the whole car as "handle"; the laptop
 // page drops boxes that big.
 //
-// The model (~200 MB) downloads into models/ the first time the server starts. It runs on its
-// own thread (handle-finder-worker.js) so the relay never waits for it.
+// The model (~200 MB) downloads into models/ the first time the server starts. It runs in its
+// own process (handle-finder-worker.js) so the relay never waits for it.
 
-import { Worker } from "node:worker_threads";
+import { fork } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 export const finder = { status: "loading" };
-const worker = new Worker(new URL("./handle-finder-worker.js", import.meta.url));
+// Its own process: the ONNX runtime crashes when two threads of one process use it at once, and
+// this way a crash in the model can't take the relay (and its safety stops) down with it.
+const worker = fork(fileURLToPath(new URL("./handle-finder-worker.js", import.meta.url)));
 const waiting = new Map(); // id → resolve
 let nextId = 0;
 
@@ -24,7 +27,7 @@ worker.on("message", (msg) => {
     waiting.delete(msg.id);
   }
 });
-worker.on("error", (err) => { finder.status = `failed: ${err.message}`; console.log(`door handle finder: ${finder.status}`); });
+worker.on("exit", (code) => { finder.status = `failed: stopped (${code})`; console.log(`door handle finder: ${finder.status}`); });
 
 // data:image/jpeg;base64,… → [{ score, x1, y1, x2, y2 }] in the image's pixels, or a reason
 // string when it can't run right now. One frame at a time.
@@ -34,6 +37,6 @@ export function findHandles(dataUrl) {
   const id = ++nextId;
   return new Promise((resolve) => {
     waiting.set(id, resolve);
-    worker.postMessage({ id, image: dataUrl });
+    worker.send({ id, image: dataUrl });
   });
 }

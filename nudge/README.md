@@ -7,7 +7,8 @@ Waymo. Meant to work alongside a cane, not instead of one.
 ```
 chest iPhone ── eyes.html: camera + YOLO, GPS, compass, mic ──┐
                                                                ├── https tunnel ──► Mac: server.js ──► index page (Chrome) ──Bluetooth──► Joy-Cons (wrists)
-beacon phone ── beacon.html: GPS (stands in for the Waymo) ────┘                    (door handle finder)            (+ display for onlookers)
+beacon phone ── beacon.html: GPS (stands in for the Waymo) ────┘                    (Waymo classifier,              (+ display for onlookers)
+                                                                                     door handle finder)
 ```
 
 ## The two modes
@@ -25,7 +26,10 @@ Arrival: GPS distance under the arrival radius (default 6 m; tune it on site).
 
 **Mode 2: the Waymo.**
 1. GPS toward the beacon phone (it plays the Waymo sharing its location).
-2. The camera spots the car in the beacon's direction: **"Waymo connected"** buzz, then it steers to the car.
+2. The phone sends crops of the cars it sees; the server's **Waymo classifier** (trained on photos
+   of Waymos and other cars, see `training/`) recognizes the Waymo by its sensors. First confident
+   recognition: **"Waymo connected"** buzz, and the camera takes over from GPS. Several Waymos in view:
+   the one in the beacon's direction. Ordinary cars never take over.
 3. Within 4 m, the server finds the **door handle** in camera frames (~1.2 s each) and steers to it.
 4. Arrival at arm's length from the handle. The display says whether the handle is above or below chest height.
 
@@ -92,7 +96,8 @@ teammate as spotter.
 cd nudge
 npm start
 ```
-Wait for `door handle finder: ready`. The first start downloads the handle model (~200 MB).
+Wait for `waymo classifier: ready` and `door handle finder: ready`. The first start downloads the
+handle model (~200 MB) and the classifier's model (~90 MB) into `nudge/models/`.
 
 **Terminal 2: the https tunnel.** iPhones only allow the camera, GPS, compass and mic on https pages.
 ```
@@ -154,7 +159,8 @@ Each step adds one piece. "✅" is what working looks like.
 ### 7. Mode 2 at a car
 - Beacon phone in or on a parked car, **Start sharing location**. Start 30 m or more away and choose **Waymo** (1 press).
 - ✅ Ride status "Your Waymo has arrived". Steers toward the beacon (`… m (gps)`).
-- ✅ Car in view: 2 quick pulses ("connected"), a green WAYMO box, `… m (object)`.
+- ✅ Details box: `waymo classifier: best NN%`. Ordinary cars stay low; a Waymo goes over 90%.
+- ✅ Waymo in view: 2 quick pulses ("connected"), a green WAYMO box, `… m (object)`.
 - ✅ Within 4 m: `door handle finder: … handle NN%` in the details, then `… m (handle)`.
 - ✅ At the handle: one long buzz, `ARRIVED at the door handle: reach straight out`.
 - No handle found: get side-on to the door, 1–3 m away, with the whole door in view.
@@ -184,8 +190,9 @@ press only, follow buzzes only. Note every hesitation or wrong turn.
   cars, benches, poles like parking meters and hydrants, dogs…). It does **not** see curbs,
   steps, walls, glass or holes. The cane covers those.
 - **GPS drift** is several meters, so Mode 1's arrival radius needs tuning on site.
-- **Which car:** the camera can't tell a Waymo from other cars (a custom-trained dome classifier
-  is planned); the beacon's direction picks the car.
+- **Waymo classifier:** recognizes about 90% of Waymo crops (it sees several a second, so misses
+  rarely matter), with 4 false alarms among 654 other cars in testing: mostly other robotaxis with roof
+  sensors. Trained on web photos; photos from the venue will make it better (`training/README.md`).
 - **Door handle:** it sometimes picks the charging-port flap. Distances up close are rough (±20%).
 - **Voice** needs clean mic pickup; button presses always work.
 - **Compass** is magnetic: steel, magnets and cars nearby can skew it by several degrees.
@@ -194,7 +201,9 @@ press only, follow buzzes only. Note every hesitation or wrong turn.
 | File | What it is |
 |---|---|
 | `server.js` | Serves the pages, relays messages, prints a status line every 3 s |
-| `handle-finder.js`, `handle-finder-worker.js` | Door handle detection (Grounding DINO) on its own thread |
+| `waymo-classifier.js`, `waymo-classifier-worker.js`, `waymo-head.json` | Is this car a Waymo? (CLIP + trained weights), in its own process |
+| `handle-finder.js`, `handle-finder-worker.js` | Door handle detection (Grounding DINO), in its own process |
+| `training/` | Collects photos and trains the Waymo classifier; see its README |
 | `public/hands.html` | Laptop page: Joy-Cons, choosing, all guidance logic, the display. `PLACES` is here |
 | `public/eyes.html` | Chest phone: camera + YOLO, GPS, compass, voice |
 | `public/yolo-worker.js` | YOLOv10n object detection, off the phone's main thread |

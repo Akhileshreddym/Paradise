@@ -1,6 +1,6 @@
 // Nudge server: serves the pages in public/, relays WebSocket messages between them
-// (phone "eyes" page → laptop "hands" page), and finds door handles in camera frames
-// (handle-finder.js).
+// (phone "eyes" page → laptop "hands" page), recognizes Waymos in car crops
+// (waymo-classifier.js) and finds door handles in camera frames (handle-finder.js).
 //
 //   npm install
 //   npm start
@@ -13,6 +13,7 @@ import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { finder, findHandles } from "./handle-finder.js";
+import { classifier, classifyCars } from "./waymo-classifier.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 const ROOT = fileURLToPath(new URL("./public/", import.meta.url));
@@ -40,7 +41,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 // Every message from one client goes to all the others, except messages with a "to" field,
-// which only go to pages with that role, or to this server ("to": "server": camera frames).
+// which only go to pages with that role, or to this server ("to": "server": camera frames and
+// car crops).
 const wss = new WebSocketServer({ server, path: "/ws" });
 const latest = { eyes: null, beacon: null, objects: [] }; // for the status line below
 wss.on("connection", (ws, req) => {
@@ -52,7 +54,11 @@ wss.on("connection", (ws, req) => {
   ws.on("message", (data, isBinary) => {
     let msg = null;
     try { msg = JSON.parse(data.toString()); } catch {}
-    if (msg?.to === "server") { if (msg.type === "frame") onFrame(msg); return; }
+    if (msg?.to === "server") {
+      if (msg.type === "frame") onFrame(msg);
+      if (msg.type === "cars") onCars(msg);
+      return;
+    }
     for (const client of wss.clients) {
       if (client === ws || client.readyState !== 1) continue;
       if (msg?.to && client.role !== msg.to) continue;
@@ -79,6 +85,16 @@ async function onFrame({ id, image, w, h, focal }) {
   for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
 }
 
+// Car crops from the phone → how sure each is a Waymo, for the laptop page. The compass reading
+// from when the crops were taken goes back with them, so the laptop can turn angles into headings.
+async function onCars({ cars, compass }) {
+  const probs = await classifyCars(cars.map((c) => c.image)).catch((err) => `failed: ${err.message}`);
+  if (typeof probs === "string") return; // loading or busy: the phone sends more soon
+  latest.waymo = { best: Math.max(...probs), at: Date.now() };
+  const reply = JSON.stringify({ type: "waymo", compass, cars: cars.map((c, i) => ({ angle: c.angle, distance: c.distance, prob: probs[i] })) });
+  for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
+}
+
 // Every 3 s, print what the phones are sending (accuracy and distance only, no coordinates),
 // so problems show up in this terminal.
 const rad = (d) => (d * Math.PI) / 180;
@@ -98,6 +114,8 @@ setInterval(() => {
     `sees ${latest.objects.map((o) => o.label).join(", ") || "nothing"} | beacon ${ago(beacon)}: ${b ? `±${b.acc.toFixed(0)} m` : "none"}`;
   if (g && b) line += ` | distance ${distanceM(g, b).toFixed(0)} m`;
   const hd = latest.handle;
+  if (classifier.status !== "ready") line += ` | waymo classifier ${classifier.status}`;
+  else if (recent(latest.waymo)) line += ` | waymo ${Math.round(latest.waymo.best * 100)}%`;
   if (finder.status !== "ready") line += ` | door handle finder ${finder.status}`;
   else if (recent(hd)) line += ` | door handle ${hd.best >= 0.12 ? `${Math.round(hd.best * 100)}%` : "none"} (${hd.ms} ms)`;
   console.log(line);

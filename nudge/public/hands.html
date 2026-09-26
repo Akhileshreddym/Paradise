@@ -193,17 +193,34 @@
   let latestObjects = [];          // for the display
 
   // ---- Waymo: which car ----
-  // One car looks like any other to YOLO, so the beacon's direction says which one: stay with the
-  // car we were already steering to, else the one closest to the beacon's direction (ignoring
-  // cars well off it), else the nearest.
-  function pickCar(list, now, gpsAim) {
-    const tracking = cam && now - cam.at < 2000;
-    const aim = tracking ? cam.heading : gpsAim;
+  // While in Waymo mode the phone sends crops of the cars it sees, twice a second, and the server's
+  // classifier (waymo-classifier.js) says how sure it is each one is a Waymo. At WAYMO_SURE or
+  // more it counts: the "connected" buzz, and the camera takes over steering from GPS. Several
+  // Waymos in view: the one in the beacon's direction.
+  const WAYMO_SURE = 0.9;
+  const VEHICLES = ["car", "truck", "bus"]; // YOLO can call a Zeekr Waymo a truck
+  let waymoSeen = null;            // { heading, distance, prob, at } last confirmed Waymo
+  let waymoBest = null;            // { prob, at } best score lately, for the details box
+  setInterval(() => { if (mode?.kind === "waymo" && phoneWs?.readyState === 1) phoneWs.send(JSON.stringify({ type: "want-cars", to: "eyes" })); }, 1000);
+  function onWaymoScores({ cars, compass }) {
+    const now = performance.now();
+    if (!cars?.length || typeof compass !== "number") return;
+    waymoBest = { prob: Math.max(...cars.map((c) => c.prob)), at: now };
+    const sure = cars.filter((c) => c.prob >= WAYMO_SURE).map((c) => ({ ...c, heading: wrap180(compass + c.angle) }));
+    if (!sure.length || mode?.kind !== "waymo") return;
+    const g = fresh(beacon, now) ? gpsTo(beacon, now) : null;
+    const best = g ? sure.reduce((a, b) => (Math.abs(wrap180(b.heading - g.heading)) < Math.abs(wrap180(a.heading - g.heading)) ? b : a))
+      : sure.reduce((a, b) => (b.prob > a.prob ? b : a));
+    waymoSeen = { heading: best.heading, distance: best.distance, prob: best.prob, at: now };
+  }
+  // YOLO reports cars 5–15 times a second, the classifier twice: steer by the YOLO car that lines
+  // up with the confirmed Waymo (or the one already being steered to).
+  function pickCar(list, now) {
+    const aim = cam && now - cam.at < 2000 ? cam.heading : waymoSeen && now - waymoSeen.at < 5000 ? waymoSeen.heading : null;
+    if (aim === null) return null;
     const off = (o) => Math.abs(wrap180(heading + o.angle - aim));
-    if (aim !== null) list = list.filter((o) => tracking || off(o) < 35);
-    if (!list.length) return null;
-    const cost = (o) => (aim === null ? o.distance ?? 99 : off(o));
-    return list.reduce((a, b) => (cost(b) < cost(a) ? b : a));
+    list = list.filter((o) => off(o) < 12);
+    return list.length ? list.reduce((a, b) => (off(b) < off(a) ? b : a)) : null;
   }
 
   // ---- Waymo: door handle, the last few meters ----
@@ -280,7 +297,7 @@
   let onTarget = false, arrived = false, nextPulse = 0, connectedBuzzed = false, obstacleNext = 0;
   let rideStage = "", distanceShown = "—";
   function resetGuidance() {
-    cam = null; onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—";
+    cam = null; waymoSeen = null; onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—";
   }
   function guideTick() {
     const now = performance.now();
@@ -319,6 +336,8 @@
       if (cam && now - cam.at < 2000) { target = cam.heading; distance = cam.distance; by = cam.by; }
       else if (g) { target = g.heading; distance = g.distance; by = "gps"; }
       else waiting = fresh(beacon, now) ? "waiting for GPS" : "waiting for the Waymo's location (beacon)";
+      // Near the beacon but no Waymo confirmed yet: keep heading for the beacon; the camera will
+      // take over as soon as it recognizes the car.
       if (cam && !connectedBuzzed) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); nextPulse = now + 600; }
     }
     distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m (${by})`;
@@ -331,7 +350,7 @@
     // arm's length, a car box to about a meter, GPS only to within its radius. arrived = what we
     // arrived by: getting to the car and then seeing a handle starts the last steps to it.
     if (arrived && arrived !== by) arrived = false;
-    if (distance != null) {
+    if (distance != null && !(mode.kind === "waymo" && by === "gps")) { // Waymo mode only arrives by camera
       const radius = by === "handle" ? 0.8 : by === "object" ? 1.0 : Number($("arrive").value);
       if (!arrived && distance <= radius) { arrived = by; PATTERNS.arrived(); if (mode.kind === "waymo" && by === "handle") rideStage = "door"; }
       else if (arrived && distance > radius + (by === "gps" ? 3 : 0.5)) arrived = false;
@@ -380,6 +399,7 @@
       `heading: ${heading === null ? "— (no compass yet)" : `${to360(heading).toFixed(0)}° magnetic`}\n` +
       `you:     ${pos(wearer)}\nbeacon:  ${pos(beacon)}\n` +
       `camera:  ${latestObjects.map((o) => `${o.label} ${o.distance ? o.distance.toFixed(1) + " m" : ""}`).join(", ") || "nothing"}\n` +
+      `waymo classifier: ${waymoBest && now - waymoBest.at < 3000 ? `best ${Math.round(waymoBest.prob * 100)}% (sure at ${WAYMO_SURE * 100}%)` : "—"}\n` +
       `door handle finder: ${handle.info}`;
   }
 
@@ -402,7 +422,7 @@
   };
   function onPreview(msg) {
     // Mark the boxes the same way the guidance sees them.
-    feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), target: b.label === "car" && mode?.kind === "waymo" && cam?.by === "object" && Math.abs(wrap180(heading + b.angle - cam.heading)) < 8 }));
+    feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), target: VEHICLES.includes(b.label) && mode?.kind === "waymo" && cam?.by === "object" && Math.abs(wrap180(heading + b.angle - cam.heading)) < 8 }));
     feedImg.src = msg.image;
   }
 
@@ -411,7 +431,7 @@
   // The Waymo being walked to doesn't count.
   function isObstacle(o) {
     if (o.distance == null || Math.abs(o.angle) > 20 || o.distance > Number($("stopDist").value)) return false;
-    if (mode?.kind === "waymo" && o.label === "car" && cam && Math.abs(wrap180(heading + o.angle - cam.heading)) < 15) return false;
+    if (mode?.kind === "waymo" && VEHICLES.includes(o.label) && cam && Math.abs(wrap180(heading + o.angle - cam.heading)) < 15) return false;
     return true;
   }
 
@@ -427,6 +447,7 @@
       if (msg.type === "handle") return onHandleBoxes(msg);
       if (msg.type === "preview") return onPreview(msg);
       if (msg.type === "heard") return onHeard(msg.text);
+      if (msg.type === "waymo") return onWaymoScores(msg);
       if (msg.type !== "eyes") return;
 
       lastEyes = now;
@@ -438,8 +459,7 @@
       // Waymo: the car to steer to (unless a door handle was seen recently: that's where to go).
       let car = null;
       if (mode?.kind === "waymo") {
-        const g = fresh(beacon, now) ? gpsTo(beacon, now) : null;
-        car = pickCar(msg.objects.filter((o) => o.label === "car"), now, g ? g.heading : null);
+        car = pickCar(msg.objects.filter((o) => VEHICLES.includes(o.label)), now);
         if (car?.distance != null) lastCar = { distance: car.distance, at: now };
         if (car && !(cam?.by === "handle" && now - cam.at < 4000)) {
           cam = { heading: wrap180(heading + car.angle), distance: car.distance, at: now, by: "object" };
