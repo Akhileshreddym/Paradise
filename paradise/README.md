@@ -6,10 +6,20 @@ to the wearer. A phone on the chest is the eyes; a laptop in a backpack does the
 
 It does three things:
 
-1. **Walks you to a saved place** (GPS and compass).
-2. **Walks you to your Waymo, right up to its door handle** (GPS toward the car, then a camera
-   model that recognizes Waymos, then a door-handle finder).
-3. **Finds a thing you ask for** ("water bottle", "my keys", "trash can") and walks you to it.
+1. **Walks you to a saved place, along sidewalks and footpaths**: a walking route from
+   OpenStreetMap, followed by GPS and compass, turning you at corners instead of pointing you
+   straight across streets.
+2. **Walks you to your Waymo, right up to its door handle** (the walking route toward the car, then
+   a camera model that recognizes Waymos, then a door-handle finder).
+3. **Finds a thing you ask for** ("water bottle", "my keys", "trash can") and walks you to it. Not
+   in view? The wrists **turn you round the room** to look. Still nothing? It **asks an AI (Google
+   Gemini) where to go and look next**, from the photos of that turn ("the desk: keys are often left
+   on desks"), walks you there, and looks again.
+
+The AI that sees runs on the phone and the laptop (object detection, an object finder that reads
+any words, a depth model): seeing, distances and obstacle stops never wait on a cloud service. The
+cloud AI is asked only when a full look round finds nothing, at most 3 times a search, and it only
+picks where to go look: the detectors on the phone and laptop still have to find the thing.
 
 At the door handle or the thing, it **steers your hand onto it**: the chest camera tracks your hand,
 the wrists buzz left, right, up (a high buzz) or down (a low buzz), then "forward", and three quick
