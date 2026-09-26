@@ -37,7 +37,7 @@
 <div class="row">
   On-target margin: ± <input id="margin" type="range" min="3" max="30" value="10" style="width:160px"> <span id="marginV">10</span>°<br>
   Target source: <select id="targetSrc"><option value="test">Test buttons</option><option value="camera">Camera (phone)</option><option value="gps">GPS beacon</option></select>
-  Destination marker: <select id="destId"><option value="1">1 · Door</option><option value="2" selected>2 · Chair</option><option value="3">3 · Waymo</option></select><br>
+  Destination: <select id="destId"><option value="waymo" selected>Waymo (car, then door handle)</option><option value="person">Person</option><option value="chair">Chair</option></select><br>
   <button id="remember">Remember this direction</button> (face something, press, then turn away)<br>
   Test targets:
   <button data-turn="-90">90° left</button><button data-turn="-45">45° left</button>
@@ -46,6 +46,7 @@
   <button id="auto">Auto-guide: OFF</button>
   <div id="guide" style="font: 700 22px/1.4 monospace; margin-top: 8px">no target</div>
   <div id="link" style="font-family: monospace">phone: not connected</div>
+  <div id="handleInfo" style="font-family: monospace">door handle finder: starts within 4 m of the car</div>
 </div>
 <div class="row">
   GPS arrival radius: <input id="arrive" type="range" min="2" max="20" value="6" style="width:160px"> <span id="arriveV">6</span> m
@@ -266,7 +267,7 @@
   // The gyro measures how fast it's turning. Projecting that onto "down" (from the
   // accelerometer) gives the turn rate around the vertical axis however the Joy-Con is
   // strapped on. Adding it up over time gives the heading. It drifts a little over
-  // minutes; the camera corrects it whenever it sees the marker.
+  // minutes; the camera corrects it whenever it sees the target again.
   const wrap180 = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
   let heading = 0, bias = 0, scale = 1, lastImu = null;
   let zeroing = null;  // { sum, n, until } while measuring gyro bias
@@ -325,10 +326,80 @@
   // Target = an absolute heading. Buzz the side to turn toward, stronger the further off,
   // until the heading is within the margin. Then one short tick on both and silence.
   let testTarget = null;           // absolute heading from the test buttons
-  let cam = null;                  // { heading, distance } remembered from the phone
+  let cam = null;                  // { heading, distance, at, by } remembered from the phone
   let lastEyes = -Infinity;        // performance.now() of the last phone message
   let autoOn = false, onTarget = false, nextPulse = 0;
   let searchSide = 0, lostTapped = false;
+  // What each destination looks like to the phone's YOLO. One car looks like any other, so for
+  // the Waymo the GPS beacon says which one; up close, the door handle finder takes over
+  // (handle: true). near = arrival distance for the object, in meters.
+  const DESTS = {
+    waymo: { name: "Waymo", object: "car", near: 1.0, handle: true },
+    person: { name: "person", object: "person", near: 1.2 },
+    chair: { name: "chair", object: "chair", near: 0.8 },
+  };
+  const dest = () => DESTS[$("destId").value];
+  let gpsAim = null; // beacon direction in gyro-heading terms, while GPS mode has one
+
+  // Several matching objects in view: stay with the one we were already steering to, or else
+  // take the one closest to the beacon's direction, or else the nearest. In GPS mode, ignore
+  // objects well off the beacon's direction (some other parked car).
+  function pickObject(list, now) {
+    const tracking = cam && now - cam.at < 2000;
+    const aim = tracking ? cam.heading : gpsAim;
+    const off = (o) => Math.abs(wrap180(heading + o.angle - aim));
+    if (aim !== null) list = list.filter((o) => tracking || off(o) < 35);
+    if (!list.length) return null;
+    const cost = (o) => (aim === null ? o.distance ?? 99 : off(o));
+    return list.reduce((a, b) => (cost(b) < cost(a) ? b : a));
+  }
+
+  // ---- Door handle: the Waymo's last few meters ----
+  // Within HANDLE_RANGE of the car, ask the phone for camera frames, one at a time; the server
+  // finds door handles in each (handle-finder.js, ~1.2 s a frame). Between answers the gyro keeps
+  // the handle's direction as the wearer turns.
+  const HANDLE_RANGE = 4;    // m
+  const HANDLE_WIDTH = 0.25; // m, roughly; seen at an angle the box is narrower, so distance reads long
+  const handle = { waiting: null, nextId: 0, retryAt: 0 };
+  let lastCar = null;        // { distance, at } from YOLO, for the handle's distance
+  function wantFrames(now) {
+    return autoOn && dest().handle && cam && now - cam.at < 4000 && cam.distance != null && cam.distance <= HANDLE_RANGE;
+  }
+  setInterval(() => {
+    const now = performance.now();
+    if (phoneWs?.readyState !== 1 || now < handle.retryAt || !wantFrames(now)) return;
+    if (handle.waiting && now - handle.waiting.at < 5000) return; // one at a time; give up on lost ones
+    // The frame is taken right after this; remember which way the chest faced to turn the
+    // handle's angle in it into a heading.
+    handle.waiting = { id: ++handle.nextId, at: now, heading };
+    phoneWs.send(JSON.stringify({ type: "frame-please", to: "eyes", id: handle.nextId }));
+  }, 100);
+  function onHandleBoxes({ id, boxes, reason, w, h, focal, ms }) {
+    const req = handle.waiting;
+    if (req?.id !== id) return;
+    handle.waiting = null;
+    if (!boxes) { // still loading, or busy
+      handle.retryAt = performance.now() + 2000;
+      $("handleInfo").textContent = `door handle finder: ${reason}`;
+      return;
+    }
+    // The model also scores the whole car as "handle"; keep small boxes only, best first.
+    const b = boxes.filter((b) => b.x2 - b.x1 < 0.4 * w && b.score >= 0.12).sort((a, b) => b.score - a.score)[0];
+    const deg = (px) => (Math.atan(px / focal) * 180) / Math.PI;
+    if (b) {
+      const now = performance.now();
+      const fromBox = (focal * HANDLE_WIDTH) / (b.x2 - b.x1);
+      const fromCar = lastCar && now - lastCar.at < 3000 ? lastCar.distance : Infinity;
+      cam = {
+        heading: wrap180(req.heading + deg((b.x1 + b.x2) / 2 - w / 2)),
+        distance: Math.min(fromBox, fromCar), // both read long when off, so the smaller is closer to right
+        up: -deg((b.y1 + b.y2) / 2 - h / 2), // + above the chest camera, − below
+        at: now, by: "handle",
+      };
+    }
+    $("handleInfo").textContent = `door handle finder: ${ms} ms · ${b ? `handle ${Math.round(b.score * 100)}%` : "no handle in view"}`;
+  }
+
   function twoTaps() { pulseBoth(0.7, 60); setTimeout(() => pulseBoth(0.7, 60), 180); }
   const margin = () => Number($("margin").value);
   $("margin").oninput = () => ($("marginV").textContent = $("margin").value);
@@ -361,7 +432,8 @@
 
   // Returns the target in gyro-heading terms, or a reason string for why there isn't one.
   function gpsTarget(now) {
-    const fresh = (p) => p && now - p.at < 5000;
+    // A phone that isn't moving often gets no new fixes, and the beacon is parked on purpose.
+    const fresh = (p) => p && now - p.at < (p === beacon ? 30000 : 5000);
     const age = (p) => (p ? `${((now - p.at) / 1000).toFixed(0)} s old` : "none");
     const pos = (p) => (p ? `${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} ±${p.acc.toFixed(0)} m` : "—");
     let lines = `you:    ${pos(wearer)} (${age(wearer)})\nbeacon: ${pos(beacon)} (${age(beacon)})\n` +
@@ -409,18 +481,20 @@
     $("link").textContent = lastEyes < 0 ? "phone: no messages yet"
       : `phone: last message ${linkAge.toFixed(0)} ms ago ${linkAge > 500 ? "(LINK LOST)" : ""}`;
 
-    // Haven't seen the marker for 20 s → stop trusting the remembered direction and search again.
+    // Haven't seen the target for 20 s → stop trusting the remembered direction and search again.
     if (cam && now - cam.at > 20000) cam = null;
     let target = fromCamera ? cam?.heading ?? null : testTarget;
     let distance = fromCamera ? cam?.distance : null;
-    let waiting = fromCamera ? "searching for marker" : "no target";
-    let byMarker = fromCamera; // is the camera marker steering right now?
+    let waiting = fromCamera ? "searching" : "no target";
+    let by = fromCamera ? cam?.by ?? null : null; // what's steering: "handle", "object" or "gps"
+    gpsAim = null;
     if (fromGps) {
       const g = gpsTarget(now);
-      // GPS gets you close; once the camera sees the destination marker, it takes over.
-      if (cam && now - cam.at < 2000) { target = cam.heading; distance = cam.distance; byMarker = true; }
+      if (typeof g !== "string") gpsAim = g.target;
+      // GPS gets you close; once the camera sees the destination (object or handle), it takes over.
+      if (cam && now - cam.at < 2000) { target = cam.heading; distance = cam.distance; by = cam.by; }
       else if (typeof g === "string") { target = null; waiting = g; }
-      else { target = g.target; distance = g.distance; }
+      else { target = g.target; distance = g.distance; by = "gps"; }
     }
     if (!autoOn) { $("guide").textContent = "auto-guide off"; return; }
     // Safety: stop guiding when the chest phone goes quiet (camera or GPS mode).
@@ -431,7 +505,7 @@
       return;
     }
     lostTapped = false;
-    // Search: no marker seen yet → alternate left, right: "turn slowly and look around".
+    // Search: nothing seen yet → alternate left, right: "turn slowly and look around".
     if (target === null) {
       $("guide").textContent = fromCamera ? "SEARCHING: turn slowly (left-right pulses)" : waiting;
       if (fromCamera && now >= nextPulse) {
@@ -442,14 +516,21 @@
       return;
     }
 
-    // Arrival → 3 pulses, then quiet until you move back out. The marker measures to
-    // ~10 cm, so it can call arrival at arm's length; GPS only to within its radius.
+    // Arrival → 3 pulses, then quiet until you move back out. The handle is judged to arm's
+    // length, an object box to about a meter, GPS only to within its radius. arrived = what we
+    // arrived by: arriving at the car and then seeing a handle starts the last steps to it.
+    if (arrived && arrived !== by) arrived = false;
     if ((fromCamera || fromGps) && distance != null) {
-      const radius = byMarker ? 0.7 : Number($("arrive").value);
-      if (!arrived && distance <= radius) { arrived = true; arrivalPattern(); }
-      else if (arrived && distance > radius + (byMarker ? 0.5 : 3)) arrived = false;
+      const radius = by === "handle" ? 0.8 : by === "object" ? dest().near : Number($("arrive").value);
+      if (!arrived && distance <= radius) { arrived = by; arrivalPattern(); }
+      else if (arrived && distance > radius + (by === "gps" ? 3 : 0.5)) arrived = false;
       if (arrived) {
-        $("guide").textContent = byMarker ? `ARRIVED (${distance.toFixed(1)} m, marker)`
+        const d = dest();
+        $("guide").textContent =
+          by === "handle" ? `AT THE DOOR HANDLE (about ${distance.toFixed(1)} m): reach straight out` +
+            (Math.abs(cam.up) > 8 ? `, ${cam.up < 0 ? "below" : "above"} chest height` : "")
+          : by === "object" ? `AT THE ${d.name.toUpperCase()} (about ${distance.toFixed(1)} m)` +
+            (d.handle ? ": turn slowly along it so the camera can find a door handle" : "")
           : `ARRIVED (about ${distance.toFixed(0)} m, within GPS accuracy)`;
         return;
       }
@@ -460,13 +541,14 @@
     const wasOn = onTarget;
     onTarget = onTarget ? Math.abs(err) <= margin() + 5 : Math.abs(err) <= margin();
     if (onTarget && !wasOn) { pulseBoth(0.5, 80); nextPulse = now + 400; } // "you're facing it" tick
-    const dist = distance ? ` · ${distance.toFixed(byMarker ? 1 : 0)} m${fromGps ? (byMarker ? " (marker)" : " (GPS)") : ""}` : "";
+    const dist = distance ? ` · ${distance.toFixed(by === "gps" ? 0 : 1)} m (${by})` : "";
 
     // Facing it → walk forward: both pulse gently, faster as you get closer
-    // (marker: 1 a second at 5 m up to 4 a second at 1.25 m; GPS: scaled for longer walks).
+    // (handle: 1 a second at 5 m up to 4 a second at 1.25 m; object and GPS: scaled for longer walks).
     if (onTarget) {
       const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-      const perSec = distance == null ? 1 : byMarker ? clamp(5 / distance, 1, 4) : clamp(40 / distance, 0.7, 3);
+      const perSec = distance == null ? 1 : by === "handle" ? clamp(5 / distance, 1, 4)
+        : by === "object" ? clamp(15 / distance, 0.7, 4) : clamp(40 / distance, 0.7, 3);
       $("guide").textContent = `WALK FORWARD (${err.toFixed(0)}° off)${dist} · ${perSec.toFixed(1)} pulses/s`;
       if (now >= nextPulse) { nextPulse = now + 1000 / perSec; pulseBoth(0.3, 90); }
       return;
@@ -486,8 +568,9 @@
   // The first message from each phone switches the target source once; after that the
   // dropdown is yours.
   let sawEyes = false, sawBeacon = false;
+  let phoneWs = null;
   function connectPhoneLink() {
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=hands`);
+    const ws = (phoneWs = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=hands`));
     ws.onmessage = (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
@@ -498,6 +581,7 @@
         if (!sawBeacon) { sawBeacon = true; $("targetSrc").value = "gps"; if (!autoOn) $("auto").click(); }
         return;
       }
+      if (msg.type === "handle") return onHandleBoxes(msg);
       if (msg.type !== "eyes") return;
       lastEyes = now;
       if (!sawEyes) {
@@ -514,10 +598,17 @@
         northOffset = northOffset === null ? sample : wrap180(northOffset + 0.05 * wrap180(sample - northOffset));
       }
 
-      const m = (msg.markers || []).find((m) => m.id === Number($("destId").value));
-      // Marker angle is relative to where the chest faces now, so target = heading + angle.
-      // When the marker leaves the view, the remembered heading still guides the turn.
-      if (m) cam = { heading: wrap180(heading + m.angle), distance: m.distance, at: now };
+      // Angles are relative to where the chest faces now, so target = heading + angle.
+      // When the target leaves the view, the remembered heading still guides the turn.
+      // A recently seen door handle wins over the car: it's where the wearer actually needs to go.
+      const d = dest();
+      if (d.object && msg.objects) {
+        const o = pickObject(msg.objects.filter((o) => o.label === d.object), now);
+        if (o && o.distance != null) lastCar = { distance: o.distance, at: now };
+        if (o && !(cam?.by === "handle" && now - cam.at < 4000)) { // handle answers come every ~1.5 s
+          cam = { heading: wrap180(heading + o.angle), distance: o.distance, at: now, by: "object" };
+        }
+      }
     };
     ws.onclose = () => setTimeout(connectPhoneLink, 1000);
   }

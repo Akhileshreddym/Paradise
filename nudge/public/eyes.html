@@ -1,5 +1,7 @@
 <!doctype html>
-<!-- Nudge "eyes": phone page. Finds ArUco markers and sends angle + distance to the laptop. Needs https. -->
+<!-- Nudge "eyes": phone page. Finds objects with YOLO (cars, people, chairs…) and sends their
+     angle + distance to the laptop, with GPS and compass. Up close to the car, the laptop asks
+     for camera frames, and the server finds the door handle in them. Needs https. -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -11,28 +13,17 @@
   input { font-size: 16px; width: 90px; }
   canvas { width: 100%; height: auto; display: block; background: #000; margin-top: 8px; }
   #info { font: 700 22px/1.4 monospace; margin-top: 8px; white-space: pre; }
-  #net { font-family: monospace; margin-top: 4px; }
   .row { margin: 8px 0; }
 </style>
-<!-- js-aruco2: cv.js must load before aruco.js. Dictionary "ARUCO" = Original ArUco. -->
-<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
-<!-- 4x4 markers (chev.me/arucogen's default dictionary), in case markers were made there. -->
-<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/dictionaries/aruco_4x4_1000.js"></script>
 </head>
 <body>
 <button id="start">Start (camera + GPS + compass)</button>
 <div class="row">
-  Marker type: <select id="dict">
-    <option value="ARUCO">Original ArUco (our marker.html)</option>
-    <option value="ARUCO_4X4_1000">4x4 (chev.me default)</option>
-  </select>
-</div>
-<div class="row">
-  Marker size (m): <input id="size" type="number" step="0.001" value="0.18">
   Focal (px): <input id="focal" type="number" step="1" value="720">
-  <button id="calib">Calibrate: marker exactly 1.00 m away</button>
+  Person height (m): <input id="personH" type="number" step="0.01" value="1.70"><br>
+  <button id="calib">Calibrate: that person standing exactly 3.00 m away</button>
 </div>
+<div id="yoloInfo" style="font-family: monospace">objects: starts with Start</div>
 <div id="net" style="font: 700 20px/1.6 monospace; padding: 4px 10px; border-radius: 6px; background: #a00">LAPTOP: NOT CONNECTED</div>
 <div id="sensors" style="font-family: monospace">GPS: off · compass: off</div>
 <div id="info">tap Start</div>
@@ -41,28 +32,26 @@
 
 <script>
   const $ = (id) => document.getElementById(id);
-  const video = $("video"), view = $("view"), ctx = view.getContext("2d", { willReadFrequently: true });
+  const video = $("video"), view = $("view"), ctx = view.getContext("2d");
   // Remember settings on this phone (browser storage can be blocked; that's fine).
   try {
     if (localStorage.getItem("focal960")) $("focal").value = localStorage.getItem("focal960");
-    if (localStorage.getItem("size")) $("size").value = localStorage.getItem("size");
-    if (localStorage.getItem("dict")) $("dict").value = localStorage.getItem("dict");
+    if (localStorage.getItem("personH")) $("personH").value = localStorage.getItem("personH");
   } catch {}
   const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-  $("focal").onchange = () => save("focal960", $("focal").value); // focal is in 960 px detection pixels
-  $("size").onchange = () => save("size", $("size").value);
-
-  let detector = new AR.Detector({ dictionaryName: $("dict").value });
-  $("dict").onchange = () => {
-    detector = new AR.Detector({ dictionaryName: $("dict").value });
-    save("dict", $("dict").value);
-  };
+  $("focal").onchange = () => save("focal960", $("focal").value); // focal is in 960 px frame pixels
+  $("personH").onchange = () => save("personH", $("personH").value);
 
   // ---- Link to the laptop ----
   let ws = null;
   function connect() {
     ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=eyes`);
     ws.onclose = () => setTimeout(connect, 1000);
+    ws.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg.type === "frame-please") sendFrame(msg.id);
+    };
   }
   connect();
 
@@ -98,7 +87,8 @@
   function startGps() {
     if (!navigator.geolocation) { gpsError = "not available"; return; }
     navigator.geolocation.watchPosition(
-      (p) => { gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, time: p.timestamp }; gpsError = ""; },
+      // Arrival time, not p.timestamp: Safari counts that from 2001, not 1970, so fixes look 31 years old.
+      (p) => { gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, time: Date.now() }; gpsError = ""; },
       (err) => (gpsError = err.message),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
     );
@@ -109,12 +99,11 @@
   }, 500);
 
   // ---- Camera ----
-  let latest = [];      // markers seen in the most recent frame
-  let lastSides = {};   // id → side length in px, for calibration
   $("start").onclick = async () => {
     $("start").style.display = "none";
     await startCompass(); // first, while the tap still counts on iPhone
     startGps();
+    startYolo();
     try { await navigator.wakeLock?.request("screen"); } catch {} // keep the screen on
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -130,66 +119,106 @@
     }
   };
 
-  // Detect on a 960 px frame (longest side): 1.5x the range of 640 px, still fast enough on a phone.
-  let lastDetect = 0;
+  // Preview + measurements in a 960 px frame (longest side); focal is in these pixels.
+  let lastDraw = 0;
   function loop(now) {
     requestAnimationFrame(loop);
-    if (now - lastDetect < 66 || !video.videoWidth) return; // ~15 detections a second
-    lastDetect = now;
+    if (now - lastDraw < 66 || !video.videoWidth) return; // ~15 a second
+    lastDraw = now;
     const k = 960 / Math.max(video.videoWidth, video.videoHeight);
     const W = Math.round(video.videoWidth * k), H = Math.round(video.videoHeight * k);
     if (view.width !== W) { view.width = W; view.height = H; }
     ctx.drawImage(video, 0, 0, W, H);
-    const found = detector.detect(ctx.getImageData(0, 0, W, H));
-    latest = found.map((m) => measure(m, W));
-    draw(found);
-    $("info").textContent = latest.length
-      ? latest.map((m) => `id ${m.id}  ${m.angle >= 0 ? "+" : ""}${m.angle.toFixed(0)}°  ${m.distance.toFixed(2)} m`).join("\n")
-      : "no marker";
+    sendFrameToYolo(W);
+    draw();
+    const sign = (a) => `${a >= 0 ? "+" : ""}${a.toFixed(0)}°`;
+    const lines = performance.now() - yolo.at < 1500 ? yolo.objects.map((o) =>
+      `${o.label} ${Math.round(o.score * 100)}%  ${sign(o.angle)}${o.distance ? `  ${o.distance.toFixed(1)} m` : ""}`) : [];
+    $("info").textContent = lines.join("\n") || "nothing found";
   }
 
-  // Angle: how far left/right of center (− left, + right). Distance: from apparent size.
-  function measure(m, W) {
-    const f = Number($("focal").value), size = Number($("size").value);
-    const cx = m.corners.reduce((s, c) => s + c.x, 0) / 4;
-    let side = 0;
-    for (let i = 0; i < 4; i++) {
-      const a = m.corners[i], b = m.corners[(i + 1) % 4];
-      side += Math.hypot(a.x - b.x, a.y - b.y) / 4;
-    }
-    lastSides[m.id] = side;
-    return {
-      id: m.id,
-      angle: (Math.atan((cx - W / 2) / f) * 180) / Math.PI,
-      distance: (f * size) / side,
-    };
-  }
-
-  function draw(found) {
+  function draw() {
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "#0f0";
-    ctx.fillStyle = "#0f0";
     ctx.font = "bold 20px monospace";
-    for (const m of found) {
-      ctx.beginPath();
-      m.corners.forEach((c, i) => (i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y)));
-      ctx.closePath();
-      ctx.stroke();
-      ctx.fillText(`id ${m.id}`, m.corners[0].x, m.corners[0].y - 6);
+    if (performance.now() - yolo.at < 1500) { // last result (YOLO runs slower than the preview)
+      ctx.strokeStyle = ctx.fillStyle = "#0cf";
+      for (const b of yolo.boxes) {
+        ctx.strokeRect(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
+        ctx.fillText(`${b.label} ${Math.round(b.score * 100)}%`, b.x1 + 4, b.y1 + 22);
+      }
     }
     ctx.strokeStyle = "rgba(255,255,255,.5)";
     ctx.beginPath(); ctx.moveTo(view.width / 2, 0); ctx.lineTo(view.width / 2, view.height); ctx.stroke();
   }
 
-  // Calibration: with a marker exactly 1.00 m away, focal = side × 1.00 / size.
+  // ---- Objects: YOLOv10n in yolo-worker.js ----
+  // Distance comes from the box's height, which barely changes with viewing angle (a car is
+  // 1.9 m wide head-on but 4.7 m long from the side). Up close the box runs off the frame, so
+  // the distance then reads long. Heights in meters; classes not listed get no distance.
+  const HEIGHTS = { car: 1.6, truck: 3.0, bus: 3.2, person: 1.7, chair: 0.9, bench: 0.8, "fire hydrant": 0.7 };
+  const yolo = { worker: null, busy: false, scale: 1, boxes: [], objects: [], at: -Infinity, fresh: false };
+  function startYolo() {
+    if (yolo.worker) return;
+    $("yoloInfo").textContent = "objects: loading model (about 30 MB the first time)…";
+    yolo.worker = new Worker("yolo-worker.js", { type: "module" });
+    yolo.worker.onerror = (e) => ($("yoloInfo").textContent = `objects: worker failed: ${e.message || "see console"}`);
+    yolo.worker.onmessage = ({ data }) => {
+      if (data.type === "ready") $("yoloInfo").textContent = `objects: model ready (${data.backend})`;
+      else if (data.type === "error") $("yoloInfo").textContent = `objects: model failed to load: ${data.message}`;
+      else onBoxes(data);
+    };
+  }
+  // One frame in flight at a time, so a slow phone just gets fewer object updates.
+  function sendFrameToYolo(W) {
+    if (!yolo.worker || yolo.busy) return;
+    yolo.busy = true;
+    createImageBitmap(video).then((bitmap) => {
+      yolo.scale = W / bitmap.width; // worker answers in camera pixels; we measure in 960 px frame pixels
+      yolo.worker.postMessage({ bitmap, minScore: 0.35 }, [bitmap]);
+    }, () => (yolo.busy = false));
+  }
+  function onBoxes({ boxes, ms, backend, error }) {
+    yolo.busy = false;
+    const s = yolo.scale, f = Number($("focal").value), W = view.width;
+    HEIGHTS.person = Number($("personH").value) || 1.7;
+    yolo.boxes = boxes.map((b) => ({ ...b, x1: b.x1 * s, y1: b.y1 * s, x2: b.x2 * s, y2: b.y2 * s }));
+    yolo.objects = yolo.boxes.map((b) => ({
+      label: b.label,
+      score: Math.round(b.score * 100) / 100,
+      angle: (Math.atan(((b.x1 + b.x2) / 2 - W / 2) / f) * 180) / Math.PI,
+      distance: HEIGHTS[b.label] ? (f * HEIGHTS[b.label]) / (b.y2 - b.y1) : null,
+    }));
+    yolo.at = performance.now();
+    yolo.fresh = true;
+    $("yoloInfo").textContent = error ? `objects: ${error}` : `objects: ${backend}, ${ms.toFixed(0)} ms a frame`;
+  }
+
+  // Calibration: a person of known height exactly 3.00 m away → focal = box height × 3.00 / height.
   $("calib").onclick = () => {
-    const ids = Object.keys(lastSides);
-    if (!latest.length || !ids.length) { alert("Point the camera at a marker first."); return; }
-    const side = lastSides[latest[0].id];
-    const f = Math.round((side * 1.0) / Number($("size").value));
+    const people = yolo.boxes.filter((b) => b.label === "person");
+    if (!people.length || performance.now() - yolo.at > 1500) { alert("Point the camera at the person first (whole body in view)."); return; }
+    const tallest = Math.max(...people.map((b) => b.y2 - b.y1));
+    const f = Math.round((tallest * 3.0) / (Number($("personH").value) || 1.7));
     $("focal").value = f;
     save("focal960", f);
   };
+
+  // ---- Camera frames for the door handle finder (in server.js) ----
+  // The laptop page asks for one frame at a time, only when the wearer is close to the car.
+  // 800 px: what the handle model works at anyway, and ~80 KB as JPEG.
+  const snap = document.createElement("canvas");
+  function sendFrame(id) {
+    if (!video.videoWidth || ws?.readyState !== 1) return;
+    const k = 800 / Math.max(video.videoWidth, video.videoHeight);
+    snap.width = Math.round(video.videoWidth * k);
+    snap.height = Math.round(video.videoHeight * k);
+    snap.getContext("2d").drawImage(video, 0, 0, snap.width, snap.height);
+    ws.send(JSON.stringify({
+      type: "frame", to: "server", id, w: snap.width, h: snap.height,
+      image: snap.toDataURL("image/jpeg", 0.7),
+      focal: (Number($("focal").value) * 800) / 960, // in this frame's pixels
+    }));
+  }
 
   // ---- Send ~10 updates a second ----
   // Big green/red badge: is the laptop actually getting our updates?
@@ -204,7 +233,9 @@
     ws.send(JSON.stringify({
       type: "eyes",
       seq: ++seq,
-      markers: latest,
+      // Only when there's a new result: the laptop turns each one into a heading once, and a
+      // repeat would be read against wherever the wearer faces by then.
+      objects: yolo.fresh ? ((yolo.fresh = false), yolo.objects) : undefined,
       compass,
       gps: gps && { lat: gps.lat, lon: gps.lon, acc: gps.acc, age: Math.max(0, Date.now() - gps.time) },
     }));
