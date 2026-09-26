@@ -1,6 +1,7 @@
-// Step 3: YOLO every photo, cut out the cars the same way the phone will: the car's box, widened 5% each
-// side and extended 35% of its height upward (so the roof dome is in the crop).
+// Step 3: YOLO every new photo, cut out the cars the same way the phone will: the car's box, widened
+// 5% each side and extended 35% of its height upward (so the roof dome is in the crop).
 // Positives: the biggest car in each Waymo photo. Negatives: every sizable car in the others.
+// Photos with a crop already (in crops/pos, crops/neg or crops/dropped) are skipped.
 
 import { mkdirSync as _mkdir } from "node:fs";
 import { fileURLToPath as _path } from "node:url";
@@ -34,19 +35,29 @@ async function cars(file) {
   for (let i = 0; i < d.length; i += 6) if (d[i + 4] >= 0.4 && CAR.has(d[i + 5])) out.push({ x1: d[i] / k, y1: d[i + 1] / k, x2: d[i + 2] / k, y2: d[i + 3] / k, score: d[i + 4] });
   return { boxes: out, W, H };
 }
+// Only photos that haven't been cropped yet: re-cropping everything would bring back the crops
+// that were checked by eye and moved to crops/dropped/.
+const photoOf = (crop) => crop.replace(/_\d+\.jpg$/, "");
+const done = new Set(["pos", "neg", "dropped"].flatMap((d) => {
+  try { return readdirSync(`crops/${d}`).map(photoOf); } catch { return []; }
+}));
 for (const cls of ["pos", "neg"]) {
   mkdirSync(`crops/${cls}`, { recursive: true });
-  let made = 0;
+  let made = 0, old = 0;
+  const skipped = [];
   for (const f of readdirSync(`img/${cls}`)) {
+    if (f.startsWith(".")) continue; // .DS_Store and friends
+    if (done.has(f.replace(/\.\w+$/, ""))) { old++; continue; }
     try {
       const { boxes, W, H } = await cars(`img/${cls}/${f}`);
       const big = boxes.filter((b) => (b.x2 - b.x1) * (b.y2 - b.y1) > 0.03 * W * H && b.x2 - b.x1 > 60);
       const pick = cls === "pos" ? big.sort((a, b) => (b.x2 - b.x1) * (b.y2 - b.y1) - (a.x2 - a.x1) * (a.y2 - a.y1)).slice(0, 1) : big.slice(0, 3);
       for (const [i, b] of pick.entries()) {
-        await sharp(`img/${cls}/${f}`).rotate().extract(expand(b, W, H)).resize(224, 224, { fit: "fill" }).jpeg({ quality: 90 }).toFile(`crops/${cls}/${f.replace(".jpg", "")}_${i}.jpg`);
+        await sharp(`img/${cls}/${f}`).rotate().extract(expand(b, W, H)).resize(224, 224, { fit: "fill" }).jpeg({ quality: 90 }).toFile(`crops/${cls}/${f.replace(/\.\w+$/, "")}_${i}.jpg`);
         made++;
       }
-    } catch (e) { /* not an image we can read */ }
+    } catch (e) { skipped.push(`${f} (${e.message.trim().split("\n").pop()})`); } // not an image sharp can read (iPhone HEIC, for one)
   }
-  console.log(cls, "crops:", made);
+  console.log(cls, `new crops: ${made} (${old} photos cropped before, left as they are)`);
+  if (skipped.length) console.log(`  skipped ${skipped.length} unreadable file(s): export them as JPEG\n   `, skipped.join("\n    "));
 }

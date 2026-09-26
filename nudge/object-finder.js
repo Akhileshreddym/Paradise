@@ -16,20 +16,30 @@ import { fileURLToPath } from "node:url";
 
 export const finder = { status: "loading" };
 // Its own process: the ONNX runtime crashes when two threads of one process use it at once, and
-// this way a crash in the model can't take the relay (and its safety stops) down with it.
-const worker = fork(fileURLToPath(new URL("./object-finder-worker.js", import.meta.url)));
+// this way a crash in the model can't take the relay (and its safety stops) down with it. If it
+// does crash, whatever it was working on fails, and it starts again (a few times at most).
 const waiting = new Map(); // id → resolve
-let nextId = 0;
-
-worker.on("message", (msg) => {
-  if (msg.type === "log") console.log(`object finder model: ${msg.text}`);
-  if (msg.type === "status") { finder.status = msg.status; console.log(`object finder: ${msg.status}`); }
-  if (msg.type === "boxes") {
-    waiting.get(msg.id)?.(msg.error ? `failed: ${msg.error}` : msg.boxes);
-    waiting.delete(msg.id);
-  }
-});
-worker.on("exit", (code) => { finder.status = `failed: stopped (${code})`; console.log(`object finder: ${finder.status}`); });
+let worker, nextId = 0, restarts = 0;
+function start() {
+  worker = fork(fileURLToPath(new URL("./object-finder-worker.js", import.meta.url)));
+  worker.on("message", (msg) => {
+    if (msg.type === "log") console.log(`object finder model: ${msg.text}`);
+    if (msg.type === "status") { finder.status = msg.status; console.log(`object finder: ${msg.status}`); }
+    if (msg.type === "boxes") {
+      waiting.get(msg.id)?.(msg.error ? `failed: ${msg.error}` : msg.boxes);
+      waiting.delete(msg.id);
+    }
+  });
+  worker.on("exit", (code, signal) => {
+    finder.status = `failed: stopped (${signal || code})`;
+    for (const resolve of waiting.values()) resolve(finder.status);
+    waiting.clear();
+    if (signal === "SIGINT" || signal === "SIGTERM") return; // Ctrl + C: everything's stopping
+    console.log(`object finder: ${finder.status}${restarts < 3 ? ", starting it again" : ""}`);
+    if (restarts++ < 3) { finder.status = "loading"; setTimeout(start, 2000); }
+  });
+}
+start();
 
 // (data:image/jpeg;base64,…, "a water bottle.") → [{ score, x1, y1, x2, y2 }] in the image's
 // pixels, or a reason string when it can't run right now. One frame at a time.

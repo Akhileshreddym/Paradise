@@ -19,7 +19,7 @@ Run from `nudge/training/`. Everything goes into `data/` (git-ignored).
 ```
 node collect.mjs    # 1. list photo URLs (Commons + Openverse)             → data/lists.json
 node download.mjs   # 2. download them                                       → data/img/pos, data/img/neg
-node crop.mjs       # 3. YOLO + cut out cars, same crop as the phone         → data/crops/pos, data/crops/neg
+node crop.mjs       # 3. YOLO + cut out cars (new photos only), like the phone → data/crops/pos, data/crops/neg
 node embed.mjs      # 4. CLIP features for every crop                        → data/emb_clip.json
 node train.mjs      # 5. train, cross-validate, save                         → ../waymo-head.json
 ```
@@ -38,3 +38,6 @@ that isn't a current Waymo into `data/crops/dropped/`.
 
 Your own photos: put them in `data/img/pos` (Waymos) and `data/img/neg` (anything else, especially
 white SUVs and other robotaxis), then run steps 3–5. Restart `npm start` to use the new weights.
+They have to be JPEG or PNG: iPhones save HEIC by default, which step 3 can't read (it lists what
+it skipped). Either set Settings → Camera → Formats → **Most Compatible** before taking them, or
+convert on the Mac: `sips -s format jpeg IMG_1234.HEIC --out IMG_1234.jpg`.

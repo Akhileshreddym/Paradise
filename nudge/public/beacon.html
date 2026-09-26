@@ -32,18 +32,31 @@ Keep the screen on and this page open.</p>
   connect();
 
   let gps = null; // { lat, lon, acc, time }
-  $("start").onclick = async () => {
+  let watch = null;
+  $("start").onclick = () => {
     if (!navigator.geolocation) { $("info").textContent = "No GPS in this browser."; return; }
     $("start").style.display = "none";
     $("info").textContent = "waiting for GPS…";
-    navigator.geolocation.watchPosition(
+    watch = navigator.geolocation.watchPosition(
       // Arrival time, not p.timestamp: Safari counts that from 2001, not 1970, so fixes look 31 years old.
       (p) => { gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, time: Date.now() }; },
-      (err) => ($("info").textContent = `GPS error: ${err.message}`),
+      (err) => {
+        $("info").textContent = `GPS error: ${err.message}`;
+        // Refused: give the button back, so allowing location and tapping again works without a reload.
+        if (err.code === err.PERMISSION_DENIED) { navigator.geolocation.clearWatch(watch); $("start").style.display = ""; }
+      },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
     );
-    try { await navigator.wakeLock?.request("screen"); } catch {} // keep the screen on
+    keepAwake();
   };
+  // Keep the screen on. The browser drops the lock whenever the page is hidden (another app, the
+  // lock screen), so take it again when the page comes back.
+  let wantAwake = false;
+  async function keepAwake() {
+    wantAwake = true;
+    try { await navigator.wakeLock?.request("screen"); } catch {}
+  }
+  document.addEventListener("visibilitychange", () => { if (wantAwake && document.visibilityState === "visible") keepAwake(); });
 
   // Send the latest fix once a second, with its age so the laptop knows how fresh it is.
   setInterval(() => {

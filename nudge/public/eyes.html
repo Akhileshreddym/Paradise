@@ -18,7 +18,7 @@
 </style>
 </head>
 <body>
-<button id="start">Start (camera + GPS + compass)</button>
+<button id="start">Start (camera + GPS + compass + mic)</button>
 <div class="row">
   Focal (px): <input id="focal" type="number" step="1" value="720">
   Person height (m): <input id="personH" type="number" step="0.01" value="1.70"><br>
@@ -43,6 +43,10 @@
     if (localStorage.getItem("camH")) $("camH").value = localStorage.getItem("camH");
   } catch {}
   const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  // The numbers everything is measured with. An emptied or zero box would turn every angle and
+  // distance into nonsense (division by zero), so fall back to the defaults.
+  const num = (id, fallback) => { const v = Number($(id).value); return v > 0 ? v : fallback; };
+  const focal = () => num("focal", 720), personH = () => num("personH", 1.7), camH = () => num("camH", 1.3);
   $("focal").onchange = () => save("focal960", $("focal").value); // focal is in 960 px frame pixels
   $("personH").onchange = () => save("personH", $("personH").value);
   $("camH").onchange = () => save("camH", $("camH").value);
@@ -62,7 +66,10 @@
   connect();
 
   // ---- Compass: which way the rear camera faces, degrees clockwise from (magnetic) north ----
-  let compass = null;
+  // compassNow() is null when the reading is over a second old: the laptop must not steer by a
+  // heading that stopped updating.
+  let compass = null, compassAt = -Infinity;
+  const compassNow = () => (performance.now() - compassAt < 1000 ? compass : null);
   async function startCompass() {
     const D = window.DeviceOrientationEvent;
     if (!D) return;
@@ -72,11 +79,11 @@
     }
     // iPhone: webkitCompassHeading is the rear camera's direction when the phone is upright.
     window.addEventListener("deviceorientation", (e) => {
-      if (typeof e.webkitCompassHeading === "number") compass = e.webkitCompassHeading;
+      if (typeof e.webkitCompassHeading === "number") { compass = e.webkitCompassHeading; compassAt = performance.now(); }
     });
     // Android: absolute orientation, converted to the rear camera's direction.
     window.addEventListener("deviceorientationabsolute", (e) => {
-      if (e.alpha !== null) compass = rearCameraHeading(e.alpha, e.beta, e.gamma);
+      if (e.alpha !== null) { compass = rearCameraHeading(e.alpha, e.beta, e.gamma); compassAt = performance.now(); }
     });
   }
   // W3C DeviceOrientation spec's formula: horizontal direction of the vector out of the back
@@ -101,17 +108,20 @@
   }
   setInterval(() => {
     const g = gps ? `±${gps.acc.toFixed(0)} m` : gpsError || "waiting…";
-    $("sensors").textContent = `GPS: ${g} · compass: ${compass === null ? "—" : compass.toFixed(0) + "°"}`;
+    const c = compassNow();
+    $("sensors").textContent = `GPS: ${g} · compass: ${c !== null ? c.toFixed(0) + "°" : compass === null ? "—" : "not updating"}`;
   }, 500);
 
   // ---- Camera ----
   $("start").onclick = async () => {
     $("start").style.display = "none";
-    await startCompass(); // first, while the tap still counts on iPhone
+    // iPhone only allows the motion (compass) and speech prompts straight from the tap: both start
+    // before the first await.
+    startVoice();
+    await startCompass();
     startGps();
-    startVoice(); // also needs the tap on iPhone
     startYolo();
-    try { await navigator.wakeLock?.request("screen"); } catch {} // keep the screen on
+    keepAwake();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -125,6 +135,15 @@
       $("info").textContent = `camera error: ${err.name}\n${err.message}\n(the page must be https)`;
     }
   };
+
+  // Keep the screen on. The browser drops the lock whenever the page is hidden (another app, the
+  // lock screen), so take it again when the page comes back.
+  let wantAwake = false;
+  async function keepAwake() {
+    wantAwake = true;
+    try { await navigator.wakeLock?.request("screen"); } catch {}
+  }
+  document.addEventListener("visibilitychange", () => { if (wantAwake && document.visibilityState === "visible") keepAwake(); });
 
   // Preview + measurements in a 960 px frame (longest side); focal is in these pixels.
   let lastDraw = 0;
@@ -190,8 +209,8 @@
   }
   function onBoxes({ boxes, ms, backend, error }) {
     yolo.busy = false;
-    const s = yolo.scale, f = Number($("focal").value), W = view.width;
-    HEIGHTS.person = Number($("personH").value) || 1.7;
+    const s = yolo.scale, f = focal(), W = view.width;
+    HEIGHTS.person = personH();
     yolo.boxes = boxes.map((b) => ({ ...b, x1: b.x1 * s, y1: b.y1 * s, x2: b.x2 * s, y2: b.y2 * s }));
     yolo.objects = yolo.boxes.map((b) => ({
       label: b.label,
@@ -209,7 +228,7 @@
   function distanceOf(b, f, H) {
     const bySize = HEIGHTS[b.label] ? (f * HEIGHTS[b.label]) / (b.y2 - b.y1) : Infinity;
     const below = Math.min(b.y2, H) - H / 2; // box bottom, pixels below the middle
-    const byGround = below > 5 ? ((Number($("camH").value) || 1.3) * f) / below : Infinity;
+    const byGround = below > 5 ? (camH() * f) / below : Infinity;
     const d = Math.min(bySize, byGround);
     return Number.isFinite(d) ? Math.round(d * 100) / 100 : null;
   }
@@ -219,7 +238,7 @@
     const people = yolo.boxes.filter((b) => b.label === "person");
     if (!people.length || performance.now() - yolo.at > 1500) { alert("Point the camera at the person first (whole body in view)."); return; }
     const tallest = Math.max(...people.map((b) => b.y2 - b.y1));
-    const f = Math.round((tallest * 3.0) / (Number($("personH").value) || 1.7));
+    const f = Math.round((tallest * 3.0) / personH());
     $("focal").value = f;
     save("focal960", f);
   };
@@ -238,7 +257,7 @@
     ws.send(JSON.stringify({
       type: "frame", to: "server", id, prompt, check, w: snap.width, h: snap.height,
       image: snap.toDataURL("image/jpeg", 0.7),
-      focal: (Number($("focal").value) * 800) / 960, // in this frame's pixels
+      focal: (focal() * 800) / 960, // in this frame's pixels
     }));
   }
 
@@ -257,7 +276,7 @@
       .slice(0, 3);
     if (!cars.length) return;
     ws.send(JSON.stringify({
-      type: "cars", to: "server", compass,
+      type: "cars", to: "server", compass: compassNow(),
       cars: cars.map(({ b, o }) => {
         const w = b.x2 - b.x1, h = b.y2 - b.y1;
         const x1 = Math.max(0, b.x1 - 0.05 * w), x2 = Math.min(view.width, b.x2 + 0.05 * w);
@@ -288,7 +307,7 @@
     }));
   }, 250);
 
-  // ---- Voice: "Waymo" or a place's name. The phone never speaks back. ----
+  // ---- Voice: "Waymo", a place's name, or "find the water bottle". The phone never speaks back. ----
   // Listens all the time; the laptop decides whether what it heard means anything.
   function startVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -302,9 +321,14 @@
       $("voiceInfo").textContent = `voice: heard "${text}"`;
       if (ws?.readyState === 1) ws.send(JSON.stringify({ type: "heard", text }));
     };
-    rec.onerror = (e) => ($("voiceInfo").textContent = `voice: ${e.error}`);
-    // It stops after a while of silence; start it again.
-    rec.onend = () => setTimeout(() => { try { rec.start(); } catch {} }, 300);
+    // It stops after a while of silence; start it again. Not after a refusal, though: that would
+    // just fail again every 300 ms (the Joy-Con buttons still work).
+    let refused = false;
+    rec.onerror = (e) => {
+      refused = ["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error);
+      $("voiceInfo").textContent = `voice: ${e.error}${refused ? " (off; use the buttons)" : ""}`;
+    };
+    rec.onend = () => { if (!refused) setTimeout(() => { try { rec.start(); } catch {} }, 300); };
     try { rec.start(); $("voiceInfo").textContent = "voice: listening"; } catch (err) { $("voiceInfo").textContent = `voice: ${err.message}`; }
   }
 
@@ -325,8 +349,8 @@
       // repeat would be read against wherever the wearer faces by then.
       objects: yolo.fresh ? ((yolo.fresh = false), yolo.objects) : undefined,
       // What the boxes above are measured in: frame size, focal length, chest height.
-      frame: view.width ? { w: view.width, h: view.height, focal: Number($("focal").value), camH: Number($("camH").value) || 1.3 } : undefined,
-      compass,
+      frame: view.width ? { w: view.width, h: view.height, focal: focal(), camH: camH() } : undefined,
+      compass: compassNow(),
       gps: gps && { lat: gps.lat, lon: gps.lon, acc: gps.acc, age: Math.max(0, Date.now() - gps.time) },
     }));
   }, 100);

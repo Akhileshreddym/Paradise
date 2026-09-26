@@ -25,7 +25,13 @@ const TYPES = {
 };
 
 const server = http.createServer(async (req, res) => {
-  const path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname));
+  // The tunnel makes this reachable from outside: a malformed address (bad %-escapes) gets a
+  // 400, not a crash.
+  let path;
+  try { path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname)); } catch {
+    res.writeHead(400).end("Bad request");
+    return;
+  }
   const file = join(ROOT, path === sep ? "hands.html" : path);
   // Only serve page files inside public/ (the tunnel makes this reachable from outside).
   if (!file.startsWith(ROOT) || !TYPES[extname(file)]) {
@@ -56,8 +62,9 @@ wss.on("connection", (ws, req) => {
     let msg = null;
     try { msg = JSON.parse(data.toString()); } catch {}
     if (msg?.to === "server") {
-      if (msg.type === "frame") onFrame(msg);
-      if (msg.type === "cars") onCars(msg);
+      // Anything can arrive here (the tunnel is public): a bad message is logged, never fatal.
+      const job = msg.type === "frame" ? onFrame(msg) : msg.type === "cars" ? onCars(msg) : null;
+      job?.catch((err) => console.log(`bad ${msg.type} message: ${err.message}`));
       return;
     }
     for (const client of wss.clients) {
@@ -75,7 +82,7 @@ wss.on("connection", (ws, req) => {
 // best few boxes (verified: true/false); the object finder alone boxes something almost every time.
 async function onFrame({ id, image, w, h, focal, prompt, check }) {
   const t0 = Date.now();
-  let boxes = null, reason = "";
+  let boxes = null, reason = "", note = "";
   try {
     const result = await findObjects(image, prompt);
     if (typeof result === "string") reason = result;
@@ -83,20 +90,22 @@ async function onFrame({ id, image, w, h, focal, prompt, check }) {
     if (boxes && check) {
       const best = boxes.filter((b) => b.score >= 0.2 && b.x2 - b.x1 < 0.8 * w && b.y2 - b.y1 < 0.9 * h)
         .sort((a, b) => b.score - a.score).slice(0, 3);
-      const ok = best.length ? await checkBoxes(image, best, check.what, check.same || []) : [];
+      const ok = best.length ? await checkBoxes(image, best, String(check.what), check.same || []) : [];
       if (Array.isArray(ok)) best.forEach((b, i) => (b.verified = ok[i]));
+      else note = `second opinion unavailable: ${ok}`; // CLIP loading or failed: say so, don't just find nothing
     }
   } catch (err) { reason = `failed: ${err.message}`; }
   const ms = Date.now() - t0;
   // For the status line; boxes this wide are the whole scene, not the thing.
   if (boxes) latest.found = { prompt, best: Math.max(0, ...boxes.filter((b) => b.x2 - b.x1 < 0.8 * w).map((b) => b.score)), ms, at: Date.now() };
-  const reply = JSON.stringify({ type: "found", id, boxes, reason, w, h, focal, ms });
+  const reply = JSON.stringify({ type: "found", id, boxes, reason, note, w, h, focal, ms });
   for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
 }
 
 // Car crops from the phone → how sure each is a Waymo, for the laptop page. The compass reading
 // from when the crops were taken goes back with them, so the laptop can turn angles into headings.
 async function onCars({ cars, compass }) {
+  if (!Array.isArray(cars) || !cars.length) return;
   const probs = await classifyCars(cars.map((c) => c.image)).catch((err) => `failed: ${err.message}`);
   if (typeof probs === "string") return; // loading or busy: the phone sends more soon
   latest.waymo = { best: Math.max(...probs), at: Date.now() };
@@ -113,6 +122,9 @@ function distanceM(a, b) {
   return 2 * 6371000 * Math.asin(Math.sqrt(h));
 }
 setInterval(() => {
+  try { printStatus(); } catch (err) { console.log(`[status] couldn't print: ${err.message}`); } // odd data: skip a line, don't crash
+}, 3000);
+function printStatus() {
   const { eyes, beacon } = latest;
   const recent = (x) => x && Date.now() - x.at < 10000;
   if (!recent(eyes) && !recent(beacon)) return;
@@ -128,8 +140,14 @@ setInterval(() => {
   if (finder.status !== "ready") line += ` | object finder ${finder.status}`;
   else if (recent(fd)) line += ` | finding "${fd.prompt}" best ${Math.round(fd.best * 100)}% (${fd.ms} ms)`;
   console.log(line);
-}, 3000);
+}
 
+// The WebSocket server passes the web server's errors on (it listens first), so listen there.
+wss.on("error", (err) => {
+  if (err.code !== "EADDRINUSE") throw err;
+  console.log(`Port ${PORT} is already in use: is npm start already running in another terminal?`);
+  process.exit(1);
+});
 server.listen(PORT, () => {
   console.log(`Laptop (hands): http://localhost:${PORT}/`);
   console.log(`Phone (eyes):   https://<tunnel address>/eyes.html`);

@@ -92,39 +92,54 @@
   const DECLINATION = -6.8;
 
   // ---- Joy-Cons (WebHID) ----
+  // The library opens each Joy-Con itself (and reconnects ones this page was allowed before), so
+  // here we only turn on rumble, listen for buttons, and note which wrist it's on. (Opening it
+  // again would add a second input listener: every report handled twice.)
   let joyL = null, joyR = null;
   $("connect").onclick = () => connectJoyCon();
+  const showJoyStatus = () =>
+    ($("joyStatus").textContent = `Joy-Con L: ${joyL ? "connected" : "—"} · Joy-Con R: ${joyR ? "connected" : "—"}`);
   setInterval(async () => {
     for (const jc of connectedJoyCons.values()) {
       // Go by hardware ID, not name: Windows sometimes names both Joy-Cons "Wireless Gamepad",
       // and the library only recognizes the right one by the name "Joy-Con (R)".
       const pid = jc.device?.productId;
-      const isLeft = jc instanceof JoyConLeft || pid === 0x2006;
-      const isRight = jc instanceof JoyConRight || pid === 0x2007;
-      // The library tries every HID device it's allowed to see; only touch Joy-Cons.
-      if (jc.ready || !(isLeft || isRight)) continue;
-      await jc.open();
-      await jc.enableStandardFullMode(); // button reports
-      await jc.enableVibration();
-      if (isLeft) joyL = jc;
-      if (isRight) joyR = jc;
-      jc.addEventListener("hidinput", ({ detail }) => onButtons(jc, detail.buttonStatus));
-      jc.ready = true;
-      $("joyStatus").textContent = `Joy-Con L: ${joyL ? "connected" : "—"} · Joy-Con R: ${joyR ? "connected" : "—"}`;
+      const side = jc instanceof JoyConLeft || pid === 0x2006 ? "L" : jc instanceof JoyConRight || pid === 0x2007 ? "R" : null;
+      // The library tries every HID device it's allowed to see; only touch Joy-Cons, once each
+      // (marked before the await, so a slow Bluetooth setup isn't started twice).
+      if (!side || jc.nudgeSide) continue;
+      jc.nudgeSide = side;
+      try {
+        await jc.enableVibration();
+      } catch (err) {
+        jc.nudgeSide = null; // try again next second
+        console.warn(`Joy-Con ${side}: couldn't turn on rumble`, err);
+        continue;
+      }
+      jc.addEventListener("hidinput", ({ detail }) => onButtons(jc, side, detail.buttonStatus));
+      if (side === "L") joyL = jc; else joyR = jc;
+      showJoyStatus();
     }
   }, 1000);
+  // A Joy-Con that drops out (battery, out of range): forget it. When it comes back the library
+  // makes a new one, which the loop above sets up again.
+  navigator.hid?.addEventListener("disconnect", ({ device }) => {
+    if (joyL?.device === device) joyL = null;
+    if (joyR?.device === device) joyR = null;
+    showJoyStatus();
+  });
 
   // One buzz on one wrist. The wrist icon on the display lights for exactly as long, even with
   // no Joy-Con connected (handy for demos and testing).
   const LO_HZ = 160, HI_HZ = 320;
+  const rumble = (jc, amp) => jc?.rumble(LO_HZ, HI_HZ, amp).catch(() => {}); // a dropped Joy-Con just misses it
   function buzz(side, strength, ms) {
     const jc = side === "L" ? joyL : joyR;
-    const amp = clamp(strength * Number($("amp").value), 0, 1);
-    jc?.rumble(LO_HZ, HI_HZ, amp); // rumble() keeps going until strength 0
+    rumble(jc, clamp(strength * Number($("amp").value), 0, 1)); // keeps going until strength 0
     const icon = $(side === "L" ? "wristL" : "wristR");
     icon.classList.add("on");
     clearTimeout(icon.off);
-    icon.off = setTimeout(() => { jc?.rumble(LO_HZ, HI_HZ, 0); icon.classList.remove("on"); }, ms);
+    icon.off = setTimeout(() => { rumble(jc, 0); icon.classList.remove("on"); }, ms);
   }
   const both = (strength, ms) => { buzz("L", strength, ms); buzz("R", strength, ms); };
   const repeat = (n, gap, fn) => { for (let i = 0; i < n; i++) setTimeout(fn, i * gap); };
@@ -189,18 +204,25 @@
     [["wallet"], null, 0.11],
     [["glasses", "sunglasses"], null, 0.14],
   ];
+  // What was said or typed → just the thing: no punctuation (speech recognition adds it) or filler
+  // ("Get me a water bottle, please." → "water bottle").
+  function cleanThing(text) {
+    let t = text.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9' -]+/g, " ").replace(/\s+/g, " ").trim(), prev;
+    do {
+      prev = t;
+      t = t.replace(/^(?:me|us|the|a|an|my|our|your|some)\s+/, "").replace(/\s+(?:please|for me|for us|now|thanks|thank you)$/, "").trim();
+    } while (t !== prev);
+    return t;
+  }
   function findThing(text) {
-    const what = text.trim().toLowerCase().replace(/^(the|a|an|my|some)\s+/, "");
+    const what = cleanThing(text);
     if (!what) return;
     // Longest matching word wins ("water bottle" over "water").
     let best = null;
     for (const [words, coco, size] of THINGS) for (const w of words) {
       if (new RegExp(`\\b${w}\\b`).test(what) && (!best || w.length > best.w.length)) best = { w, coco, size, same: [...words, ...(coco ? [coco] : [])] };
     }
-    PATTERNS.echo(1);
-    resetGuidance();
-    rideStage = "";
-    mode = { kind: "find", name: `find "${what}"`, what, prompt: `a ${what}.`, coco: best?.coco ?? null, size: best?.size ?? null, same: best?.same ?? [] };
+    startMode({ kind: "find", name: `find "${what}"`, what, prompt: `a ${what}.`, coco: best?.coco ?? null, size: best?.size ?? null, same: best?.same ?? [] }, 1);
   }
   $("findGo").onclick = () => findThing($("findText").value);
   $("findText").onkeydown = (e) => { if (e.key === "Enter") findThing($("findText").value); };
@@ -227,12 +249,20 @@
   // Button presses: press any Joy-Con button N times; 1.5 s after the last press it counts.
   // 1 = Waymo, 2 = first place, 3 = second place… Confirmation: N short pulses back.
   const CHOICES = [{ name: "Waymo" }, ...PLACES];
-  let mode = null; // { kind: "waymo" | "place" | "find" | "test", name, place?, what?, heading? }
+  let mode = null; // { kind: "waymo" | "place" | "find" | "test", name, place?, what?, turn? }
   let heardText = "", heardAt = -Infinity;
+  // Only the wrist's own buttons count. The library's button report also carries raw bytes
+  // (_raw, _hex: always "truthy"), and a Joy-Con it doesn't recognize by name reports the other
+  // side's bits as noise. (The small SL/SR rail buttons are read from both sides' bits, so they're
+  // left out.)
+  const BUTTONS = {
+    L: ["up", "down", "left", "right", "l", "zl", "minus", "capture", "leftStick"],
+    R: ["a", "b", "x", "y", "r", "zr", "plus", "home", "rightStick"],
+  };
   const presses = { count: 0, timer: null, down: new Map() };
-  function onButtons(jc, status) {
+  function onButtons(jc, side, status) {
     if (!status) return;
-    const pressed = Object.entries(status).some(([k, v]) => v && k !== "chargingGrip");
+    const pressed = BUTTONS[side].some((k) => status[k] === true);
     const was = presses.down.get(jc) || false;
     presses.down.set(jc, pressed);
     if (!pressed || was) return; // count press edges only
@@ -240,13 +270,19 @@
     clearTimeout(presses.timer);
     presses.timer = setTimeout(() => { choose(presses.count); presses.count = 0; }, 1500);
   }
+  // Every new choice: start fresh, buzz the echo, and hold guidance buzzes until the echo is over
+  // so the wearer can count it.
+  function startMode(m, echo) {
+    resetGuidance();
+    mode = m;
+    rideStage = m.kind === "waymo" ? "requested" : "";
+    PATTERNS.echo(echo);
+    nextPulse = echoUntil = performance.now() + echo * 300 + 400;
+  }
   function choose(n) {
     const c = CHOICES[n - 1];
     if (!c) { PATTERNS.search(); return; } // no such choice
-    PATTERNS.echo(n);
-    resetGuidance();
-    mode = n === 1 ? { kind: "waymo", name: "Waymo" } : { kind: "place", name: c.name, place: c };
-    rideStage = n === 1 ? "requested" : "";
+    startMode(n === 1 ? { kind: "waymo", name: "Waymo" } : { kind: "place", name: c.name, place: c }, n);
   }
   CHOICES.forEach((c, i) => {
     const b = document.createElement("button");
@@ -255,28 +291,42 @@
     $("choices").append(b);
   });
   $("stopMode").onclick = () => { mode = null; resetGuidance(); };
+  // Relative to where the chest faces; pinned down once the compass is there (guideTick).
   document.querySelectorAll("[data-turn]").forEach((b) => {
-    b.onclick = () => { resetGuidance(); mode = { kind: "test", name: `test ${b.textContent}`, heading: wrap180((heading ?? 0) + Number(b.dataset.turn)) }; };
+    b.onclick = () => startMode({ kind: "test", name: `test ${b.textContent}`, turn: Number(b.dataset.turn) }, 0);
   });
-  // Voice (from the chest phone): "Waymo", a place's name, or "find / get / grab / where's …".
+  // Voice (from the chest phone). Only commands count, not everything said nearby: after an
+  // optional "please" / "hey Nudge" / "can you", it has to start with one:
+  //   "Waymo", "take me to the Waymo"          → Waymo
+  //   "test north", "go to test north"         → that place
+  //   "find / get / grab / bring me / where's / where are … <thing>" → find it
+  const POLITE = /^(?:please|hey|hi|ok|okay|nudge|can you|could you|would you|will you)\s+/;
+  const VERB = /^(?:(?:take|bring|get) me to|go to|guide me to|walk me to|navigate to|help me find|look for|find|grab|fetch|bring me|bring|get|where's|wheres|where is|where are|where did i put)\s+/;
+  const NOT_A_THING = /^(?:it|that|this|there|here|them|going|started|ready|back|in|on|off|out|up|over|away|lost)\b/;
   function onHeard(text) {
     heardText = text; heardAt = performance.now();
-    const t = text.toLowerCase();
-    const ask = /\b(?:find|get|grab|fetch|bring me|take me to|where(?:'s| is))\s+(.+)/.exec(t);
-    if (ask && !/way ?mo|way more/.test(t) && !CHOICES.some((c, i) => i > 0 && ask[1].includes(c.name.toLowerCase()))) return findThing(ask[1]);
-    const n = /way ?mo|way more/.test(t) ? 1 : CHOICES.findIndex((c, i) => i > 0 && t.includes(c.name.toLowerCase())) + 1;
-    if (n > 0) choose(n);
+    let t = text.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9' -]+/g, " ").replace(/\s+/g, " ").trim(), prev;
+    do { prev = t; t = t.replace(POLITE, ""); } while (t !== prev);
+    const asked = VERB.test(t), thing = cleanThing(t.replace(VERB, ""));
+    if (/^(?:way ?mo|way more)$/.test(thing)) return choose(1);
+    const place = CHOICES.findIndex((c, i) => i > 0 && thing === c.name.toLowerCase());
+    if (place > 0) return choose(place + 1);
+    if (asked && thing && !NOT_A_THING.test(thing)) findThing(thing);
   }
 
   // ---- What the chest phone tells us ----
   let heading = null;              // which way the chest faces, magnetic degrees (iPhone compass)
+  let headingAt = -Infinity;       // when it last came from the phone: an old heading isn't trusted
   let lastEyes = -Infinity;        // performance.now() of the last chest phone message
   let wearer = null, beacon = null;  // { lat, lon, acc, at } (at = laptop time of the fix)
   let cam = null;                  // target seen by the camera: { heading, distance, at, by, up? }
                                    // by: "object" (Waymo car), "handle" (its door handle), "thing" (find mode)
   let lastCar = null;              // { distance, at }, for the door handle's distance
   let obstacle = null;             // { label, distance, at } closest thing in the walking path
-  let latestObjects = [];          // for the display
+  // How long an obstacle counts after it was last seen: longer than YOLO's gap between results
+  // on a slow phone (~0.5–0.8 s without WebGPU), or STOP would flicker on and off.
+  const OBSTACLE_HOLD = 1200;
+  let latestObjects = [], latestObjectsAt = -Infinity; // for the display
   let lastFrame = null;            // { w, h, focal, camH } the phone measures boxes in
   let yoloThing = null;            // { heading, at } last time YOLO saw the kind of thing being found
 
@@ -301,10 +351,18 @@
       : sure.reduce((a, b) => (b.prob > a.prob ? b : a));
     waymoSeen = { heading: best.heading, distance: best.distance, prob: best.prob, at: now };
   }
+  // Which way the Waymo itself is (its middle, not its door handle): where the classifier confirmed
+  // it lately, or the car being steered to.
+  function waymoHeading(now) {
+    if (waymoSeen && now - waymoSeen.at < 5000) return waymoSeen.heading;
+    if (cam?.by === "object" && now - cam.at < 2000) return cam.heading;
+    return null;
+  }
   // YOLO reports cars 5–15 times a second, the classifier twice: steer by the YOLO car that lines
-  // up with the confirmed Waymo (or the one already being steered to).
+  // up with the Waymo. (Not with the door handle: at the door the car's middle is well off to one
+  // side, and losing track of the car would lose its distance, and make it an obstacle.)
   function pickCar(list, now) {
-    const aim = cam && now - cam.at < 2000 ? cam.heading : waymoSeen && now - waymoSeen.at < 5000 ? waymoSeen.heading : null;
+    const aim = waymoHeading(now);
     if (aim === null) return null;
     const off = (o) => Math.abs(wrap180(heading + o.angle - aim));
     list = list.filter((o) => off(o) < 12);
@@ -322,21 +380,28 @@
   const finder = { waiting: null, nextId: 0, retryAt: 0, info: "idle", box: null };
   setInterval(() => {
     const now = performance.now();
-    const nearCar = mode?.kind === "waymo" && cam && now - cam.at < 4000 && cam.distance != null && cam.distance <= HANDLE_RANGE;
+    // Near the car: the car (or its handle) seen lately, or we're standing at it.
+    const nearCar = mode?.kind === "waymo" && cam && (now - cam.at < 4000 || arrived === cam.by) &&
+      cam.distance != null && cam.distance <= HANDLE_RANGE;
     const prompt = nearCar ? "a car door handle." : mode?.kind === "find" ? mode.prompt : null;
-    if (!prompt || phoneWs?.readyState !== 1 || now < finder.retryAt || heading === null) return;
+    // Only while the phone is there: a request with nobody to answer it holds up the next one 5 s.
+    if (!prompt || phoneWs?.readyState !== 1 || now < finder.retryAt || heading === null || now - lastEyes > 1000) return;
     if (finder.waiting && now - finder.waiting.at < 5000) return; // one at a time; give up on lost ones
-    // The frame is taken right after this; remember which way the chest faced.
-    finder.waiting = { id: ++finder.nextId, at: now, heading, purpose: nearCar ? "handle" : "thing" };
+    // The frame is taken right after this; remember which way the chest faced, and for which mode
+    // (an answer that comes back after the mode changed is about something else).
+    finder.waiting = { id: ++finder.nextId, at: now, heading, purpose: nearCar ? "handle" : "thing", mode };
     const check = nearCar ? undefined : { what: mode.what, same: mode.same };
     phoneWs.send(JSON.stringify({ type: "frame-please", to: "eyes", id: finder.nextId, prompt, check }));
   }, 100);
-  function onFound({ id, boxes, reason, w, h, focal, ms }) {
+  function onFound({ id, boxes, reason, note, w, h, focal, ms }) {
     const req = finder.waiting;
     if (req?.id !== id) return;
     finder.waiting = null;
-    if (!boxes) { finder.retryAt = performance.now() + 2000; finder.info = reason; return; } // loading or busy
-    if (req.purpose === "thing") return onThingBoxes(req, boxes, w, h, focal, ms);
+    if (req.mode !== mode) return;
+    // Busy (still on an earlier frame, e.g. right after a mode change): again shortly. Loading or
+    // failed: every 2 s.
+    if (!boxes) { finder.retryAt = performance.now() + (reason === "busy" ? 500 : 2000); finder.info = reason; return; }
+    if (req.purpose === "thing") return onThingBoxes(req, boxes, w, h, focal, ms, note);
     // The model also scores the whole car as "handle"; keep small boxes only, best first.
     const b = boxes.filter((b) => b.x2 - b.x1 < 0.4 * w && b.score >= 0.12).sort((a, b) => b.score - a.score)[0];
     const deg = (px) => (Math.atan(px / focal) * 180) / Math.PI;
@@ -355,7 +420,7 @@
   }
   // Find mode: the best box that isn't the whole scene; while already steering to one, the one
   // closest to it (so two bottles don't make it flip between them).
-  function onThingBoxes(req, boxes, w, h, focal, ms) {
+  function onThingBoxes(req, boxes, w, h, focal, ms, note) {
     if (mode?.kind !== "find") return;
     const frame = { w, h, focal, camH: lastFrame?.camH ?? 1.3 };
     const now = performance.now();
@@ -369,7 +434,7 @@
       ? (Math.abs(wrap180(headingOf(c) - cam.heading)) < Math.abs(wrap180(headingOf(a) - cam.heading)) ? c : a)
       : (c.score > a.score ? c : a))) : null;
     if (b) { thingSeen(b.box, frame, req.heading, b.score); finder.box = { box: b.box, at: now }; }
-    finder.info = `"${mode.what}": ${ms} ms · ${b ? `${Math.round(b.score * 100)}%` : "not in view"}`;
+    finder.info = `"${mode.what}": ${ms} ms · ${b ? `${Math.round(b.score * 100)}%` : "not in view"}${note ? ` (${note})` : ""}`;
   }
 
   // ---- GPS ----
@@ -384,8 +449,9 @@
     const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(dLon);
     return to360((Math.atan2(y, x) * 180) / Math.PI);
   }
-  // A phone that isn't moving often gets no new fixes, and the beacon is parked on purpose.
-  const fresh = (p, now) => p && now - p.at < (p === beacon ? 30000 : 5000);
+  // A phone that isn't moving often gets no new fixes (the beacon is parked on purpose; the wearer
+  // stands still to turn), and a moving one gets them every second or so.
+  const fresh = (p, now) => p && now - p.at < (p === beacon ? 30000 : 15000);
   // Direction (magnetic, like the compass) and distance to a spot, or null without a GPS fix.
   function gpsTo(spot, now) {
     if (!fresh(wearer, now) || !spot) return null;
@@ -405,24 +471,29 @@
   }
 
   // ---- Guidance: every 50 ms ----
-  let onTarget = false, arrived = false, nextPulse = 0, connectedBuzzed = false, obstacleNext = 0;
+  let onTarget = false, arrived = false, nextPulse = 0, connectedBuzzed = false, obstacleNext = 0, echoUntil = 0;
   let rideStage = "", distanceShown = "—";
   function resetGuidance() {
-    cam = null; waymoSeen = null; onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—";
+    cam = null; waymoSeen = null; yoloThing = null; lastCar = null;
+    onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—";
+    Object.assign(finder, { waiting: null, retryAt: 0, info: "idle", box: null });
   }
   function guideTick() {
     const now = performance.now();
-    if (cam && now - cam.at > 20000) cam = null; // not seen for 20 s: stop trusting where it was
-    const linkOk = now - lastEyes < 1000 && heading !== null;
-    const obs = obstacle && now - obstacle.at < 700 ? obstacle : null;
+    // Not seen for 20 s: stop trusting where it was. Unless we've arrived at it: up close the thing
+    // (or the door handle) drops out of the chest camera's view, which doesn't mean it's gone.
+    if (cam && now - cam.at > 20000 && arrived !== cam.by) cam = null;
+    const phoneOk = now - lastEyes < 1000, compassOk = heading !== null && now - headingAt < 1000;
+    const obs = obstacle && now - obstacle.at < OBSTACLE_HOLD ? obstacle : null;
     const say = (text) => showStatus(text, obs);
 
     if (!mode) return say("waiting for a choice (press a Joy-Con button: 1 = Waymo, 2+ = places)");
 
-    // No signal from the chest phone: alternating search buzz, and nothing else.
-    if (!linkOk) {
+    // No signal (or no compass) from the chest phone: alternating search buzz, and nothing else.
+    // Steering by an old heading would send the wearer the wrong way.
+    if (!phoneOk || !compassOk) {
       if (now >= nextPulse) { nextPulse = now + 1600; PATTERNS.search(); }
-      return say("NO SIGNAL from the chest phone");
+      return say(phoneOk ? "NO COMPASS from the chest phone (allow motion access)" : "NO SIGNAL from the chest phone");
     }
 
     // Obstacle close ahead: stop, overriding everything else, for as long as it's there.
@@ -432,9 +503,13 @@
       return say(`STOP: ${obs.label} ${obs.distance.toFixed(1)} m ahead`);
     }
 
-    // Where to?
+    // Where to? A camera target counts while it's recent, or for as long as we've arrived at it.
+    const camTarget = (ms) => cam && (now - cam.at < ms || arrived === cam.by);
     let target = null, distance = null, by = null, waiting = "";
-    if (mode.kind === "test") { target = mode.heading; by = "test"; }
+    if (mode.kind === "test") {
+      if (mode.heading === undefined) mode.heading = wrap180(heading + mode.turn);
+      target = mode.heading; by = "test";
+    }
     if (mode.kind === "place") {
       const g = gpsTo(placeSpot(now), now);
       if (g) { target = g.heading; distance = g.distance; by = "gps"; }
@@ -444,17 +519,18 @@
       if (fresh(beacon, now) && rideStage === "requested") rideStage = "here";
       // Camera first (car, then door handle), else GPS toward the beacon.
       const g = fresh(beacon, now) ? gpsTo(beacon, now) : null;
-      if (cam && now - cam.at < 2000) { target = cam.heading; distance = cam.distance; by = cam.by; }
+      if (camTarget(2000)) { target = cam.heading; distance = cam.distance; by = cam.by; }
       else if (g) { target = g.heading; distance = g.distance; by = "gps"; }
       else waiting = fresh(beacon, now) ? "waiting for GPS" : "waiting for the Waymo's location (beacon)";
       // Near the beacon but no Waymo confirmed yet: keep heading for the beacon; the camera will
       // take over as soon as it recognizes the car.
-      if (cam && !connectedBuzzed) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); nextPulse = now + 600; }
+      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); nextPulse = now + 600; }
     }
     if (mode.kind === "find") {
-      if (cam && now - cam.at < 3000) { target = cam.heading; distance = cam.distance; by = "thing"; }
+      if (camTarget(3000)) { target = cam.heading; distance = cam.distance; by = "thing"; }
       else waiting = `the ${mode.what}: turn slowly`;
-      if (cam && !connectedBuzzed) { connectedBuzzed = true; PATTERNS.connected(); nextPulse = now + 600; } // found it
+      // Found it (after the selection echo, so the two can't blur together).
+      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; PATTERNS.connected(); nextPulse = now + 600; }
     }
     distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m (${by})`;
     if (target === null) {
@@ -521,7 +597,7 @@
       `phone:   ${lastEyes < 0 ? "no messages yet" : `last message ${(now - lastEyes).toFixed(0)} ms ago`}\n` +
       `heading: ${heading === null ? "— (no compass yet)" : `${to360(heading).toFixed(0)}° magnetic`}\n` +
       `you:     ${pos(wearer)}\nbeacon:  ${pos(beacon)}\n` +
-      `camera:  ${latestObjects.map((o) => `${o.label} ${o.distance ? o.distance.toFixed(1) + " m" : ""}`).join(", ") || "nothing"}\n` +
+      `camera:  ${(now - latestObjectsAt < 1500 ? latestObjects : []).map((o) => `${o.label} ${o.distance ? o.distance.toFixed(1) + " m" : ""}`).join(", ") || "nothing"}\n` +
       `waymo classifier: ${waymoBest && now - waymoBest.at < 3000 ? `best ${Math.round(waymoBest.prob * 100)}% (sure at ${WAYMO_SURE * 100}%)` : "—"}\n` +
       `object finder: ${finder.info}`;
   }
@@ -559,19 +635,19 @@
 
   // ---- Obstacles: always on, in every mode ----
   // Anything in the walking path (within ±20° of straight ahead) closer than the stop distance.
-  // The target doesn't count, and in find mode neither does anything at or behind it (the table
-  // the bottle is on).
+  // The target doesn't count, and neither does anything at or behind it: the table the bottle is
+  // on, or the Waymo itself while walking up to its door handle.
   function isTarget(o) {
-    if (!cam || heading === null) return false;
-    const lined = Math.abs(wrap180(heading + o.angle - cam.heading)) < 15;
-    if (mode?.kind === "waymo") return lined && VEHICLES.includes(o.label);
-    if (mode?.kind === "find") return lined && o.label === mode.coco;
+    if (heading === null) return false;
+    const lined = (h) => h != null && Math.abs(wrap180(heading + o.angle - h)) < 15;
+    if (mode?.kind === "waymo") return VEHICLES.includes(o.label) && lined(waymoHeading(performance.now()) ?? cam?.heading);
+    if (mode?.kind === "find") return o.label === mode.coco && lined(cam?.heading);
     return false;
   }
   function isObstacle(o) {
     if (o.distance == null || Math.abs(o.angle) > 20 || o.distance > Number($("stopDist").value)) return false;
     if (isTarget(o)) return false;
-    if (mode?.kind === "find" && cam?.distance != null && o.distance >= cam.distance - 0.3) return false;
+    if ((mode?.kind === "find" || mode?.kind === "waymo") && cam?.distance != null && o.distance >= cam.distance - 0.3) return false;
     return true;
   }
 
@@ -591,18 +667,20 @@
       if (msg.type !== "eyes") return;
 
       lastEyes = now;
-      if (typeof msg.compass === "number") heading = wrap180(msg.compass);
+      // The phone sends no compass when its reading has gone stale.
+      if (typeof msg.compass === "number") { heading = wrap180(msg.compass); headingAt = now; }
       if (msg.frame) lastFrame = msg.frame;
       if (msg.gps) wearer = { lat: msg.gps.lat, lon: msg.gps.lon, acc: msg.gps.acc, at: now - (msg.gps.age || 0) };
       if (!msg.objects || heading === null) return; // objects only come when there's a new result
-      latestObjects = msg.objects;
+      latestObjects = msg.objects; latestObjectsAt = now;
 
-      // Waymo: the car to steer to (unless a door handle was seen recently: that's where to go).
+      // Waymo: the car to steer to, unless a door handle was seen recently or we're at it: that's
+      // where to go, and the car's middle isn't.
       let car = null;
       if (mode?.kind === "waymo") {
         car = pickCar(msg.objects.filter((o) => VEHICLES.includes(o.label)), now);
         if (car?.distance != null) lastCar = { distance: car.distance, at: now };
-        if (car && !(cam?.by === "handle" && now - cam.at < 4000)) {
+        if (car && !(cam?.by === "handle" && (now - cam.at < 4000 || arrived === "handle"))) {
           cam = { heading: wrap180(heading + car.angle), distance: car.distance, at: now, by: "object" };
         }
       }

@@ -5,6 +5,10 @@
 import { env, pipeline, RawImage } from "@huggingface/transformers";
 import { fileURLToPath } from "node:url";
 
+// The server went away (crashed, or stopped): don't linger. (A plain terminate signal: exiting
+// normally with the ONNX runtime's threads running prints a scary but harmless C++ error.)
+process.on("disconnect", () => process.kill(process.pid, "SIGTERM"));
+
 env.cacheDir = env.localModelPath = fileURLToPath(new URL("./models/", import.meta.url));
 
 const MODEL = "onnx-community/grounding-dino-tiny-ONNX";

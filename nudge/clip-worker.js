@@ -7,6 +7,10 @@ import {
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// The server went away (crashed, or stopped): don't linger. (A plain terminate signal: exiting
+// normally with the ONNX runtime's threads running prints a scary but harmless C++ error.)
+process.on("disconnect", () => process.kill(process.pid, "SIGTERM"));
+
 env.cacheDir = env.localModelPath = fileURLToPath(new URL("./models/", import.meta.url));
 const MODEL = "Xenova/clip-vit-base-patch32";
 // Trained by training/train.mjs: standardize the 512 CLIP numbers, then logistic regression.

@@ -17,19 +17,29 @@ import { fileURLToPath } from "node:url";
 
 export const clip = { status: "loading" };
 // Its own process: the ONNX runtime crashes when two threads of one process use it at once, and
-// this way a crash in the model can't take the relay (and its safety stops) down with it.
-const worker = fork(fileURLToPath(new URL("./clip-worker.js", import.meta.url)));
+// this way a crash in the model can't take the relay (and its safety stops) down with it. If it
+// does crash, whatever it was working on fails, and it starts again (a few times at most).
 const waiting = new Map(); // id → resolve
-let nextId = 0;
-
-worker.on("message", (msg) => {
-  if (msg.type === "status") { clip.status = msg.status; console.log(`clip (waymo classifier, second opinions): ${msg.status}`); }
-  if (msg.type === "result") {
-    waiting.get(msg.id)?.(msg.error ? `failed: ${msg.error}` : msg.result);
-    waiting.delete(msg.id);
-  }
-});
-worker.on("exit", (code) => { clip.status = `failed: stopped (${code})`; console.log(`clip: ${clip.status}`); });
+let worker, nextId = 0, restarts = 0;
+function start() {
+  worker = fork(fileURLToPath(new URL("./clip-worker.js", import.meta.url)));
+  worker.on("message", (msg) => {
+    if (msg.type === "status") { clip.status = msg.status; console.log(`clip (waymo classifier, second opinions): ${msg.status}`); }
+    if (msg.type === "result") {
+      waiting.get(msg.id)?.(msg.error ? `failed: ${msg.error}` : msg.result);
+      waiting.delete(msg.id);
+    }
+  });
+  worker.on("exit", (code, signal) => {
+    clip.status = `failed: stopped (${signal || code})`;
+    for (const resolve of waiting.values()) resolve(clip.status);
+    waiting.clear();
+    if (signal === "SIGINT" || signal === "SIGTERM") return; // Ctrl + C: everything's stopping
+    console.log(`clip: ${clip.status}${restarts < 3 ? ", starting it again" : ""}`);
+    if (restarts++ < 3) { clip.status = "loading"; setTimeout(start, 2000); }
+  });
+}
+start();
 
 function ask(job, { skipIfBusy }) {
   if (clip.status !== "ready") return Promise.resolve(clip.status);
