@@ -1,0 +1,582 @@
+<!doctype html>
+<!-- Nudge "hands": laptop page that drives the Joy-Cons. Chrome or Edge only (WebHID). -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Nudge · Hands</title>
+<style>
+  body { font: 18px system-ui, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; }
+  button { font-size: 18px; padding: 10px 16px; margin: 4px; }
+  .row { margin: 16px 0; }
+  #status { font-family: monospace; white-space: pre; background: #eee; padding: 12px; }
+  input[type=range] { width: 260px; }
+</style>
+</head>
+<body>
+<h1>Nudge · Hands</h1>
+
+<div class="row">
+  <button id="connect">Connect a Joy-Con</button> (click once per Joy-Con)<br>
+  <button id="connectXbox">Connect an Xbox controller (direct)</button> (click once per controller)<br>
+  Or: turn them on and <b>press any button</b> while this page is open.
+</div>
+<div id="status">Nothing connected yet.</div>
+<p><b>What the browser sees:</b></p>
+<div id="pads" style="font-family: monospace; white-space: pre; background: #fff4d6; padding: 12px;">Checking…</div>
+<p><b>Direct connection details:</b></p>
+<div id="hidinfo" style="font-family: monospace; white-space: pre-wrap; background: #e8f0ff; padding: 12px;"></div>
+
+<h2>Auto-guide (gyro heading)</h2>
+<div class="row">
+  Heading sensor: <select id="headSrc"><option value="L">Joy-Con L</option><option value="R">Joy-Con R</option></select>
+  <button id="zero">Zero (hold still 2 s)</button>
+  <label><input type="checkbox" id="flip"> Flip turn direction</label><br>
+  <button id="cal360">Calibrate 360°: start</button> (press, turn exactly one full circle, press again)
+  <div id="heading" style="font: 700 40px/1.2 monospace; margin-top: 8px">heading —</div>
+</div>
+<div class="row">
+  On-target margin: ± <input id="margin" type="range" min="3" max="30" value="10" style="width:160px"> <span id="marginV">10</span>°<br>
+  Target source: <select id="targetSrc"><option value="test">Test buttons</option><option value="camera">Camera (phone)</option><option value="gps">GPS beacon</option></select>
+  Destination marker: <select id="destId"><option value="1">1 · Door</option><option value="2" selected>2 · Chair</option><option value="3">3 · Waymo</option></select><br>
+  <button id="remember">Remember this direction</button> (face something, press, then turn away)<br>
+  Test targets:
+  <button data-turn="-90">90° left</button><button data-turn="-45">45° left</button>
+  <button data-turn="45">45° right</button><button data-turn="90">90° right</button>
+  <button data-turn="180">Behind</button><button id="clearTarget">Clear</button><br>
+  <button id="auto">Auto-guide: OFF</button>
+  <div id="guide" style="font: 700 22px/1.4 monospace; margin-top: 8px">no target</div>
+  <div id="link" style="font-family: monospace">phone: not connected</div>
+</div>
+<div class="row">
+  GPS arrival radius: <input id="arrive" type="range" min="2" max="20" value="6" style="width:160px"> <span id="arriveV">6</span> m
+  <div id="gpsinfo" style="font-family: monospace; white-space: pre; background: #eef7ee; padding: 12px; margin-top: 6px">GPS: no data yet</div>
+</div>
+
+<h2>Both Joy-Cons</h2>
+<div class="row">
+  <button id="both">Buzz both</button>
+  <button id="ampDown">− Weaker</button>
+  <span id="ampShow" style="font-family: monospace">strength 0.6</span>
+  <button id="ampUp">+ Stronger</button>
+</div>
+<div class="row">
+  <button id="back">Go backwards: OFF</button> (double buzz on repeat until you press it again)
+</div>
+
+<h2>One at a time</h2>
+<div class="row" id="single"></div>
+<div class="row"><button id="swapXbox">Swap the two Xbox controllers</button> <button id="stop">Silence all</button></div>
+
+<div class="row">
+  Strength (0–1): <input id="amp" type="range" min="0" max="1" step="0.05" value="0.6"> <span id="ampV">0.6</span><br>
+  Pulse length (ms): <input id="len" type="range" min="50" max="1000" step="10" value="250"> <span id="lenV">250</span><br>
+  Joy-Con low freq (Hz): <input id="freq" type="range" min="41" max="626" value="160"> <span id="freqV">160</span><br>
+  Joy-Con high freq (Hz): <input id="freqHi" type="range" min="82" max="1252" value="320"> <span id="freqHiV">320</span>
+</div>
+
+<h2>Direction</h2>
+<div class="row">
+  Target angle: <input id="angle" type="range" min="-90" max="90" value="0"> <span id="angleV">0</span>°
+  (− left, + right)<br>
+  <button id="pulseDir">Pulse this direction</button>
+  <div id="weights" style="font-family: monospace"></div>
+</div>
+
+<script type="module">
+  import { connectJoyCon, connectedJoyCons, JoyConLeft, JoyConRight }
+    from "https://cdn.jsdelivr.net/npm/joy-con-webhid@0.11.0/+esm";
+
+  const $ = (id) => document.getElementById(id);
+  for (const id of ["amp", "len", "freq", "freqHi", "angle"]) {
+    $(id).oninput = () => { $(id + "V").textContent = $(id).value; showWeights(); };
+  }
+
+  // Where each buzzer sits on the body, in degrees (0 = straight ahead).
+  const SPOTS = [
+    { name: "left",        deg: -90 },  // Xbox #1
+    { name: "front-left",  deg: -30 },  // Joy-Con L
+    { name: "front-right", deg:  30 },  // Joy-Con R
+    { name: "right",       deg:  90 },  // Xbox #2
+  ];
+
+  // ---- Joy-Cons (WebHID) ----
+  let joyL = null, joyR = null;
+  $("connect").onclick = () => connectJoyCon();
+  setInterval(async () => {
+    for (const jc of connectedJoyCons.values()) {
+      // Go by hardware ID, not name: Windows sometimes names both Joy-Cons "Wireless Gamepad",
+      // and the library only recognizes the right one by the name "Joy-Con (R)".
+      const pid = jc.device?.productId;
+      const isLeft = jc instanceof JoyConLeft || pid === 0x2006;
+      const isRight = jc instanceof JoyConRight || pid === 0x2007;
+      // The library tries every HID device it's allowed to see; only touch Joy-Cons.
+      if (jc.ready || !(isLeft || isRight)) continue;
+      await jc.open();
+      await jc.enableStandardFullMode();
+      await jc.enableIMUMode(); // gyro + accelerometer, for the heading
+      await jc.enableVibration();
+      if (isLeft) joyL = jc;
+      if (isRight) joyR = jc;
+      jc.addEventListener("hidinput", ({ detail }) => onImu(jc, detail));
+      $("hidinfo").textContent += `Joy-Con ${isLeft ? "L" : "R"} set up (id ${pid?.toString(16)}, "${jc.device?.productName}")\n`;
+      jc.ready = true;
+      showStatus();
+    }
+  }, 1000);
+
+  // rumble() keeps going until strength 0, so a pulse = on, wait, off.
+  async function pulseJoy(jc, amp, ms) {
+    const lo = Number($("freq").value), hi = Number($("freqHi").value);
+    await jc.rumble(lo, hi, amp);
+    setTimeout(() => jc.rumble(lo, hi, 0), ms);
+  }
+
+  // ---- Xbox controllers (standard Gamepad API) ----
+  let xbox = []; // gamepad indexes, in connection order
+  // Poll instead of trusting the connect event, and show everything the browser sees.
+  setInterval(() => {
+    const pads = [...navigator.getGamepads()].filter(Boolean);
+    const seen = [];
+    for (const gp of pads) {
+      // Joy-Cons can show up here too (Nintendo vendor id 057e); they're handled by WebHID above.
+      if (/057e|joy-con|nintendo/i.test(gp.id)) continue;
+      seen.push(gp.index);
+      if (!xbox.includes(gp.index)) xbox.push(gp.index);
+    }
+    const before = xbox.length;
+    xbox = xbox.filter((i) => seen.includes(i));
+    if (xbox.length !== before || seen.length) showStatus();
+    $("pads").textContent = pads.length
+      ? pads.map((gp) => `#${gp.index} ${gp.id} | vibration: ${gp.vibrationActuator ? "yes" : "NO"}`).join("\n")
+      : "Browser sees no gamepads yet. Click this page, then press a button on each controller.";
+  }, 500);
+  $("swapXbox").onclick = () => { xbox.reverse(); xboxHid.reverse(); showStatus(); };
+
+  // ---- Xbox controllers, direct over Bluetooth (WebHID) ----
+  // For when the Gamepad API says "vibration: NO". Output report 3 is the Bluetooth
+  // rumble command (same layout as Linux's hid-microsoft driver):
+  // [enable bits, left trigger, right trigger, strong motor, weak motor, duration (10 ms), delay, loops]
+  // Magnitudes go 0–100.
+  let xboxHid = [];
+  // Windows splits one controller into several HID devices; only one accepts report 3.
+  const hasRumble = (d) => d.collections.some((c) => (c.outputReports || []).some((r) => r.reportId === 3));
+  async function addXboxHid(device) {
+    if (xboxHid.includes(device) || !hasRumble(device)) return;
+    try {
+      if (!device.opened) await device.open();
+      xboxHid.push(device);
+      // Debug: which output reports (commands) does Windows say this device accepts?
+      const outs = device.collections.flatMap((c) => (c.outputReports || []).map((r) => {
+        const bits = (r.items || []).reduce((s, it) => s + it.reportSize * it.reportCount, 0);
+        return `id ${r.reportId} (${bits / 8} bytes)`;
+      }));
+      $("hidinfo").textContent += `${device.productName} ${device.productId.toString(16)}: ` +
+        `collections ${device.collections.map((c) => `${c.usagePage.toString(16)}/${c.usage.toString(16)}`).join(", ")}; ` +
+        `output reports: ${outs.join(", ") || "NONE"}\n`;
+    } catch (err) {
+      $("hidinfo").textContent += `Couldn't open ${device.productName}: ${err.name}: ${err.message}\n`;
+    }
+    showStatus();
+  }
+  $("connectXbox").onclick = async () => {
+    const devices = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x045e }] });
+    for (const d of devices) await addXboxHid(d);
+  };
+  // Reconnect Xbox controllers this page was already allowed to use.
+  navigator.hid.getDevices().then((ds) => ds.filter((d) => d.vendorId === 0x045e).forEach(addXboxHid));
+  navigator.hid.addEventListener("disconnect", ({ device }) => {
+    xboxHid = xboxHid.filter((d) => d !== device);
+    showStatus();
+  });
+
+  async function rumbleXboxHid(device, amp, ms) {
+    const m = Math.round(Math.max(0, Math.min(1, amp)) * 100);
+    const dur = Math.max(1, Math.min(255, Math.round(ms / 10)));
+    try {
+      await device.sendReport(0x03, new Uint8Array([0x0f, m, m, m, m, dur, 0, 0]));
+    } catch (err) {
+      $("hidinfo").textContent += `Rumble failed on ${device.productName}: ${err.name}: ${err.message}\n`;
+    }
+  }
+
+  function pulseXbox(slot, amp, ms) {
+    // Prefer the direct connection when we have one.
+    if (xboxHid.length) {
+      if (xboxHid[slot]) rumbleXboxHid(xboxHid[slot], amp, ms);
+      return;
+    }
+    // Chrome gives snapshots, so fetch the current gamepad each time.
+    const gp = xbox[slot] !== undefined ? navigator.getGamepads()[xbox[slot]] : null;
+    gp?.vibrationActuator?.playEffect("dual-rumble", {
+      startDelay: 0, duration: ms, strongMagnitude: amp, weakMagnitude: amp,
+    });
+  }
+
+  function xboxLabel(slot) {
+    if (xboxHid.length) return xboxHid[slot] ? `${xboxHid[slot].productName || "Xbox controller"} (direct)` : "—";
+    return xbox[slot] !== undefined ? navigator.getGamepads()[xbox[slot]]?.id : "—";
+  }
+
+  // ---- One buzz function for every spot ----
+  function buzzSpot(spot, amp, ms) {
+    if (amp <= 0) return;
+    if (spot === "front-left" && joyL) pulseJoy(joyL, amp, ms);
+    if (spot === "front-right" && joyR) pulseJoy(joyR, amp, ms);
+    if (spot === "left") pulseXbox(0, amp, ms);
+    if (spot === "right") pulseXbox(1, amp, ms);
+  }
+
+  // Split the strength between the two spots on either side of the angle.
+  // Target at 60° → halfway between front-right (30°) and right (90°) → 50/50.
+  function weightsFor(angle) {
+    const w = Object.fromEntries(SPOTS.map((s) => [s.name, 0]));
+    const a = Math.max(-90, Math.min(90, angle));
+    for (let i = 0; i < SPOTS.length - 1; i++) {
+      const s0 = SPOTS[i], s1 = SPOTS[i + 1];
+      if (a >= s0.deg && a <= s1.deg) {
+        const t = (a - s0.deg) / (s1.deg - s0.deg);
+        w[s0.name] = 1 - t;
+        w[s1.name] = t;
+        break;
+      }
+    }
+    return w;
+  }
+
+  function showWeights() {
+    const w = weightsFor(Number($("angle").value));
+    $("weights").textContent = SPOTS.map((s) => `${s.name}: ${Math.round(w[s.name] * 100)}%`).join("   ");
+  }
+
+  $("pulseDir").onclick = () => {
+    const w = weightsFor(Number($("angle").value));
+    const amp = Number($("amp").value), ms = Number($("len").value);
+    for (const s of SPOTS) buzzSpot(s.name, w[s.name] * amp, ms);
+  };
+
+  // Single-spot test buttons
+  for (const s of SPOTS) {
+    const b = document.createElement("button");
+    b.textContent = s.name;
+    b.onclick = () => buzzSpot(s.name, Number($("amp").value), Number($("len").value));
+    $("single").append(b);
+  }
+
+  // ---- Heading from the Joy-Con gyro ----
+  // The gyro measures how fast it's turning. Projecting that onto "down" (from the
+  // accelerometer) gives the turn rate around the vertical axis however the Joy-Con is
+  // strapped on. Adding it up over time gives the heading. It drifts a little over
+  // minutes; the camera corrects it whenever it sees the marker.
+  const wrap180 = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+  let heading = 0, bias = 0, scale = 1, lastImu = null;
+  let zeroing = null;  // { sum, n, until } while measuring gyro bias
+  let cal = null;      // raw degrees turned during 360° calibration
+  const headingJc = () => ($("headSrc").value === "L" ? joyL : joyR);
+
+  const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
+
+  function onImu(jc, detail) {
+    if (jc !== headingJc()) return;
+    // Use the raw samples: the library's actualGyroscope is already multiplied by the
+    // packet's time window (degrees per packet, not per second), so it's ~66x too small here.
+    // actualAccelerometer has the same scaling, but we only use its direction.
+    const g = detail.actualAccelerometer, samples = detail.gyroscopes;
+    if (!g || !samples?.length) return;
+    const w = {
+      x: mean(samples.map((s) => s[0].dps)),
+      y: mean(samples.map((s) => s[1].dps)),
+      z: mean(samples.map((s) => s[2].dps)),
+    };
+    const now = performance.now();
+    const dt = lastImu === null ? 0 : Math.min(0.1, (now - lastImu) / 1000);
+    lastImu = now;
+    const gLen = Math.hypot(g.x, g.y, g.z) || 1;
+    // Turn rate around vertical, in degrees/second. The accelerometer reads "up" at rest, so
+    // this is counter-clockwise-positive; negate it so turning RIGHT makes the heading go up.
+    const rate = -(g.x * w.x + g.y * w.y + g.z * w.z) / gLen;
+    if (zeroing) {
+      zeroing.sum += rate; zeroing.n++;
+      if (now > zeroing.until) {
+        bias = zeroing.sum / Math.max(1, zeroing.n);
+        zeroing = null;
+        heading = 0;
+        northOffset = null; // re-learn north from the compass
+        $("zero").textContent = "Zero (hold still 2 s)";
+      }
+      return;
+    }
+    const turned = (rate - bias) * dt * ($("flip").checked ? -1 : 1);
+    if (cal !== null) cal += turned;
+    heading = wrap180(heading + turned * scale);
+  }
+
+  $("zero").onclick = () => {
+    zeroing = { sum: 0, n: 0, until: performance.now() + 2000 };
+    $("zero").textContent = "Hold still…";
+  };
+  $("cal360").onclick = () => {
+    if (cal === null) { cal = 0; $("cal360").textContent = "Calibrate 360°: done turning"; return; }
+    if (Math.abs(cal) > 90) scale = 360 / Math.abs(cal);
+    $("cal360").textContent = `Calibrate 360°: start (scale ${scale.toFixed(3)})`;
+    cal = null;
+  };
+
+  // ---- Automatic guidance ----
+  // Target = an absolute heading. Buzz the side to turn toward, stronger the further off,
+  // until the heading is within the margin. Then one short tick on both and silence.
+  let testTarget = null;           // absolute heading from the test buttons
+  let cam = null;                  // { heading, distance } remembered from the phone
+  let lastEyes = -Infinity;        // performance.now() of the last phone message
+  let autoOn = false, onTarget = false, nextPulse = 0;
+  let searchSide = 0, lostTapped = false;
+  function twoTaps() { pulseBoth(0.7, 60); setTimeout(() => pulseBoth(0.7, 60), 180); }
+  const margin = () => Number($("margin").value);
+  $("margin").oninput = () => ($("marginV").textContent = $("margin").value);
+  $("arrive").oninput = () => ($("arriveV").textContent = $("arrive").value);
+
+  // ---- GPS mode ----
+  // GPS gives the beacon's direction as a compass bearing, but the gyro heading only knows
+  // "turned X° since Zero". The chest phone's compass ties the two together:
+  // gyro heading + northOffset = compass heading. The gyro keeps turns smooth; the compass
+  // slowly corrects drift. (Compass is magnetic north, GPS is true north; in Florida the
+  // difference is ~7°, inside the on-target margin.)
+  let wearer = null, beacon = null;  // { lat, lon, acc, at } (at = laptop time of the fix)
+  let northOffset = null, lastCompass = null, arrived = false;
+  const rad = (d) => (d * Math.PI) / 180;
+  function distanceM(a, b) { // haversine
+    const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * 6371000 * Math.asin(Math.sqrt(h));
+  }
+  function bearingDeg(a, b) { // initial bearing from a to b, degrees clockwise from north
+    const dLon = rad(b.lon - a.lon);
+    const y = Math.sin(dLon) * Math.cos(rad(b.lat));
+    const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(dLon);
+    return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  }
+  const to360 = (d) => ((d % 360) + 360) % 360;
+  function arrivalPattern() { // 3 quick pulses on both
+    for (let i = 0; i < 3; i++) setTimeout(() => pulseBoth(0.8, 120), i * 250);
+  }
+
+  // Returns the target in gyro-heading terms, or a reason string for why there isn't one.
+  function gpsTarget(now) {
+    const fresh = (p) => p && now - p.at < 5000;
+    const age = (p) => (p ? `${((now - p.at) / 1000).toFixed(0)} s old` : "none");
+    const pos = (p) => (p ? `${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} ±${p.acc.toFixed(0)} m` : "—");
+    let lines = `you:    ${pos(wearer)} (${age(wearer)})\nbeacon: ${pos(beacon)} (${age(beacon)})\n` +
+      `compass ${lastCompass === null ? "—" : lastCompass.toFixed(0) + "°"}`;
+    let result;
+    if (!fresh(wearer)) result = "waiting for your GPS (chest phone)";
+    else if (!fresh(beacon)) result = "waiting for beacon GPS";
+    else if (northOffset === null) result = "waiting for compass (chest phone)";
+    else {
+      const d = distanceM(wearer, beacon), b = bearingDeg(wearer, beacon);
+      lines += ` · you face ${to360(heading + northOffset).toFixed(0)}° · beacon at ${b.toFixed(0)}° · ${d.toFixed(0)} m`;
+      if (wearer.acc + beacon.acc > 25) lines += "\nGPS accuracy is poor: move away from buildings";
+      result = { target: wrap180(b - northOffset), distance: d };
+    }
+    $("gpsinfo").textContent = lines;
+    return result;
+  }
+
+  document.querySelectorAll("[data-turn]").forEach((b) => {
+    b.onclick = () => {
+      testTarget = wrap180(heading + Number(b.dataset.turn));
+      $("targetSrc").value = "test";
+      onTarget = false;
+    };
+  });
+  $("remember").onclick = () => {
+    testTarget = heading; // the direction you're facing right now
+    $("targetSrc").value = "test";
+    onTarget = true;      // you're already facing it, so no tick until you turn away and back
+  };
+  $("clearTarget").onclick = () => { testTarget = null; cam = null; arrived = false; };
+  $("auto").onclick = () => {
+    autoOn = !autoOn;
+    onTarget = false;
+    arrived = false;
+    $("auto").textContent = `Auto-guide: ${autoOn ? "ON" : "OFF"}`;
+  };
+
+  function guideTick() {
+    const now = performance.now();
+    $("heading").textContent = `heading ${heading.toFixed(0)}°`;
+    const src = $("targetSrc").value;
+    const fromCamera = src === "camera", fromGps = src === "gps";
+    const linkAge = now - lastEyes;
+    $("link").textContent = lastEyes < 0 ? "phone: no messages yet"
+      : `phone: last message ${linkAge.toFixed(0)} ms ago ${linkAge > 500 ? "(LINK LOST)" : ""}`;
+
+    // Haven't seen the marker for 20 s → stop trusting the remembered direction and search again.
+    if (cam && now - cam.at > 20000) cam = null;
+    let target = fromCamera ? cam?.heading ?? null : testTarget;
+    let distance = fromCamera ? cam?.distance : null;
+    let waiting = fromCamera ? "searching for marker" : "no target";
+    let byMarker = fromCamera; // is the camera marker steering right now?
+    if (fromGps) {
+      const g = gpsTarget(now);
+      // GPS gets you close; once the camera sees the destination marker, it takes over.
+      if (cam && now - cam.at < 2000) { target = cam.heading; distance = cam.distance; byMarker = true; }
+      else if (typeof g === "string") { target = null; waiting = g; }
+      else { target = g.target; distance = g.distance; }
+    }
+    if (!autoOn) { $("guide").textContent = "auto-guide off"; return; }
+    // Safety: stop guiding when the chest phone goes quiet (camera or GPS mode).
+    // Two quick taps once, then silence, so the wearer knows it stopped on purpose.
+    if ((fromCamera || fromGps) && linkAge > (fromGps ? 1000 : 500)) {
+      $("guide").textContent = "LINK LOST: not guiding";
+      if (!lostTapped) { lostTapped = true; twoTaps(); }
+      return;
+    }
+    lostTapped = false;
+    // Search: no marker seen yet → alternate left, right: "turn slowly and look around".
+    if (target === null) {
+      $("guide").textContent = fromCamera ? "SEARCHING: turn slowly (left-right pulses)" : waiting;
+      if (fromCamera && now >= nextPulse) {
+        nextPulse = now + 700;
+        const jc = searchSide++ % 2 ? joyR : joyL;
+        if (jc) pulseJoy(jc, 0.35, 250);
+      }
+      return;
+    }
+
+    // Arrival → 3 pulses, then quiet until you move back out. The marker measures to
+    // ~10 cm, so it can call arrival at arm's length; GPS only to within its radius.
+    if ((fromCamera || fromGps) && distance != null) {
+      const radius = byMarker ? 0.7 : Number($("arrive").value);
+      if (!arrived && distance <= radius) { arrived = true; arrivalPattern(); }
+      else if (arrived && distance > radius + (byMarker ? 0.5 : 3)) arrived = false;
+      if (arrived) {
+        $("guide").textContent = byMarker ? `ARRIVED (${distance.toFixed(1)} m, marker)`
+          : `ARRIVED (about ${distance.toFixed(0)} m, within GPS accuracy)`;
+        return;
+      }
+    }
+
+    const err = wrap180(target - heading); // − = turn left, + = turn right
+    // Hysteresis so it doesn't flicker at the edge of the margin.
+    const wasOn = onTarget;
+    onTarget = onTarget ? Math.abs(err) <= margin() + 5 : Math.abs(err) <= margin();
+    if (onTarget && !wasOn) { pulseBoth(0.5, 80); nextPulse = now + 400; } // "you're facing it" tick
+    const dist = distance ? ` · ${distance.toFixed(byMarker ? 1 : 0)} m${fromGps ? (byMarker ? " (marker)" : " (GPS)") : ""}` : "";
+
+    // Facing it → walk forward: both pulse gently, faster as you get closer
+    // (marker: 1 a second at 5 m up to 4 a second at 1.25 m; GPS: scaled for longer walks).
+    if (onTarget) {
+      const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+      const perSec = distance == null ? 1 : byMarker ? clamp(5 / distance, 1, 4) : clamp(40 / distance, 0.7, 3);
+      $("guide").textContent = `WALK FORWARD (${err.toFixed(0)}° off)${dist} · ${perSec.toFixed(1)} pulses/s`;
+      if (now >= nextPulse) { nextPulse = now + 1000 / perSec; pulseBoth(0.3, 90); }
+      return;
+    }
+
+    // Off to one side → that side pulses, stronger the further off.
+    const strength = Math.min(1, 0.4 + (Math.abs(err) / 90) * 0.6);
+    $("guide").textContent = `turn ${err < 0 ? "LEFT" : "RIGHT"} ${Math.abs(err).toFixed(0)}° · strength ${strength.toFixed(2)}${dist}`;
+    if (now < nextPulse) return;
+    nextPulse = now + 350; // a 150 ms pulse roughly 3 times a second
+    const jc = err < 0 ? joyL : joyR;
+    if (jc) pulseJoy(jc, strength, 150);
+  }
+  setInterval(guideTick, 50);
+
+  // ---- Phone link (WebSocket relay in server.js) ----
+  // The first message from each phone switches the target source once; after that the
+  // dropdown is yours.
+  let sawEyes = false, sawBeacon = false;
+  function connectPhoneLink() {
+    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=hands`);
+    ws.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      const now = performance.now();
+
+      if (msg.type === "beacon") {
+        beacon = { lat: msg.lat, lon: msg.lon, acc: msg.acc, at: now - (msg.age || 0) };
+        if (!sawBeacon) { sawBeacon = true; $("targetSrc").value = "gps"; if (!autoOn) $("auto").click(); }
+        return;
+      }
+      if (msg.type !== "eyes") return;
+      lastEyes = now;
+      if (!sawEyes) {
+        sawEyes = true;
+        if ($("targetSrc").value === "test") $("targetSrc").value = "camera";
+        if (!autoOn) $("auto").click(); // start guiding as soon as the chest phone is on
+      }
+
+      if (msg.gps) wearer = { lat: msg.gps.lat, lon: msg.gps.lon, acc: msg.gps.acc, at: now - (msg.gps.age || 0) };
+      if (typeof msg.compass === "number") {
+        lastCompass = msg.compass;
+        // Blend toward what the compass says (~2 s to settle at 10 updates a second).
+        const sample = wrap180(msg.compass - heading);
+        northOffset = northOffset === null ? sample : wrap180(northOffset + 0.05 * wrap180(sample - northOffset));
+      }
+
+      const m = (msg.markers || []).find((m) => m.id === Number($("destId").value));
+      // Marker angle is relative to where the chest faces now, so target = heading + angle.
+      // When the marker leaves the view, the remembered heading still guides the turn.
+      if (m) cam = { heading: wrap180(heading + m.angle), distance: m.distance, at: now };
+    };
+    ws.onclose = () => setTimeout(connectPhoneLink, 1000);
+  }
+  if (location.protocol.startsWith("http")) connectPhoneLink();
+  $("destId").onchange = () => { cam = null; onTarget = false; arrived = false; };
+
+  // ---- Both Joy-Cons ----
+  const amp = () => Number($("amp").value);
+  function pulseBoth(strength, ms) {
+    if (joyL) pulseJoy(joyL, strength, ms);
+    if (joyR) pulseJoy(joyR, strength, ms);
+  }
+  $("both").onclick = () => pulseBoth(amp(), Number($("len").value));
+
+  // Nudge the shared strength slider, then buzz once so you feel the new level.
+  function changeAmp(delta) {
+    const v = Math.round(Math.max(0.1, Math.min(1, amp() + delta)) * 10) / 10;
+    $("amp").value = v;
+    $("ampV").textContent = v;
+    $("ampShow").textContent = `strength ${v}`;
+    pulseBoth(v, 200);
+  }
+  $("ampUp").onclick = () => changeAmp(+0.1);
+  $("ampDown").onclick = () => changeAmp(-0.1);
+  $("amp").addEventListener("input", () => ($("ampShow").textContent = `strength ${$("amp").value}`));
+
+  // "Go backwards": buzz-buzz, pause, repeat, until pressed again.
+  let backTimer = null;
+  function doubleBuzz() {
+    pulseBoth(amp(), 120);
+    setTimeout(() => pulseBoth(amp(), 120), 240);
+  }
+  function setBackwards(on) {
+    clearInterval(backTimer);
+    backTimer = null;
+    if (on) {
+      doubleBuzz();
+      backTimer = setInterval(doubleBuzz, 1000);
+    }
+    $("back").textContent = `Go backwards: ${on ? "ON" : "OFF"}`;
+  }
+  $("back").onclick = () => setBackwards(!backTimer);
+
+  $("stop").onclick = () => {
+    setBackwards(false);
+    if (autoOn) $("auto").click();
+    for (const jc of [joyL, joyR]) jc?.rumble(160, 160, 0);
+    for (const i of xbox) navigator.getGamepads()[i]?.vibrationActuator?.reset?.();
+    for (const d of xboxHid) rumbleXboxHid(d, 0, 10);
+  };
+
+  function showStatus() {
+    $("status").textContent =
+      `left        (Xbox #1):   ${xboxLabel(0)}\n` +
+      `front-left  (Joy-Con L): ${joyL ? "connected" : "—"}\n` +
+      `front-right (Joy-Con R): ${joyR ? "connected" : "—"}\n` +
+      `right       (Xbox #2):   ${xboxLabel(1)}`;
+  }
+  showWeights();
+</script>
+</body>
+</html>
