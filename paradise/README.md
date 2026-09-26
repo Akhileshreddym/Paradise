@@ -53,7 +53,7 @@ boxes).
 |---|---|---|---|
 | **Go to a place** | Press a Joy-Con button 2, 3… times (one number per saved place), or say the place's name | GPS + the phone's compass | One long buzz within the arrival radius (default 6 m) |
 | **Go to the Waymo** | Press once, or say "Waymo" | GPS toward the car's location, then the camera: a classifier that recognizes Waymos, then a door-handle finder, then hand tracking | One long buzz at arm's length from the door handle, then buzzes that steer the hand onto it, and a "touch" buzz on contact |
-| **Find a thing** | Say "find the water bottle", or type it on the laptop page | The camera: an object finder that looks for exactly the words given (plus YOLO for everyday things), then hand tracking | One long buzz at about 1 m (arm's reach), then hand steering and a "touch" buzz, as above |
+| **Find a thing** | Say "find the water bottle", or type it on the laptop page | The camera: an object finder that looks for exactly the words given (plus YOLO for everyday things), then hand tracking. Not in view: the wrists turn you round the room, a stop at a time; only if that finds nothing, an AI (Gemini) picks where to go and look ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)) | One long buzz at about 1 m (arm's reach), then hand steering and a "touch" buzz, as above |
 
 A mode stays on until another is chosen (or **Stop** is pressed on the laptop page).
 
@@ -79,6 +79,8 @@ A mode stays on until another is chosen (or **Stop** is pressed on the laptop pa
 | Arrived | Both | One 800 ms buzz, then quiet | Full |
 | Stop (obstacle) | Both | 3 × 100 ms pulses, 180 ms apart; repeats every 1.2 s while it's there | Full |
 | Searching / no signal | Left, right, left | 200 ms each, at 0, 0.45 and 0.9 s; repeats every 1.6 s | 60% |
+| Looking round the room (find mode) | Left or right | Turn pulses (as above) to the next stop, then **quiet: hold still** while it looks | Full |
+| Not found (find mode gave up) | Left, right, left | The search buzz once, then quiet | 60% |
 | Waymo connected / found it | Both | 2 × 80 ms pulses, 180 ms apart | Full |
 | Selection echo | Both | N × 120 ms pulses, 300 ms apart (N = the choice) | 80% |
 
@@ -116,7 +118,11 @@ The wearer never looks at a screen. The laptop page is for everyone else:
   heard;
 - **two wrist tiles, L and R**, that light up yellow exactly when that wrist buzzes (even with no
   Joy-Con connected, which is handy for demos);
-- **Mode**, **Distance** (and how it's measured) and **Obstacle** tiles;
+- **Mode** (with a task timer: from the choice to the "touch", or to arriving at a place),
+  **Distance** (and how it's measured) and **Obstacle** tiles;
+- in find mode, the **room scan**: each stop's photo round a circle (top = where the turn started),
+  the stop being looked at, and, if the AI was asked, the photo it picked (violet) with what it said
+  ("look at the desk, about 2 m away. Keys are often left on desks.");
 - in Waymo mode, the ride's progress (simulated): *Requested → Arrived → Found by the camera → At
   the door*, with the current step spelled out (*Your Waymo has arrived: guiding you to it*).
 
@@ -221,7 +227,9 @@ water bottle indoors.
 | Loaded by the pages at runtime | `joy-con-webhid` 0.11.0 (laptop page); `onnxruntime-web` 1.22.0 and the YOLOv10n model, `@mediapipe/tasks-vision` 1.0.1 and its hand model (phone) | CDNs: jsDelivr, Hugging Face, Google (`storage.googleapis.com`, the hand model) | Cached by the browser after the first load (~50 MB on the phone: ~30 MB for YOLO, ~20 MB for hand tracking). |
 | Downloaded by the server on first start | Grounding DINO tiny, 8-bit (204 MB); CLIP ViT-B/32, 8-bit (vision 89 MB + text 65 MB); Depth Anything V2 small, 8-bit (27 MB) | Mac, into `paradise/models/` | ~390 MB once, then loaded from disk. |
 
-No accounts, no API keys, nothing paid.
+No accounts, no API keys, nothing paid, except one optional part: when find mode can't see the thing
+anywhere around you, it can ask Google Gemini where to look next. That needs an API key
+([4.2a](#42a-optional-a-gemini-api-key)); without one, everything else works the same.
 
 ---
 
@@ -244,6 +252,24 @@ npm install
 
 This installs the WebSocket library and the model runtime (`@huggingface/transformers`, with its
 native ONNX runtime and the `sharp` image library). It takes a minute and a few hundred MB.
+
+### 4.2a Optional: a Gemini API key
+
+Only for asking the AI where to look ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)).
+Get a key at Google AI Studio (<https://aistudio.google.com/apikey>), then create a file named `.env`
+in the `paradise/` folder with:
+
+```
+GEMINI_API_KEY=your-key-here
+```
+
+- `npm start` reads it (`node --env-file-if-exists=.env`, Node.js 22.9 or newer). The start-up
+  output says `ai (where to look next): ready (gemini-3.5-flash-lite)`, or `off: no
+  GEMINI_API_KEY…`.
+- `.env` is git-ignored: the key never goes into the repository. Each machine needs its own file.
+- Never put the key anywhere in `public/`: those files are served to anyone with the tunnel address.
+  Only the server uses it.
+- Another model: add `GEMINI_MODEL=gemini-3.8-flash` (stronger, slower) to the same file.
 
 ### 4.3 First start: the models download
 
@@ -609,6 +635,8 @@ quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected
 | Settings → GPS arrival radius | 6 m (2–20) | Arrival distance for places |
 | Settings → Obstacle stop distance | 1.5 m (0.5–3) | Anything closer than this, straight ahead, is an obstacle |
 | Settings → Obstacles from depth | on | Also stop for anything the depth model sees close in the walking path, not just what YOLO recognizes ([7.5](#75-obstacles)) |
+| Settings → Ask the AI where to look | on | Find mode: after a full turn round the room finds nothing, send that turn's photos to Gemini (at most 3 times a search); off: say "not found" instead ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)) |
+| Settings → Follow walking routes | on | Steer along an OpenStreetMap walking route to a place or the Waymo, turning at corners; off: a straight line ([7.6a](#76a-walking-routes)) |
 | Testing → Walking buzzes, Reaching buzzes | — | Plays each pattern |
 | Testing → Indoor steering test: 90° left, 45° right, 90° right, Behind | — | Steers to a direction relative to where the chest faces (no GPS needed); no arrival |
 
@@ -638,7 +666,11 @@ quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected
 | `STOP: person 1.0 m ahead` | Obstacle YOLO recognized |
 | `STOP: something 1.2 m ahead` / `STOP: drop-off 1.0 m ahead` | Obstacle (or the floor dropping away) seen by the depth model |
 | `STOP: something close (no floor in view)` | The depth model couldn't see the floor where it should be, twice in a row: something (a wall, a door) is right in front |
-| `SEARCHING: waiting for GPS` / `waiting for the Waymo's location (beacon)` / `the water bottle: turn slowly` | No target yet |
+| `SEARCHING: waiting for GPS` / `waiting for the Waymo's location (beacon)` / `the water bottle` | No target yet (find mode: only during the selection echo) |
+| `SCANNING: turn right 30° (stop 3 of 10)` / `SCANNING: hold still, looking (stop 3 of 10)` | Find mode, not in view: turning round the room ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)) |
+| `THINKING: not anywhere around you; asking the AI where to look` | The turn found nothing; waiting for Gemini |
+| `TURN LEFT 20° toward the desk (the AI's pick)` / `APPROACHING: walk toward the desk (the AI's pick)` | Walking to where the AI said to look |
+| `NOT FOUND: not anywhere around you, after asking the AI 3 times` | Find mode gave up (also: AI off, or no answer) |
 | `TURN LEFT 83°` / `TURN RIGHT 12°` | Steering |
 | `APPROACHING` | Facing it: walk (the big message adds *Facing it: walk forward*) |
 | `ARRIVED` | At a place |
@@ -820,15 +852,46 @@ stairs. What neither source sees: [11](#11-known-limitations).
 
 ### 7.6 Mode 1: a place
 
-GPS and compass only (no object recognition). Target: the magnetic bearing from the wearer's latest
-fix to the place. Arrival: GPS distance ≤ the arrival radius (6 m). `SEARCHING: waiting for GPS`
+GPS and compass only (no object recognition). Target: the next point along the walking route to the
+place ([7.6a](#76a-walking-routes)), or, with no route, the magnetic bearing straight to it. Arrival: GPS distance ≤ the arrival radius (6 m). `SEARCHING: waiting for GPS`
 until the wearer has a fix under 15 s old.
+
+### 7.6a Walking routes
+
+A straight line to a place or the Waymo would walk the wearer across streets, into buildings and
+over medians. So in both GPS modes, `hands.html` asks OpenStreetMap's public foot router
+(`routing.openstreetmap.de/routed-foot`, OSRM; free, no key) for a walking route over sidewalks,
+footpaths and crossings, and steers along it (`routeTo()` / `routeAim()`):
+
+- **The route** runs from where the wearer was when it was asked, along the router's path, to the
+  target itself (the router ends on the nearest path; a car in a parking lot may be off it). In
+  Waymo mode its end follows the beacon's latest fix.
+- **Where the wearer is on it:** the nearest point, searching from the segment they were on up to
+  80 m past its end (a route that doubles back near itself doesn't skip ahead).
+- **Where to steer:** 12 m further along the route, or **the next corner** (a bend over 35°) if that
+  comes first and is still more than 6 m away: the wearer walks to the corner, then turns there,
+  instead of cutting across it. The usual turn and approach buzzes do the rest.
+- **Distance** (display, approach pulses, arrival) is what's left along the route.
+- **A new route** is asked for when the target changes (or the Waymo moves more than 20 m), or when
+  the wearer is more than 30 m (or their GPS accuracy, if worse) off the route; at most every 15 s,
+  since it's a shared public server. No route (offline, nothing walkable): the straight line, as
+  before. **Settings → Follow walking routes** turns it off.
+
+In a simulated walk over a real 835 m campus route (1.3 m steps, the wearer lining up within ±12°),
+the wearer stayed on average 0.7–1.2 m from the router's path, at most 3–6 m (corners, with ±0–6 m of
+GPS noise), and arrived every time; after walking 50 m off to the side it asked for a new route
+and arrived.
+
+GPS accuracy (±5 m on a good day) is the limit: the route says *which* sidewalk and *where* to turn,
+but GPS can't tell the two sides of a sidewalk apart, or the curb from the path. The cane, and the
+obstacle and drop-off checks, still matter.
 
 ### 7.7 Mode 2: the Waymo
 
 1. **Ride status** starts at "Ride requested…", and becomes "Your Waymo has arrived: guiding you to
    it" when a beacon fix arrives.
-2. **GPS stage:** steer toward the beacon. There's no GPS arrival in this mode: only the camera
+2. **GPS stage:** steer toward the beacon, along the walking route to it
+   ([7.6a](#76a-walking-routes)). There's no GPS arrival in this mode: only the camera
    decides you're there.
 3. **Car crops:** while the laptop asks (`want-cars`, every second, in Waymo mode only), the phone
    sends the 3 biggest car/truck/bus boxes wider than 40 px, twice a second, cut exactly like the
@@ -919,6 +982,64 @@ tracking), and the usual size (longest side) for distances:
 
 Anything else still works (the object finder reads any words); it just has no YOLO tracking and its
 distance assumes it's on the floor. The longest matching word wins ("water bottle" over "water").
+
+### 7.8a Not in view: the room scan, and asking the AI
+
+The detectors only find what's in front of the camera. When the thing isn't (`scanTick()`,
+`askAi()`, `onAi()` in `hands.html`; `ai.js` on the server):
+
+1. **The room scan (local, free).** The wrists turn the wearer round a full circle in **10 stops,
+   36° apart** (the camera sees ~41° across, so they overlap a little), starting where they face:
+   turn pulses until within 10° of the stop, then **quiet: hold still** until the object finder has
+   answered for a frame taken there (0.8–4 s; YOLO looks the whole time). Each stop keeps its
+   preview photo (202 × 360) and compass heading. Found at any stop: the usual "found it" buzz and
+   steering ([7.8](#78-mode-3-find-a-thing)). Obstacle stops are off while turning on the spot
+   (there's nothing to walk into, and a table in front mustn't stop the looking).
+2. **Only if the whole turn found nothing: ask the AI, once.** The 10 photos (258 tokens each for
+   Gemini; a test call with 2 photos came to 2,565 tokens in all and took 3.2 s, so expect a few
+   thousand a call) go to the server, which asks Gemini (`ai.js`,
+   default `gemini-3.5-flash-lite`): *is it visible in any photo (the on-device detector misses
+   small or partly hidden things), and if not, which one place in the photos should they walk to
+   next to find it, where it's usually kept, or a doorway toward where it's likely to be?* It
+   answers with JSON: a photo, how far across it (0–1000), a name ("the desk"), a rough distance
+   and one sentence of why. The answer is checked (a photo that exists, a position), and turned
+   into a direction: the heading the photo was taken at + that position's angle in it.
+3. **Walk there.** The usual turn and approach buzzes (1 a second: no measured distance), with
+   obstacle stops as always, for about as long as the AI's distance takes at 0.5 m/s, plus 3 s.
+   The detectors keep looking the whole way: seen, and it's the normal steering. An obstacle
+   (something close in the walking path, often the counter or desk itself) or the time running out
+   ends the walk: **turn round and look again** (step 1).
+4. **Gives up** (the search buzz once, then quiet; `NOT FOUND` on the display) when a turn finds
+   nothing and the AI has been asked **3 times this search**, or it's switched off (**Settings → Ask
+   the AI where to look**), or it has no answer (no key, no good place to look, no reply in 25 s).
+
+What keeps it cheap and safe:
+
+- **The AI never decides "found".** It only picks where to walk; the "found it" buzz and the reach
+  still need the object finder with CLIP's second opinion, or YOLO. A wrong guess costs a detour.
+- **Never for anything else:** not the Waymo, not places, not obstacles, distances or steering.
+- **Limits in the server** (`ai.js`), whatever the page asks: 6 calls a minute, 100 per server
+  run, at most 12 photos of up to ~150 KB each, JPEG only. **Only the laptop's own page can ask**
+  (`server.js` refuses requests that come through the tunnel, which carry Cloudflare's
+  `Cf-Connecting-Ip` header), so nobody with the phone address can spend the key.
+- The laptop page's **Details** shows each call (`ai: "the desk" · 1.5 s · 2912 tokens · call 1 of
+  3`), and the server terminal prints `[ai] …` with the running totals.
+
+Tested in a simulation that runs `hands.html`'s own code with a simulated wearer, phone, object
+finder and AI: a thing behind the wearer was found at the 4th stop (12 s, no AI call); a thing
+nowhere in view took a full turn (~23 s), one AI call, a walk toward the AI's pick until a chair
+stopped it, a second turn, and was found; with the AI answering but the thing never found, it gave
+up after exactly 3 calls; with the AI off or answering "nowhere", it gave up after one turn. `ai.js`
+was tested against a stand-in for Gemini's API (answers, answers in code fences, no photo,
+out-of-range photos, not JSON, HTTP errors, the rate limit). Against Gemini itself
+(`gemini-3.5-flash-lite`), through the server: two drawn test photos (a desk with a red bottle-like
+cylinder, a door) and "water bottle" → "visible, photo 0, x 638, the study desk", which is where the
+cylinder is. **Not yet tested with real photos on real hardware.**
+
+A laptop whose antivirus scans HTTPS (Norton, for one) re-signs Google's certificate, and Node.js
+then refuses it (`couldn't reach Gemini: …` with a certificate error). Start the
+server with `node --use-system-ca --env-file-if-exists=.env server.js` (Node.js 22.15 or newer):
+Node then trusts the system's certificates, as browsers do.
 
 ### 7.9 The last reach: steering the hand
 
@@ -1227,10 +1348,20 @@ Say these out loud when presenting:
 ## 12. Privacy and security
 
 - The chest camera's frames go from the phone, through Cloudflare's tunnel, to the Mac. Nothing is
-  stored, and nothing is sent anywhere else. The models run on the Mac and the phone. Hand tracking
+  stored, and nothing is sent anywhere else (except below). The models run on the Mac and the phone. Hand tracking
   runs on the phone; only fingertip positions leave it.
 - The phone downloads its models and libraries from jsDelivr, Hugging Face and Google's storage
   (the hand model). Those are downloads only: no camera data goes to them.
+- **The one exception: asking the AI** ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)).
+  With a Gemini key set and **Settings → Ask the AI where to look** on, a find that sees nothing
+  all the way round sends that turn's 10 small photos of the room to Google's Gemini API. Tell
+  whoever wears it; switch it off, or leave out the key, to keep everything local. **On Gemini's
+  free tier, Google may use what's sent to improve its products** (its pricing page, September
+  2026); on the paid tier it doesn't. Fine for a demo; for real users' homes, use a paid key.
+- The Gemini key lives only in `paradise/.env` on the Mac (git-ignored), is used only by the
+  server, and only requests from the laptop's own page can use it.
+- Walking routes: the laptop page sends the wearer's position and the target's to OpenStreetMap's
+  router ([7.6a](#76a-walking-routes)).
 - **The tunnel address is public:** anyone who has it can open the pages and see the camera view.
   Stop the tunnel when you're done; a new tunnel gets a new address.
 - The server terminal never prints coordinates, only GPS accuracy and distances.
@@ -1280,8 +1411,10 @@ Say these out loud when presenting:
 ```
 paradise/
 ├── README.md                  this file
-├── package.json               npm start → node server.js; dependencies: ws, @huggingface/transformers
+├── package.json               npm start → node server.js (with .env); dependencies: ws, @huggingface/transformers
+├── .env                       your Gemini key, if any (you create it; git-ignored; 4.2a)
 ├── server.js                  web server (public/ only), WebSocket relay, passes frames/crops to the models, status line
+├── ai.js                      asks Gemini where to look next (find mode, only after a full turn finds nothing), with limits
 ├── object-finder.js           starts and talks to the object finder process (restarts it if it crashes)
 ├── object-finder-worker.js    the object finder: Grounding DINO tiny (8-bit), finds things described in words
 ├── clip.js                    starts and talks to the CLIP process (restarts it if it crashes)
@@ -1318,6 +1451,8 @@ paradise/
 | CLIP ViT-B/32 | [Xenova/clip-vit-base-patch32](https://huggingface.co/Xenova/clip-vit-base-patch32) (OpenAI CLIP) | OpenAI's CLIP release is MIT; check the model card for your use |
 | Depth Anything V2 Small (obstacles) | [onnx-community/depth-anything-v2-small](https://huggingface.co/onnx-community/depth-anything-v2-small) (from Depth Anything V2, HKU and TikTok) | Apache-2.0 (the Small model only: the bigger Depth Anything V2 models are non-commercial) |
 | MediaPipe hand landmarker (phone) | `@mediapipe/tasks-vision` 1.0.1 and the `hand_landmarker.task` model (Google) | Apache-2.0 |
+| Where to look next (server, optional) | Google Gemini API (`gemini-3.5-flash-lite` by default) | Google's terms for the Gemini API; paid beyond its free tier |
+| Walking routes (laptop page) | OSRM foot router at `routing.openstreetmap.de` (FOSSGIS), over OpenStreetMap data | Data © OpenStreetMap contributors, ODbL (credited under **Settings → Follow walking routes**); the server is shared and free: light use only |
 | transformers.js | `@huggingface/transformers` 3.8.1 | Apache-2.0 |
 | ONNX Runtime | `onnxruntime-node` 1.21.0, `onnxruntime-web` 1.22.0 | MIT |
 | sharp | 0.34.5 | Apache-2.0 |

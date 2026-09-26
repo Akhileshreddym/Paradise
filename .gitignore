@@ -2,3 +2,4 @@ node_modules/
 paradise/tools/
 paradise/models/
 paradise/training/data/
+.env

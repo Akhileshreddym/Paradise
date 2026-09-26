@@ -1,7 +1,8 @@
 // Paradise server: serves the pages in public/, relays WebSocket messages between them
 // (phone "eyes" page → laptop "hands" page), recognizes Waymos in car crops (clip.js), finds
 // things described in words (a door handle, a water bottle) in camera frames (object-finder.js,
-// with a second opinion from clip.js), and finds obstacles in the preview frames (depth.js).
+// with a second opinion from clip.js), finds obstacles in the preview frames (depth.js), and, only
+// when a scan of the room found nothing, asks Gemini where to look next (ai.js).
 //
 //   npm install
 //   npm start
@@ -16,6 +17,7 @@ import { WebSocketServer } from "ws";
 import { finder, findObjects } from "./object-finder.js";
 import { clip, classifyCars, checkBoxes } from "./clip.js";
 import { depth, findHazards } from "./depth.js";
+import { ai, whereToLook } from "./ai.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 const ROOT = fileURLToPath(new URL("./public/", import.meta.url));
@@ -56,6 +58,9 @@ const latest = { eyes: null, beacon: null, objects: [] }; // for the status line
 wss.on("connection", (ws, req) => {
   const role = new URL(req.url, "http://x").searchParams.get("role") || "unknown";
   ws.role = role;
+  // The laptop's own page, not something reaching us through the tunnel (cloudflared connects from
+  // this machine too, but adds Cf-Connecting-Ip): only it may spend the Gemini key.
+  ws.local = !req.headers["cf-connecting-ip"] && /^(?:127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || "");
   const device = /iPhone|Android|Windows|Mac/.exec(req.headers["user-agent"] || "")?.[0] || "?";
   console.log(`${role} page connected (${device}); ${wss.clients.size} connected`);
   ws.on("close", () => console.log(`${role} page disconnected (${device}); ${wss.clients.size} connected`));
@@ -65,7 +70,7 @@ wss.on("connection", (ws, req) => {
     if (msg?.to === "server") {
       // Anything can arrive here (the tunnel is public): a bad message is logged, never fatal.
       const job = msg.type === "frame" ? onFrame(msg) : msg.type === "cars" ? onCars(msg)
-        : msg.type === "preview" ? onPreview(msg, data) : null;
+        : msg.type === "preview" ? onPreview(msg, data) : msg.type === "ask-ai" ? onAskAi(msg, ws) : null;
       job?.catch((err) => console.log(`bad ${msg.type} message: ${err.message}`));
       return;
     }
@@ -129,6 +134,15 @@ async function onPreview(msg, raw) {
   for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
 }
 
+// A full scan of the room found nothing → where to look next (ai.js), back to the page that asked.
+async function onAskAi({ id, what, shots }, ws) {
+  const answer = !ws.local ? "only the laptop's own page can ask the AI (not through the tunnel)"
+    : await whereToLook(what, Array.isArray(shots) ? shots : []);
+  latest.ai = { text: typeof answer === "string" ? answer : `"${answer.target}" (${answer.ms} ms, ${answer.tokens} tokens)`, at: Date.now() };
+  console.log(`[ai] where to look for "${String(what).slice(0, 40)}": ${latest.ai.text} · ${ai.calls} calls, ${ai.tokens} tokens since start`);
+  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ai", id, ...(typeof answer === "string" ? { reason: answer } : { answer }) }));
+}
+
 // Every 3 s, print what the phones are sending (accuracy and distance only, no coordinates),
 // so problems show up in this terminal.
 const rad = (d) => (d * Math.PI) / 180;
@@ -158,6 +172,7 @@ function printStatus() {
   else if (recent(dz)) line += ` | depth ${!dz.ok ? dz.why : dz.found.length ? dz.found.map((z) => `${z.kind} ${z.distance} m`).join(", ") : "clear"}`;
   if (finder.status !== "ready") line += ` | object finder ${finder.status}`;
   else if (recent(fd)) line += ` | finding "${fd.prompt}" best ${Math.round(fd.best * 100)}% (${fd.ms} ms)`;
+  if (recent(latest.ai)) line += ` | ai ${latest.ai.text}`;
   console.log(line);
 }
 
