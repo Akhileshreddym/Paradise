@@ -35,7 +35,8 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(400).end("Bad request");
     return;
   }
-  const file = join(ROOT, path === sep ? "hands.html" : path);
+  // "/" is the laptop page; an address without an extension is that page ("/legend" → legend.html).
+  const file = join(ROOT, path === sep ? "hands.html" : extname(path) ? path : `${path}.html`);
   // Only serve page files inside public/ (the tunnel makes this reachable from outside).
   if (!file.startsWith(ROOT) || !TYPES[extname(file)]) {
     res.writeHead(404).end("Not found");

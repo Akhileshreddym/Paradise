@@ -52,6 +52,9 @@
   button.pill { font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
   button.pill:hover { background: var(--well); }
   .pill.gemini.ok::before { background: var(--violet); }
+  a.pill { color: var(--text); text-decoration: none; }
+  a.pill::before { display: none; }
+  a.pill:hover { background: var(--well); }
 
   .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
   .stat .v { margin-top: 6px; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
@@ -120,6 +123,7 @@
     <span class="pill" id="joyLPill">Joy-Con L</span>
     <span class="pill" id="joyRPill">Joy-Con R</span>
     <button id="geminiBtn" class="pill gemini ok" aria-pressed="true" title="Turn Gemini on or off (both jobs: plain-language requests, and where to look)">Gemini on</button>
+    <a class="pill" href="/legend" target="_blank" title="What every buzz means (opens in a new tab: guidance keeps running here)">Buzz legend</a>
     <button id="connect" class="primary" title="Once per Joy-Con: left wrist = L, right wrist = R">Connect Joy-Con</button>
   </div>
 </header>
@@ -380,6 +384,17 @@
   document.querySelectorAll("[data-pattern]").forEach((b) => {
     b.onclick = () => (b.dataset.pattern === "echo3" ? PATTERNS.echo(3) : PATTERNS[b.dataset.pattern]());
   });
+  // The /legend page (legend.html, which draws these same patterns: change one, change both), open in
+  // this same browser, can play a buzz here so it can be learned by feel. Only while no mode is on,
+  // so it can never mix with real guidance. A BroadcastChannel only reaches this browser's own tabs:
+  // nothing through the tunnel can use it.
+  const legendLink = "BroadcastChannel" in window ? new BroadcastChannel("paradise-legend") : null;
+  if (legendLink) legendLink.onmessage = ({ data }) => {
+    if (data?.type === "hello") legendLink.postMessage({ type: "here", idle: !mode, joyL: !!joyL, joyR: !!joyR });
+    if (data?.type !== "play" || mode || !Object.hasOwn(PATTERNS, data.pattern)) return;
+    const args = (Array.isArray(data.args) ? data.args : []).filter(Number.isFinite).slice(0, 1).map((a) => clamp(a, 0, 9));
+    PATTERNS[data.pattern](...args);
+  };
 
   // ---- Finding things ("water bottle", "my keys", "trash can") ----
   // Two detectors look at the same time:

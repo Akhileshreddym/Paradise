@@ -1,0 +1,281 @@
+<!doctype html>
+<!-- Paradise "legend": what every buzz means, for the team, onlookers and the wearer's first practice.
+     ▶ shows a buzz's rhythm on the two wrist tiles; with the laptop page open in this same browser
+     and no mode on, it plays on the Joy-Cons too (hands.html listens on a BroadcastChannel, which
+     only reaches this browser's own tabs). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paradise · Buzz legend</title>
+<link rel="stylesheet" href="paradise.css">
+<style>
+  .wrap.legend { max-width: 920px; }
+  .intro p { margin: 0; color: var(--muted); }
+  .intro p + p { margin-top: 8px; }
+  .intro strong { color: var(--text); font-weight: 600; }
+  .key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .key i { display: inline-block; width: 18px; height: 10px; margin-right: 6px; border-radius: 3px; vertical-align: -1px; }
+
+  /* The two wrists, pinned to the top while scrolling: they light with whatever is playing. */
+  .preview { position: sticky; top: 0; z-index: 2; margin: 0 -4px; padding: 12px 4px 10px; background: var(--bg); }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .wrist {
+    display: grid; place-content: center; justify-items: center; height: 76px;
+    border-radius: 16px; background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow);
+    transition: background 0.25s, border-color 0.25s;
+  }
+  .wrist b { font-size: 28px; line-height: 1; color: var(--faint); transition: color 0.25s; }
+  .wrist span { font-size: 12px; color: var(--muted); }
+  .wrist.on { border-color: var(--buzz); transition: none; }
+  .wrist.on b, .wrist.on span { color: #1d1d1f; transition: none; }
+  .now { margin-top: 8px; min-height: 1.45em; text-align: center; font-weight: 600; }
+
+  .group { margin-top: 16px; padding-top: 6px; padding-bottom: 6px; }
+  .group > .label { margin: 10px 0 2px; }
+  .item { display: grid; grid-template-columns: 250px minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .group > .label + .item { border-top: 0; }
+  .item svg { display: block; width: 100%; height: auto; }
+  .item h3 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
+  .item .where { margin-top: 1px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .item p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+  .item.playing h3 { color: var(--accent); }
+  .play { width: 44px; min-height: 44px; padding: 0; border-radius: 50%; display: grid; place-items: center; }
+  .play svg { width: 16px; height: 16px; margin-left: 2px; fill: currentColor; }
+
+  svg .lane { font: 600 10px var(--font); fill: var(--muted); }
+  svg .track { fill: var(--well); }
+  svg .pulse { fill: var(--text); }
+  svg .pulse.high { fill: var(--violet); }
+  svg .pulse.low { fill: var(--orange); }
+  svg .tick { font: 9px var(--font); fill: var(--faint); }
+  svg .head { stroke: var(--accent); stroke-width: 1.5; opacity: 0; }
+
+  .notes ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+  .notes li + li { margin-top: 6px; }
+  .notes strong { color: var(--text); font-weight: 600; }
+
+  @media (max-width: 640px) {
+    .item { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; }
+    .item svg { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap legend">
+  <header class="top">
+    <div class="brand"><span class="mark"></span>Paradise <span class="sub">Buzz legend</span></div>
+    <span class="pill" id="wrists" title="Open the laptop page in this browser (and stop any mode) to feel each buzz on the Joy-Cons">On screen only</span>
+  </header>
+
+  <section class="card intro">
+    <p>Everything the wrists say. The <strong>left</strong> Joy-Con means left, the <strong>right</strong>
+      one means right, and <strong>both together</strong> mean everything else.</p>
+    <p>Tap ▶ to see a buzz's rhythm on the tiles below. With the laptop page open in this browser and no
+      mode running, you feel it on the wrists too.</p>
+    <div class="key">
+      <span><i style="background: var(--text)"></i>normal buzz</span>
+      <span><i style="background: var(--violet)"></i>high buzz</span>
+      <span><i style="background: var(--orange)"></i>low buzz</span>
+      <span>fainter = softer · each strip shows 1.8 s</span>
+    </div>
+  </section>
+
+  <div class="preview">
+    <div class="tiles">
+      <div class="wrist" id="tileL"><b>L</b><span id="tileLText">left wrist</span></div>
+      <div class="wrist" id="tileR"><b>R</b><span id="tileRText">right wrist</span></div>
+    </div>
+    <div class="now" id="now"></div>
+  </div>
+
+  <div id="groups"></div>
+
+  <section class="card notes group">
+    <div class="label">Good to know</div>
+    <ul>
+      <li><strong>Quiet</strong> means carry on: after <em>Arrived</em> you're there, and during a room scan it
+        means hold still while the camera looks.</li>
+      <li><strong>Room scan</strong> (finding something that isn't in view): turn pulses take you round a full
+        circle in 10 steps, with a quiet stop at each.</li>
+      <li><strong>Stop</strong> beats everything else, in every mode, except while reaching for the thing.</li>
+      <li>Guidance waits until <em>Got it</em> is over, so it can be counted.</li>
+      <li>How strong every buzz is follows <em>Buzz strength</em> in the laptop page's settings.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  // Each pattern as pulses: [wrists ("L", "R" or "LR" for both), start ms, length ms, strength 0–1,
+  // pitch]. The same as PATTERNS in hands.html: change a pattern there, change it here.
+  const PULSES = {
+    left: () => [["L", 0, 150, 1]],
+    right: () => [["R", 0, 150, 1]],
+    approach: () => [["LR", 0, 90, 0.5]],
+    arrived: () => [["LR", 0, 800, 1]],
+    obstacle: () => [0, 180, 360].map((t) => ["LR", t, 100, 1]),
+    search: () => [["L", 0, 200, 0.6], ["R", 450, 200, 0.6], ["L", 900, 200, 0.6]],
+    connected: () => [0, 180].map((t) => ["LR", t, 80, 1]),
+    echo: (n = 3) => Array.from({ length: n }, (_, i) => ["LR", i * 300, 120, 0.8]),
+    reachLeft: (s = 1) => [["L", 0, 100, s]],
+    reachRight: (s = 1) => [["R", 0, 100, s]],
+    reachUp: (s = 1) => [["LR", 0, 100, s, "high"]],
+    reachDown: (s = 1) => [["LR", 0, 100, s, "low"]],
+    reachForward: () => [["LR", 0, 60, 0.4]],
+    reachOut: () => [["LR", 0, 250, 0.6]],
+    touch: () => [0, 110, 220].map((t) => ["LR", t, 60, 1, "high"]),
+  };
+
+  // What to show, in order. seq: when to play which pattern (ms from the start), with a few repeats
+  // so the rhythm shows, and its argument the way hands.html takes it (echo's count, a reach buzz's
+  // strength).
+  const every = (ms, n, pattern, args) => Array.from({ length: n }, (_, i) => [i * ms, pattern, args?.(i)]);
+  const at = (times, pattern) => times.map((t) => [t, pattern]);
+  const fading = (i) => [Math.max(0.4, 1 - i * 0.15)]; // stronger the further off: here, the hand closing in
+  const LEGEND = [
+    ["Choosing", [
+      { name: "Got it", where: "Both wrists", seq: [[0, "echo", [3]]],
+        what: "Right after you choose: one pulse per press, so you can count it. 1 = the Waymo, 2 and up = your saved places, a thing to find = 1." },
+      { name: "Not a choice", where: "Left, right, left · once", seq: [[0, "search"]],
+        what: "More presses than there are choices. Nothing changes." },
+    ]],
+    ["Walking", [
+      { name: "Turn left", where: "Left wrist · every 0.4 s", seq: every(400, 4, "left"),
+        what: "Turn left until the pulses stop." },
+      { name: "Turn right", where: "Right wrist · every 0.4 s", seq: every(400, 4, "right"),
+        what: "Turn right until the pulses stop." },
+      { name: "Walk", where: "Both wrists, soft · faster as you get closer", seq: at([0, 520, 920, 1220, 1450, 1640], "approach"),
+        what: "You're facing it: walk forward. The pulses speed up as you get closer (1 to 4 a second)." },
+      { name: "Arrived", where: "Both wrists · one long buzz", seq: [[0, "arrived"]],
+        what: "You're there: the place, the car, the door handle, or arm's reach from the thing. Then quiet." },
+      { name: "Found it", where: "Both wrists · two quick pulses", seq: [[0, "connected"]],
+        what: "The camera found your Waymo, or the thing you asked for. Steering to it starts." },
+    ]],
+    ["Stop and wait", [
+      { name: "Stop", where: "Both wrists, strong · again every 1.2 s", seq: every(1200, 2, "obstacle"),
+        what: "Something is in the way, close ahead. Stand still until the pulses end." },
+      { name: "Searching", where: "Left, right, left · every 1.6 s", seq: every(1600, 2, "search"),
+        what: "Nothing to steer by yet: no signal from the chest phone, no compass, waiting for GPS, or the thing isn't in view. Stand still. Just once, then quiet: the search is over, it isn't anywhere around you." },
+    ]],
+    ["Reaching: at the door handle or the thing", [
+      { name: "Hand left", where: "Left wrist · every 0.3 s", seq: every(300, 6, "reachLeft", fading),
+        what: "Move your hand left. Stronger the further off, softer as you get there." },
+      { name: "Hand right", where: "Right wrist · every 0.3 s", seq: every(300, 6, "reachRight", fading),
+        what: "Move your hand right." },
+      { name: "Hand up", where: "Both wrists, high buzz · every 0.3 s", seq: every(300, 6, "reachUp", fading),
+        what: "Move your hand up." },
+      { name: "Hand down", where: "Both wrists, low buzz · every 0.3 s", seq: every(300, 6, "reachDown", fading),
+        what: "Move your hand down." },
+      { name: "Forward", where: "Both wrists, light taps · faster as you get closer", seq: at([0, 450, 800, 1080, 1300, 1480, 1640], "reachForward"),
+        what: "Your hand is lined up: move it forward (2 to 6 taps a second)." },
+      { name: "Reach out", where: "Both wrists · a longer buzz every 1.2 s", seq: every(1200, 2, "reachOut"),
+        what: "Your hand isn't in the camera's view yet: reach out in front of your chest." },
+      { name: "Touching", where: "Both wrists · three quick high pulses", seq: [[0, "touch"]],
+        what: "Your hand is on it." },
+    ]],
+  ];
+
+  // ---- The strips: two lanes (L, R), 1.8 s, one mark per pulse ----
+  const SPAN = 1800, X0 = 16, X1 = 248, LANES = { L: 6, R: 26 }, LANE_H = 12;
+  const xOf = (t) => X0 + (Math.min(t, SPAN) / SPAN) * (X1 - X0);
+  function pulsesOf(item) {
+    return item.seq.flatMap(([t0, pattern, args]) => PULSES[pattern](...(args || []))
+      .map(([side, t, ms, s, pitch]) => ({ side, t: t0 + t, ms, s, pitch })));
+  }
+  function strip(item) {
+    let svg = `<svg viewBox="0 0 250 56" role="img" aria-label="${item.name}: ${item.where}">`;
+    for (const [lane, y] of Object.entries(LANES)) {
+      svg += `<text class="lane" x="0" y="${y + 10}">${lane}</text><rect class="track" x="${X0}" y="${y}" width="${X1 - X0}" height="${LANE_H}" rx="3"/>`;
+    }
+    for (const p of pulsesOf(item)) {
+      if (p.t >= SPAN) continue;
+      const w = Math.max(2.5, xOf(p.t + p.ms) - xOf(p.t));
+      for (const lane of p.side === "LR" ? ["L", "R"] : [p.side]) {
+        svg += `<rect class="pulse ${p.pitch || ""}" x="${xOf(p.t).toFixed(1)}" y="${LANES[lane]}" width="${w.toFixed(1)}" height="${LANE_H}" rx="2" opacity="${(0.3 + 0.7 * p.s).toFixed(2)}"/>`;
+      }
+    }
+    for (const t of [0, 600, 1200, 1800]) svg += `<text class="tick" x="${xOf(t)}" y="52" text-anchor="${t ? (t === SPAN ? "end" : "middle") : "start"}">${t / 1000} s</text>`;
+    return `${svg}<line class="head" x1="${X0}" x2="${X0}" y1="2" y2="42"/></svg>`;
+  }
+
+  const PLAY_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.8v12.4c0 .7.8 1.1 1.4.7l9.6-6.2c.5-.3.5-1.1 0-1.4L4.4 1.1C3.8.7 3 1.1 3 1.8z"/></svg>`;
+  for (const [title, items] of LEGEND) {
+    const card = document.createElement("section");
+    card.className = "card group";
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = title;
+    card.append(label);
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.className = "item";
+      row.innerHTML = `${strip(item)}<div><h3></h3><div class="where"></div><p></p></div>` +
+        `<button class="play" aria-label="Play ${item.name}">${PLAY_ICON}</button>`;
+      row.querySelector("h3").textContent = item.name;
+      row.querySelector(".where").textContent = item.where;
+      row.querySelector("p").textContent = item.what;
+      row.querySelector(".play").onclick = () => play(item, row);
+      card.append(row);
+    }
+    $("groups").append(card);
+  }
+
+  // ---- Playing: the tiles above (always), the wrists (when the laptop page can) ----
+  const tiles = { L: [$("tileL"), $("tileLText"), "left wrist"], R: [$("tileR"), $("tileRText"), "right wrist"] };
+  let timers = [], playingRow = null;
+  function light(side, ms, s, pitch) {
+    const [tile, text, idle] = tiles[side];
+    tile.classList.add("on");
+    tile.style.background = `color-mix(in srgb, var(--buzz) ${Math.round(35 + 65 * s)}%, var(--card))`;
+    text.textContent = pitch ? `${pitch} buzz` : idle;
+    clearTimeout(tile.off);
+    tile.off = setTimeout(() => { tile.classList.remove("on"); tile.style.background = ""; text.textContent = idle; }, ms);
+  }
+  function play(item, row) {
+    timers.forEach(clearTimeout);
+    timers = [];
+    playingRow?.classList.remove("playing");
+    playingRow = row;
+    row.classList.add("playing");
+    $("now").textContent = `${item.name} · ${item.where}`;
+    for (const p of pulsesOf(item)) {
+      for (const side of p.side === "LR" ? ["L", "R"] : [p.side]) timers.push(setTimeout(() => light(side, p.ms, p.s, p.pitch), p.t));
+    }
+    if (wristsReady()) {
+      for (const [t, pattern, args] of item.seq) timers.push(setTimeout(() => link.postMessage({ type: "play", pattern, args: args || [] }), t));
+    }
+    const end = Math.max(...pulsesOf(item).map((p) => p.t + p.ms));
+    timers.push(setTimeout(() => { row.classList.remove("playing"); $("now").textContent = ""; }, end + 600));
+    // The playhead runs along the strip.
+    const head = row.querySelector(".head"), t0 = performance.now();
+    const step = () => {
+      const t = performance.now() - t0;
+      if (playingRow !== row || t > Math.min(end + 200, SPAN)) { head.style.opacity = 0; return; }
+      head.setAttribute("x1", xOf(t)); head.setAttribute("x2", xOf(t)); head.style.opacity = 1;
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  // ---- The wrists: the laptop page answers in this same browser, if it's open ----
+  const link = "BroadcastChannel" in window ? new BroadcastChannel("paradise-legend") : null;
+  let laptop = { at: -Infinity, idle: false, joyL: false, joyR: false };
+  if (link) link.onmessage = ({ data }) => { if (data?.type === "here") laptop = { ...data, at: performance.now() }; };
+  const laptopOpen = () => performance.now() - laptop.at < 3500;
+  const wristsReady = () => laptopOpen() && laptop.idle && (laptop.joyL || laptop.joyR);
+  function showWrists() {
+    const pill = $("wrists");
+    const [text, state] = !laptopOpen() ? ["On screen only", ""]
+      : !(laptop.joyL || laptop.joyR) ? ["No Joy-Cons connected", "warn"]
+      : !laptop.idle ? ["Guiding: stop it to feel buzzes", "warn"]
+      : [`Wrists ready${laptop.joyL && laptop.joyR ? "" : ` (${laptop.joyL ? "left" : "right"} only)`}`, "ok"];
+    if (pill.textContent !== text) pill.textContent = text;
+    pill.className = `pill ${state}`;
+  }
+  setInterval(() => { link?.postMessage({ type: "hello" }); showWrists(); }, 1500);
+  link?.postMessage({ type: "hello" });
+</script>
+</body>
+</html>

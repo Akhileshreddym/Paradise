@@ -111,7 +111,8 @@ from everything else.
 
 Every strength is multiplied by the **Buzz strength** slider on the laptop page (default 0.7).
 Guidance waits until an echo is over, so it can be counted. The laptop page's **Testing** section
-plays each pattern.
+plays each pattern, and the **buzz legend** page (`/legend`, [6.5](#65-the-buzz-legend-page)) shows
+and explains every one.
 
 ### What onlookers see (the laptop page is the display)
 
@@ -636,7 +637,9 @@ searching. Under it, for 10 s: `Heard: “…”`, the last thing the phone hear
 | **Waymo ride** | Waymo mode only: *Requested → Arrived → Found by the camera → At the door* |
 
 **Header pills**: **Phone** (green: a message in the last second; red: it was connected and went
-quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected and set up).
+quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected and set up), and
+**Buzz legend**, which opens [the legend](#65-the-buzz-legend-page) in a new tab (so guidance keeps
+running here).
 
 **Controls**
 
@@ -734,6 +737,26 @@ reaches the server. It sends its latest fix once a second.
 | `object finder: failed: stopped (SIGKILL), starting it again` | A model process crashed; it restarts (up to 3 times) |
 | `bad cars message: …` | A malformed message was ignored |
 | `[status] chest phone 0s ago: gps ±5 m, compass 187°, sees person, car \| beacon 1s ago: ±4 m \| distance 32 m \| waymo 96% \| depth clear \| finding "a car door handle." best 22% (1180 ms)` | Every 3 s while a phone has sent something in the last 10 s. `depth` is `clear`, what's in the walking path (`obstacle 1.32 m`), or why it can't judge. **No coordinates are ever printed.** |
+
+### 6.5 The buzz legend page
+
+`http://localhost:8080/legend` (`public/legend.html`), or `https://<tunnel>/legend` on a phone. Every
+buzz the wrists can play, grouped (choosing, walking, stop and wait, reaching), each with:
+
+- a strip of its rhythm over 1.8 s: two lanes (L, R), one mark per pulse; purple = high buzz,
+  orange = low buzz, fainter = softer;
+- what it means and when it comes;
+- ▶, which plays it on the two wrist tiles pinned at the top.
+
+**Feel it:** with the laptop page open in the **same browser** (on the Mac) and no mode running, ▶
+also plays it on the Joy-Cons. The pill at the top says so: *Wrists ready*, *No Joy-Cons
+connected*, or *On screen only* (no laptop page in this browser, e.g. on a phone). The laptop page
+refuses while a mode is on, so it can never mix with real guidance, and the link is a
+BroadcastChannel, which only reaches that browser's own tabs: nothing through the tunnel can buzz
+the wrists.
+
+The page keeps its own copy of the patterns' timings (`PULSES`): change a pattern in `hands.html`,
+change it there too.
 
 ---
 
@@ -1168,7 +1191,8 @@ something to drink" works typed too), then find mode.
 
 ### 7.11 The server
 
-- **Pages:** serves only `.html`, `.js` and `.css` files inside `public/`; `/` is `hands.html`;
+- **Pages:** serves only `.html`, `.js` and `.css` files inside `public/`; `/` is `hands.html`, and
+  an address without an extension is that page (`/legend` is `legend.html`, `/eyes` is `eyes.html`);
   never cached (`Cache-Control: no-store`); malformed addresses get 400, anything else 404. The
   models and server code are never served.
 - **Relay:** every WebSocket message goes to all other connected pages, except messages with a `to`
@@ -1473,7 +1497,8 @@ paradise/
 │   ├── hands.html             laptop page: Joy-Cons, choosing, voice commands, all guidance (incl. the last reach), the display
 │   ├── eyes.html              chest phone: camera + YOLO, hand tracking (MediaPipe), compass, tilt, GPS, voice, frames and crops
 │   ├── yolo-worker.js         YOLOv10n in a web worker on the phone (WebGPU or WebAssembly)
-│   ├── paradise.css           the look shared by the three pages (light and dark follow the device)
+│   ├── paradise.css           the look shared by the pages (light and dark follow the device)
+│   ├── legend.html            the buzz legend: what every buzz means, shown and played (/legend)
 │   └── beacon.html            beacon phone: shares its GPS location
 └── training/                  the Waymo classifier's training pipeline (see training/README.md)
     ├── README.md
