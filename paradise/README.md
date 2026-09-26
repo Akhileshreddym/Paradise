@@ -11,8 +11,8 @@ It does three things:
    straight across streets.
 2. **Walks you to your Waymo, right up to its door handle** (the walking route toward the car, then
    a camera model that recognizes Waymos, then a door-handle finder).
-3. **Finds a thing you ask for** ("water bottle", "my keys", "trash can") and walks you to it. Not
-   in view? The wrists **turn you round the room** to look. Still nothing? It **asks an AI (Google
+3. **Finds a thing you ask for** ("water bottle", "my keys", "trash can", or just "something to
+   drink": the AI works out what to look for) and walks you to it. Not in view? The wrists **turn you round the room** to look. Still nothing? It **asks an AI (Google
    Gemini) where to go and look next**, from the photos of that turn ("the desk: keys are often left
    on desks"), walks you there, and looks again.
 
@@ -130,6 +130,9 @@ The wearer never looks at a screen. The laptop page is for everyone else:
   Joy-Con connected, which is handy for demos);
 - **Mode** (with a task timer: from the choice to the "touch", or to arriving at a place),
   **Distance** (and how it's measured) and **Obstacle** tiles;
+- **the difference**: the same task done without Paradise (the team times it with the **Time it**
+  button: start, stop; kept in the browser) next to the last task done with it, and how many times
+  faster (`1:30` vs `0:20`: `4.5× faster`);
 - in find mode, the **room scan**: each stop's photo round a circle (top = where the turn started),
   the stop being looked at, and, if the AI was asked, the photo it picked (violet) with what it said
   ("look at the desk, about 2 m away. Keys are often left on desks.");
@@ -646,6 +649,7 @@ quiet; grey: never connected), **Joy-Con L** and **Joy-Con R** (green: connected
 | Settings → Obstacle stop distance | 1.5 m (0.5–3) | Anything closer than this, straight ahead, is an obstacle |
 | Settings → Obstacles from depth | on | Also stop for anything the depth model sees close in the walking path, not just what YOLO recognizes ([7.5](#75-obstacles)) |
 | Settings → Ask the AI where to look | on | Find mode: after a full turn round the room finds nothing, send that turn's photos to Gemini (at most 3 times a search); off: say "not found" instead ([7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)) |
+| Settings → Any car counts as the Waymo (demo) | off | Only for a demo with no real Waymo there: any car the phone sees counts as the Waymo (the one in the beacon's direction). The ride card says `(demo: any car counts as the Waymo)` while it's on, so nobody is misled ([7.7](#77-mode-2-the-waymo)) |
 | Settings → Follow walking routes | on | Steer along an OpenStreetMap walking route to a place or the Waymo, turning at corners; off: a straight line ([7.6a](#76a-walking-routes)) |
 | Testing → Walking buzzes, Reaching buzzes | — | Plays each pattern |
 | Testing → Indoor steering test: 90° left, 45° right, 90° right, Behind | — | Steers to a direction relative to where the chest faces (no GPS needed); no arrival |
@@ -909,7 +913,10 @@ obstacle and drop-off checks, still matter.
    sensors are in it), squashed to 224 × 224.
 4. **Classifier:** CLIP image features → standardized → logistic regression (`waymo-head.json`) →
    probability. **0.9 or more = confirmed**, with its direction: the compass when the crop was taken
-   + its angle. Several confirmed: the one closest to the beacon's direction.
+   + its angle. Several confirmed: the one closest to the beacon's direction. **Demo with no real
+   Waymo there:** **Settings → Any car counts as the Waymo (demo)** makes every car crop count
+   (still the one closest to the beacon's direction), and the ride card says so. Off by default;
+   leave it off with a real Waymo, and tell the judges when it's on.
 5. **Car stage:** every YOLO result, the car within 12° of the confirmed Waymo's direction becomes
    the target (`object`). First time: the "connected" buzz and "Waymo found by the camera".
    Arrival at 1.0 m: `AT THE CAR: turn slowly along it to find the door handle`.
@@ -1051,6 +1058,26 @@ then refuses it (`couldn't reach Gemini: …` with a certificate error). Start t
 server with `node --use-system-ca --env-file-if-exists=.env server.js` (Node.js 22.15 or newer):
 Node then trusts the system's certificates, as browsers do.
 
+### 7.8b Plain-language requests
+
+The detectors need a thing's name; people say what they need. "Something to drink", "somewhere to
+sit", "something to write with" (`findThing()`, `onAiWhat()` in `hands.html`; `whatToFind()` in
+`ai.js`):
+
+1. Find mode starts at once (the echo buzz), but nothing is looked for yet (`THINKING: what to look
+   for, for "something to drink"`).
+2. The request alone, as text, goes to Gemini: *which one kind of object should the camera look
+   for?* It answers with 1–3 plain words and a reason; the answer is checked (letters only, short).
+3. Find mode goes on as if that had been asked ("water bottle": the object finder's prompt, YOLO's
+   `bottle`, its usual size). The display's scan card shows `AI: "something to drink" means water
+   bottle. A water bottle is the most common…`.
+4. No answer (no key, switched off, an error, or nothing in 15 s): it looks for the words as they
+   were said.
+
+Against Gemini (`gemini-3.5-flash-lite`): "something to drink" → water bottle (133 tokens, 0.95 s),
+"somewhere to sit" → chair (134 tokens, 0.76 s). Same limits and switch as 7.8a: only from the
+laptop's own page, 6 calls a minute, **Settings → Ask the AI where to look** off = no calls.
+
 ### 7.9 The last reach: steering the hand
 
 At the door handle or a found thing, the wrists steer the wearer's hand onto it (`reachTick()` in
@@ -1119,16 +1146,20 @@ laptop, which decides:
    - exactly `waymo` (or `way mo` / `way more`, how dictation sometimes spells it) → **Waymo**;
    - exactly a place's name → **that place**;
    - otherwise, *if there was a command verb*, and it isn't a word like `it`, `there`, `going`,
-     `started`, `ready`… → **find it**.
+     `started`, `ready`… → **find it**. Plain language instead of a thing's name (it starts with
+     `something`, `anything`, `somewhere`, `anywhere`, `place`, `thing` or `stuff`: "something to
+     drink", "a place to sit") → the AI names the thing first ([7.8b](#78b-plain-language-requests)).
 
 | Said | Result |
 |---|---|
 | "Waymo." / "Take me to the Waymo, please" / "Bring me the Waymo" | Waymo |
 | "Test north" / "Go to test north" | That place |
 | "Find my keys." / "Where are my keys?" / "Hey Paradise, find my phone." / "Get me a water bottle please" / "Where’s the trash can?" | Find: keys / keys / phone / water bottle / trash can |
+| "Find me something to drink" / "Help me find somewhere to sit" | Find: water bottle / chair (named by the AI) |
 | "Let's get started" / "That's way more fun" / "I love Waymo" / "I can't get there" / "Get going" | Nothing (not commands) |
 
-**Typing:** the **Find something** box goes through the same cleanup, then find mode.
+**Typing:** the **Find something** box goes through the same cleanup (steps 2 and 3, so "find me
+something to drink" works typed too), then find mode.
 
 ### 7.11 The server
 
@@ -1424,7 +1455,7 @@ paradise/
 ├── package.json               npm start → node server.js (with .env); dependencies: ws, @huggingface/transformers
 ├── .env                       your Gemini key, if any (you create it; git-ignored; 4.2a)
 ├── server.js                  web server (public/ only), WebSocket relay, passes frames/crops to the models, status line
-├── ai.js                      asks Gemini where to look next (find mode, only after a full turn finds nothing), with limits
+├── ai.js                      asks Gemini where to look next (only after a full turn finds nothing) and what a plain-language request means, with limits
 ├── object-finder.js           starts and talks to the object finder process (restarts it if it crashes)
 ├── object-finder-worker.js    the object finder: Grounding DINO tiny (8-bit), finds things described in words
 ├── clip.js                    starts and talks to the CLIP process (restarts it if it crashes)

@@ -17,7 +17,7 @@ import { WebSocketServer } from "ws";
 import { finder, findObjects } from "./object-finder.js";
 import { clip, classifyCars, checkBoxes } from "./clip.js";
 import { depth, findHazards } from "./depth.js";
-import { ai, whereToLook } from "./ai.js";
+import { ai, whereToLook, whatToFind } from "./ai.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 const ROOT = fileURLToPath(new URL("./public/", import.meta.url));
@@ -70,7 +70,8 @@ wss.on("connection", (ws, req) => {
     if (msg?.to === "server") {
       // Anything can arrive here (the tunnel is public): a bad message is logged, never fatal.
       const job = msg.type === "frame" ? onFrame(msg) : msg.type === "cars" ? onCars(msg)
-        : msg.type === "preview" ? onPreview(msg, data) : msg.type === "ask-ai" ? onAskAi(msg, ws) : null;
+        : msg.type === "preview" ? onPreview(msg, data) : msg.type === "ask-ai" ? onAskAi(msg, ws)
+        : msg.type === "ask-what" ? onAskWhat(msg, ws) : null;
       job?.catch((err) => console.log(`bad ${msg.type} message: ${err.message}`));
       return;
     }
@@ -136,11 +137,19 @@ async function onPreview(msg, raw) {
 
 // A full scan of the room found nothing → where to look next (ai.js), back to the page that asked.
 async function onAskAi({ id, what, shots }, ws) {
-  const answer = !ws.local ? "only the laptop's own page can ask the AI (not through the tunnel)"
-    : await whereToLook(what, Array.isArray(shots) ? shots : []);
+  const answer = !ws.local ? NOT_LOCAL : await whereToLook(what, Array.isArray(shots) ? shots : []);
   latest.ai = { text: typeof answer === "string" ? answer : `"${answer.target}" (${answer.ms} ms, ${answer.tokens} tokens)`, at: Date.now() };
   console.log(`[ai] where to look for "${String(what).slice(0, 40)}": ${latest.ai.text} · ${ai.calls} calls, ${ai.tokens} tokens since start`);
   if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ai", id, ...(typeof answer === "string" ? { reason: answer } : { answer }) }));
+}
+
+// A request in plain language ("something to drink") → the thing to look for (ai.js).
+const NOT_LOCAL = "only the laptop's own page can ask the AI (not through the tunnel)";
+async function onAskWhat({ id, request }, ws) {
+  const answer = !ws.local ? NOT_LOCAL : await whatToFind(request);
+  latest.ai = { text: typeof answer === "string" ? answer : `"${answer.thing}" (${answer.ms} ms, ${answer.tokens} tokens)`, at: Date.now() };
+  console.log(`[ai] what "${String(request).slice(0, 40)}" means: ${latest.ai.text} · ${ai.calls} calls, ${ai.tokens} tokens since start`);
+  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ai-what", id, ...(typeof answer === "string" ? { reason: answer } : answer) }));
 }
 
 // Every 3 s, print what the phones are sending (accuracy and distance only, no coordinates),

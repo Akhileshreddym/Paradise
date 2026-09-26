@@ -65,6 +65,12 @@
   .scan .ai { margin-top: 8px; font-size: 14px; color: var(--muted); }
   .scan .ai b { color: var(--violet); }
 
+  /* Before and after (for the demo): the same task without Paradise and with it. */
+  .compare .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-top: 10px; }
+  .compare .row span { color: var(--muted); }
+  .compare b { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .compare em { font-style: normal; font-weight: 600; color: var(--green); }
+
   .controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 20px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   #choices { display: contents; }
@@ -137,7 +143,13 @@
     <section class="card scan" id="scanCard" hidden>
       <div class="label">Room scan</div>
       <div class="ring" id="ring"><div class="hub" id="ringHub"></div></div>
+      <div class="ai" id="aiMeant" hidden></div>
       <div class="ai"><b id="aiPick"></b><span id="aiWhy"></span></div>
+    </section>
+    <section class="card compare">
+      <div class="label">The difference</div>
+      <div class="row"><span>Without Paradise</span><b id="beforeV">—</b><button id="beforeBtn" title="Time the same task done without Paradise">Time it</button></div>
+      <div class="row"><span>With Paradise</span><b id="afterV">—</b><em id="fasterV"></em></div>
     </section>
   </div>
 </main>
@@ -167,6 +179,7 @@
       <div class="setting"><label for="stopDist">Obstacle stop distance</label><input id="stopDist" type="range" min="0.5" max="3" step="0.1" value="1.5"><span class="val"><span id="stopDistV">1.5</span> m</span></div>
       <label class="toggle"><span>Obstacles from depth<small>Walls, poles, doors, boxes: anything close in the walking path</small></span><input type="checkbox" id="depthOn" class="switch" checked></label>
       <label class="toggle"><span>Ask the AI where to look<small>Find mode: only after a full turn finds nothing, at most 3 times a search. Sends that turn's small photos to Google Gemini</small></span><input type="checkbox" id="aiOn" class="switch" checked></label>
+      <label class="toggle"><span>Any car counts as the Waymo (demo)<small>Only for a demo with no real Waymo there: the car in the beacon's direction counts. The display says so.</small></span><input type="checkbox" id="anyCar" class="switch"></label>
       <label class="toggle"><span>Follow walking routes<small>Along sidewalks and footpaths to a place or the Waymo, turning at corners (off: a straight line). Routes © OpenStreetMap contributors</small></span><input type="checkbox" id="routeOn" class="switch" checked></label>
     </div>
   </details>
@@ -372,15 +385,40 @@
     } while (t !== prev);
     return t;
   }
-  function findThing(text) {
-    const what = cleanThing(text);
-    if (!what) return;
-    // Longest matching word wins ("water bottle" over "water").
+  // What find mode needs to know about a thing: the object finder's prompt, YOLO's kind and its
+  // usual size (longest matching word wins: "water bottle" over "water"), and words for the same.
+  function thingFields(what) {
     let best = null;
     for (const [words, coco, size] of THINGS) for (const w of words) {
       if (new RegExp(`\\b${w}\\b`).test(what) && (!best || w.length > best.w.length)) best = { w, coco, size, same: [...words, ...(coco ? [coco] : [])] };
     }
-    startMode({ kind: "find", name: `find "${what}"`, what, prompt: `a ${what}.`, coco: best?.coco ?? null, size: best?.size ?? null, same: best?.same ?? [] }, 1);
+    return { name: `find "${what}"`, what, prompt: `a ${what}.`, coco: best?.coco ?? null, size: best?.size ?? null, same: best?.same ?? [] };
+  }
+  // Plain language ("something to drink", "somewhere to sit") isn't a thing the detectors can look
+  // for: the AI (ai.js) names one ("water bottle", "chair"). One short text call, only for these;
+  // meanwhile the mode is on (the echo plays) but nothing's looked for yet (prompt null).
+  const VAGUE = /^(?:something|anything|somewhere|anywhere|some ?place|place|thing|stuff)\b/; // after cleanThing ("a place to sit" → "place to sit")
+  function findThing(text) {
+    const what = cleanThing(cleanThing(text).replace(VERB, "")); // typed like it's said: "find me something to drink"
+    if (!what) return;
+    if (VAGUE.test(what) && $("aiOn").checked && phoneWs?.readyState === 1) {
+      const id = ++aiAsk.nextId;
+      startMode({ kind: "find", ...thingFields(what), prompt: null, asked: what, askId: id }, 1);
+      aiAsk.info = `asking what "${what}" means…`;
+      phoneWs.send(JSON.stringify({ type: "ask-what", to: "server", id, request: what }));
+      return;
+    }
+    startMode({ kind: "find", ...thingFields(what) }, 1);
+  }
+  function onAiWhat({ id, thing, reason, tokens, ms }) {
+    if (mode?.kind === "find" && mode.askId === id && mode.prompt === null) settleWhat(thing, reason, tokens, ms);
+  }
+  // The AI's answer (or none: then look for the words as they were said).
+  function settleWhat(thing, reason, tokens, ms) {
+    const what = cleanThing(thing || "") || mode.asked;
+    Object.assign(mode, thingFields(what));
+    aiAsk.meant = { asked: mode.asked, what, reason: thing ? reason : `no answer (${reason}), so looking for the words as said` };
+    aiAsk.info = thing ? `"${mode.asked}" → "${what}" · ${(ms / 1000).toFixed(1)} s · ${tokens} tokens` : `"${mode.asked}": ${reason}`;
   }
   $("findGo").onclick = () => findThing($("findText").value);
   $("findText").onkeydown = (e) => { if (e.key === "Enter") findThing($("findText").value); };
@@ -514,7 +552,8 @@
     const now = performance.now();
     if (!cars?.length || typeof compass !== "number") return;
     waymoBest = { prob: Math.max(...cars.map((c) => c.prob)), at: now };
-    const sure = cars.filter((c) => c.prob >= WAYMO_SURE).map((c) => ({ ...c, heading: wrap180(compass + c.angle) }));
+    // Demo switch (no real Waymo there): any car counts; the one in the beacon's direction is picked below.
+    const sure = cars.filter((c) => c.prob >= WAYMO_SURE || $("anyCar").checked).map((c) => ({ ...c, heading: wrap180(compass + c.angle) }));
     if (!sure.length || mode?.kind !== "waymo") return;
     const g = fresh(beacon, now) ? gpsTo(beacon, now) : null;
     const best = g ? sure.reduce((a, b) => (Math.abs(wrap180(b.heading - g.heading)) < Math.abs(wrap180(a.heading - g.heading)) ? b : a))
@@ -626,7 +665,7 @@
   let shownScan = null;  // the scan on the display (stays there once it's over)
   let explore = null;    // { heading, target, until }: walking to the AI's pick
   let lastShot = null;   // { image, w, h, focal, at }: the latest preview frame, for the scan's photos
-  const aiAsk = { calls: 0, nextId: 0, waiting: null, pick: null, info: "not asked yet" }; // calls: this search
+  const aiAsk = { calls: 0, nextId: 0, waiting: null, pick: null, meant: null, info: "not asked yet" }; // calls: this search
   function newScan(now) {
     scan = shownScan = { start: heading, i: 0, phase: "turn", at: now, lookId: 0, shots: [] };
   }
@@ -805,7 +844,7 @@
   function resetGuidance() {
     cam = null; waymoSeen = null; yoloThing = null; lastCar = null; route = null; routeAsk.at = -Infinity;
     scan = shownScan = explore = null;
-    Object.assign(aiAsk, { calls: 0, waiting: null, pick: null });
+    Object.assign(aiAsk, { calls: 0, waiting: null, pick: null, meant: null });
     onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—"; distanceBy = ""; blockedRuns = 0;
     Object.assign(reach, { view: null, touched: false });
     Object.assign(finder, { waiting: null, retryAt: 0, info: "idle", box: null });
@@ -865,6 +904,10 @@
       // Near the beacon but no Waymo confirmed yet: keep heading for the beacon; the camera will
       // take over as soon as it recognizes the car.
       if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); nextPulse = now + 600; }
+    }
+    if (mode.kind === "find" && mode.prompt === null) { // waiting to hear what "something to drink" means
+      if (now - task.at > 15000) settleWhat(null, "the AI didn't answer");
+      return say(`THINKING: what to look for, for "${mode.asked}"`);
     }
     if (mode.kind === "find") {
       // Seen: go to it. Else walking to the AI's pick, for as long as it said. Else (once the
@@ -1013,9 +1056,19 @@
 
     put("modeV", mode ? mode.name : "Off");
     // How long the task has taken: from the choice to the touch (or, for a place, arriving).
-    if (mode && task.at && !task.done && (/^TOUCHING/.test(guide) || (mode.kind === "place" && /^ARRIVED/.test(guide)))) task.done = now;
+    if (mode && task.at && !task.done && (/^TOUCHING/.test(guide) || (mode.kind === "place" && /^ARRIVED/.test(guide)))) {
+      task.done = now;
+      compare.after = now - task.at;
+    }
     put("modeS", mode && task.at ? `${task.done ? "done in " : ""}${clock((task.done || now) - task.at)}` : "");
     renderScan();
+    // The difference: the same task without Paradise (timed with the button) and with it.
+    const before = compare.startedAt ? now - compare.startedAt : compare.before;
+    put("beforeV", before ? clock(before) : "—");
+    put("beforeBtn", compare.startedAt ? "Stop" : compare.before ? "Time again" : "Time it");
+    const running = mode && task.at && !task.done;
+    put("afterV", running ? `${clock(now - task.at)}…` : compare.after ? clock(compare.after) : "—");
+    put("fasterV", !running && compare.before && compare.after && compare.after < compare.before ? `${(compare.before / compare.after).toFixed(1)}× faster` : "");
     put("distV", mode ? distanceShown : "—");
     put("distS", mode && distanceBy ? SOURCES[distanceBy] || distanceBy : "");
     put("obsV", obs ? `${capital(obs.label)}${obs.distance != null ? ` · ${obs.distance.toFixed(1)} m` : ""}` : "None");
@@ -1023,7 +1076,7 @@
     $("obsCard").classList.toggle("alert", !!obs && !reaching);
     $("rideCard").hidden = mode?.kind !== "waymo";
     if (mode?.kind === "waymo") {
-      put("ride", RIDE[rideStage] || "");
+      put("ride", `${RIDE[rideStage] || ""}${$("anyCar").checked ? " (demo: any car counts as the Waymo)" : ""}`);
       const k = RIDE_STEPS.indexOf(rideStage);
       [...$("rideSteps").children].forEach((li, i) => li.classList.toggle("done", i <= k));
     }
@@ -1048,15 +1101,29 @@
   }
 
   const task = { at: 0, done: 0 }; // when the current choice was made, and when it was reached
+  // Before and after, for the demo: the team times the same task done without Paradise (blindfolded,
+  // ears covered: the button starts and stops it), shown next to the last task done with it. The
+  // "without" time is kept in this browser.
+  const compare = { before: null, startedAt: 0, after: null }; // ms
+  try { compare.before = Number(localStorage.getItem("paradise.before")) || null; } catch {}
+  $("beforeBtn").onclick = () => {
+    if (!compare.startedAt) { compare.startedAt = performance.now(); return; }
+    compare.before = performance.now() - compare.startedAt;
+    compare.startedAt = 0;
+    try { localStorage.setItem("paradise.before", String(compare.before)); } catch {}
+  };
   const clock = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 
   // The room scan (find mode): each stop's photo round a circle, top = where the scan started; the
   // stop being looked at; the photo the AI picked, and what it said. Rebuilt only when it changes.
   let ringKey = "";
   function renderScan() {
-    const s = mode?.kind === "find" ? shownScan : null;
-    $("scanCard").hidden = !s;
-    if (!s) return;
+    const s = mode?.kind === "find" ? shownScan : null, meant = mode?.kind === "find" ? aiAsk.meant : null;
+    $("scanCard").hidden = !s && !meant;
+    $("aiMeant").hidden = !meant;
+    if (meant) put("aiMeant", `AI: “${meant.asked}” means ${meant.what}. ${meant.reason}`);
+    $("ring").hidden = !s;
+    if (!s) { put("aiPick", ""); put("aiWhy", ""); return; }
     const pick = aiAsk.pick, pickHere = pick?.scan === s;
     const key = `${s.shots.length}|${s.i}|${s.phase}|${pickHere ? pick.rel : ""}`;
     if (key !== ringKey) {
@@ -1084,7 +1151,7 @@
       : explore ? "Walking to the AI's pick" : "Found it");
     put("aiPick", pick ? `AI${pickHere ? "" : " (last time)"}: ${pick.visible ? "it's at" : "look at"} ${pick.target}` : "");
     put("aiWhy", pick ? `${pick.distance_m ? `, about ${pick.distance_m} m away` : ""}. ${pick.reason}`
-      : s.phase === "done" ? capital(s.why) : "The AI is only asked if a full turn finds nothing.");
+      : s.phase === "done" ? capital(s.why) : "The AI is only asked where to look if a full turn finds nothing.");
   }
 
   // ---- Camera feed on the display: small frames from the phone, boxes drawn on top ----
@@ -1204,6 +1271,7 @@
       if (msg.type === "waymo") return onWaymoScores(msg);
       if (msg.type === "depth") return onDepth(msg);
       if (msg.type === "ai") return onAi(msg);
+      if (msg.type === "ai-what") return onAiWhat(msg);
       if (msg.type !== "eyes") return;
 
       lastEyes = now;
