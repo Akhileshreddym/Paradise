@@ -1,23 +1,23 @@
 <!doctype html>
-<!-- Paradise "beacon": the phone you walk to. Shares its GPS location with the laptop. Needs https. -->
+<!-- Paradise "beacon": the phone that stands in for the Waymo car at pickup. Shares its GPS location
+     with the laptop. Needs https. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0a0b">
+<meta name="theme-color" content="#080b10">
 <title>Paradise · Beacon</title>
 <link rel="stylesheet" href="paradise.css">
 <script src="appearance.js"></script>
 <style>
-  /* Paradise beacon, on top of paradise.css: the laptop display's editorial vocabulary, set for one
-     narrow column. Masthead with a quiet link status; one serif statement and one inverted-ink
-     button; once sharing, the accuracy as one very large serif number, coloured by how good it is
-     (sage / amber / crimson) and nothing else. Clear of the notch and the home bar. */
+  /* Paradise beacon, on top of paradise.css: a Waymo pickup screen for one phone — a glowing teal
+     ring around a drawn car, one big headline, a single primary action, then the GPS fix as a big
+     light numeral with a status capsule and a couple of detail rows. One narrow column, clear of the
+     notch and the home bar. */
   .page {
     --gutter: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
     max-width: 480px; margin: 0 auto;
     padding: 0 var(--gutter) max(28px, env(safe-area-inset-bottom));
-    overflow-x: clip;
     min-height: 100svh; display: flex; flex-direction: column;
   }
 
@@ -29,168 +29,84 @@
   }
   .masthead .brand { gap: 10px; min-width: 0; }
   .masthead .brand-word { font-size: 11.5px; letter-spacing: 0.42em; }
-  .masthead .brand .sub { font-size: 17px; }
+  .masthead .brand .sub { font-size: 15px; }
   .masthead-right { margin-left: auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .masthead .pill { min-width: 0; min-height: 0; padding: 0; border: 0; background: none; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
-  .masthead .pill.bad { color: var(--muted); }
+  .masthead .pill { max-width: 44vw; overflow: hidden; text-overflow: ellipsis; }
   .masthead .icon-button { width: 36px; min-height: 36px; margin-right: -8px; border-color: transparent; background: transparent; color: var(--muted); }
 
-  /* ---- The statement ---- */
-  .hero { padding: 40px 0 34px; }
-  .meta { display: flex; align-items: baseline; gap: 16px; }
-  .index { font: italic 400 17px/1 var(--serif); color: var(--muted); }
-  .state { display: inline-flex; align-items: center; gap: 8px; font: 500 11px/1 var(--font); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-  .state i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-  .head {
-    margin: 22px 0 18px;
-    font: 400 clamp(56px, 17vw, 88px)/0.9 var(--serif); letter-spacing: -0.03em; text-wrap: balance;
-    animation: arrive 560ms var(--ease-out) both;
+  /* ---- The pickup screen: a glowing pin behind a drawn car, then the headline ---- */
+  .pickup { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 0 0; }
+  .pin { position: relative; width: 168px; height: 168px; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .pin::before {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle, var(--guide-soft), transparent 68%);
+    animation: pin-breathe 2.6s var(--ease-in-out) infinite;
   }
-  .head em { font-style: italic; }
-  .lede { margin: 0; max-width: 32ch; font-size: 15px; line-height: 1.5; color: var(--muted); }
-  @keyframes arrive { from { opacity: 0; transform: translateY(12px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
-  /* Before sharing: "Setup"; after: "Now", and the statement says so. */
-  .when-on { display: none; }
-  body:has(#intro[hidden]) .when-off { display: none; }
-  body:has(#intro[hidden]) .when-on { display: inline; }
-  body:has(#intro[hidden]) .head.when-on { display: block; }
-  body:has(#intro[hidden]) .hero { padding-bottom: 8px; }
-  body:has(#intro[hidden]) .state { color: var(--text); }
-  body:has(#intro[hidden]) .state i { background: var(--text); }
+  .pin::after {
+    content: ""; position: absolute; inset: 30px; border-radius: 50%;
+    box-shadow: 0 0 0 1.5px var(--guide-soft), 0 0 44px 6px var(--guide-soft);
+    transition: box-shadow 300ms var(--ease-out);
+  }
+  .pin svg { position: relative; width: 84px; height: 84px; color: var(--guide); transition: color 300ms var(--ease-out); }
+  @keyframes pin-breathe { 0%, 100% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.04); opacity: 1; } }
+  .page:has(#fix[data-state="ok"]) .pin::before { background: radial-gradient(circle, var(--go-soft), transparent 68%); }
+  .page:has(#fix[data-state="ok"]) .pin::after { box-shadow: 0 0 0 1.5px var(--go-soft), 0 0 44px 6px var(--go-soft); }
+  .page:has(#fix[data-state="ok"]) .pin svg { color: var(--go); }
+  .page:has(#fix[data-state="warn"]) .pin::before { background: radial-gradient(circle, color-mix(in srgb, var(--wait) 30%, transparent), transparent 68%); }
+  .page:has(#fix[data-state="warn"]) .pin::after { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--wait) 30%, transparent), 0 0 44px 6px color-mix(in srgb, var(--wait) 24%, transparent); }
+  .page:has(#fix[data-state="warn"]) .pin svg { color: var(--wait); }
+  .page:has(#fix[data-state="bad"]) .pin::before { background: radial-gradient(circle, var(--stop-soft), transparent 68%); }
+  .page:has(#fix[data-state="bad"]) .pin::after { box-shadow: 0 0 0 1.5px var(--stop-soft), 0 0 44px 6px var(--stop-soft); }
+  .page:has(#fix[data-state="bad"]) .pin svg { color: var(--stop); }
+
+  .headline { font: 400 clamp(32px, 8vw, 44px)/1.08 var(--font); letter-spacing: -0.02em; }
+  .lede { margin: 10px 0 0; max-width: 34ch; font-size: 14.5px; line-height: 1.5; color: var(--muted); }
 
   /* ---- Setup: the one button ---- */
-  .intro { padding-top: 6px; }
-  #start { width: 100%; min-height: 56px; border-radius: 999px; font-size: 15px; gap: 10px; }
-  .hint { margin: 16px 0 0; text-align: center; font-size: 12px; color: var(--faint); }
+  .intro { width: 100%; max-width: 320px; margin-top: 30px; }
+  #start { width: 100%; min-height: 56px; font-size: 15.5px; gap: 10px; }
+  .hint { margin: 14px 0 0; font-size: 12px; color: var(--faint); }
 
-  /* ---- The fix: one very large number; colour on the number only ---- */
-  .fix { --q: var(--muted); margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); animation: rise 420ms var(--ease-out) both; }
-  .fix[data-state="ok"] { --q: var(--sage); }
-  .fix[data-state="warn"] { --q: var(--amber); }
-  .fix[data-state="bad"] { --q: var(--crimson); }
-  .fix-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
-  .quality { display: inline-flex; align-items: center; gap: 8px; font: 500 11px/1 var(--font); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-  .quality::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--q); transition: background 300ms var(--ease-out); }
-  .quality::after { content: "Waiting"; }
-  .fix:not([data-state]) .quality::before { background: var(--faint); animation: breathe 2.4s ease-in-out infinite; }
-  .fix[data-state] .quality { color: var(--text); }
-  .fix[data-state="ok"] .quality::after { content: "Good fix"; }
-  .fix[data-state="warn"] .quality::after { content: "Rough fix"; }
-  .fix[data-state="bad"] .quality::after { content: "Poor fix"; }
-  @keyframes breathe { 50% { opacity: 0.35; } }
+  /* ---- Sharing: a status capsule, one big light numeral, the detail rows ---- */
+  .fix { width: 100%; margin-top: 30px; text-align: left; }
+  .fix .quality-row { display: flex; justify-content: center; }
+  #quality::after { content: "Searching for GPS"; }
+  #fix[data-state] #quality { color: var(--text); }
+  #fix[data-state="ok"] #quality::before { background: var(--go); box-shadow: 0 0 8px var(--go); }
+  #fix[data-state="ok"] #quality::after { content: "Sending location"; }
+  #fix[data-state="warn"] #quality::before { background: var(--wait); }
+  #fix[data-state="warn"] #quality::after { content: "Rough fix"; }
+  #fix[data-state="bad"] #quality::before { background: var(--stop); }
+  #fix[data-state="bad"] #quality::after { content: "Poor fix"; }
+
   .acc {
-    margin: 26px 0 30px; margin-left: -0.04em;
-    font: 400 clamp(96px, 30vw, 144px)/0.82 var(--serif); letter-spacing: -0.04em;
-    font-variant-numeric: tabular-nums;
-    color: var(--q); transition: color 300ms var(--ease-out);
+    margin: 18px 0 6px; text-align: center;
+    font: 400 clamp(76px, 24vw, 116px)/0.92 var(--font); letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums; color: var(--muted); transition: color 300ms var(--ease-out);
   }
-  .fix:not([data-state]) .acc { color: var(--faint); }
-  .readout { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 13.5px; }
-  #age { color: var(--text); }
-  #coords { font: 12px/1.5 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-  .scale { display: flex; gap: 18px; margin-top: 16px; font-size: 11.5px; color: var(--faint); }
-  .scale span { display: inline-flex; align-items: center; gap: 7px; }
-  .scale span::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--c); opacity: 0.8; }
+  #fix[data-state="ok"] .acc { color: var(--go); }
+  #fix[data-state="warn"] .acc { color: var(--wait); }
+  #fix[data-state="bad"] .acc { color: var(--stop); }
 
-  /* ---- A note: quiet, amber only on its dot ---- */
+  .fix .rows { margin-top: 8px; }
+  .fix .rows b { font: 500 13.5px/1 var(--font); }
+  #fix[data-state="ok"] .rows i { background: var(--go); box-shadow: 0 0 8px var(--go); }
+  #fix[data-state="warn"] .rows i { background: var(--wait); }
+  #fix[data-state="bad"] .rows i { background: var(--stop); }
+
+  /* ---- A note: quiet, amber accent ---- */
   .note {
-    display: grid; grid-template-columns: 6px minmax(0, 1fr); gap: 14px; align-items: baseline;
-    margin-top: 28px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-    font-size: 13.5px; line-height: 1.5; color: var(--text); animation: rise 240ms var(--ease-out) both;
+    width: 100%; margin-top: 22px; padding: 14px 16px; border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--wait) 12%, var(--surface)); color: var(--text);
+    font-size: 13.5px; line-height: 1.5; text-align: left;
   }
-  .note::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); transform: translateY(-2px); }
 
-  /* ---- Colophon: the name, very large and very quiet ---- */
-  .colophon { margin-top: auto; padding-top: 104px; }
-  .colophon-word { font: 400 clamp(92px, 30vw, 150px)/0.8 var(--serif); letter-spacing: -0.045em; margin-left: -0.04em; color: color-mix(in srgb, var(--text) 9%, transparent); user-select: none; }
-  .colophon-row { display: flex; justify-content: space-between; gap: 16px; padding: 18px 0 4px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .foot { margin-top: auto; padding: 28px 0 6px; text-align: center; font-size: 12px; color: var(--faint); }
 
   @media (hover: hover) and (pointer: fine) {
     .masthead .icon-button:hover { color: var(--text); background: var(--surface-2); }
   }
-  @media (min-width: 760px) {
-    .hero { padding-top: 72px; }
-  }
-
-  /* ==== Cinema: film grain, a soft vignette, the statement arriving word by word ==== */
-  /* A very fine grain over everything, shifted a few times a second like film; a vignette and a
-     faint warm key light behind everything. Both still for reduced-motion users. */
-  .film { position: fixed; inset: 0; z-index: 60; overflow: hidden; pointer-events: none; }
-  .grain {
-    position: absolute; inset: -40%; opacity: 0.045;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: 180px 180px;
-    animation: grain 0.9s steps(1) infinite;
-  }
-  :root[data-theme="light"] .grain { opacity: 0.055; }
-  @keyframes grain {
-    0% { transform: translate(0, 0); } 12% { transform: translate(-3%, -5%); } 25% { transform: translate(4%, 2%); }
-    37% { transform: translate(-6%, 4%); } 50% { transform: translate(2%, -6%); } 62% { transform: translate(-2%, 6%); }
-    75% { transform: translate(6%, -1%); } 87% { transform: translate(-5%, -3%); }
-  }
-  .vignette {
-    position: fixed; inset: 0; z-index: -1; pointer-events: none;
-    background:
-      radial-gradient(120% 60% at 50% -12%, color-mix(in srgb, var(--champagne) 7%, transparent), transparent 62%),
-      radial-gradient(150% 105% at 50% 38%, transparent 52%, rgba(0, 0, 0, 0.62) 100%);
-  }
-  :root[data-theme="light"] .vignette {
-    background:
-      radial-gradient(120% 60% at 50% -12%, color-mix(in srgb, var(--champagne) 9%, transparent), transparent 62%),
-      radial-gradient(150% 105% at 50% 38%, transparent 55%, rgba(70, 52, 24, 0.10) 100%);
-  }
-
-  /* The statement: each word rises out of a soft blur. The second statement is display:none until
-     Start, so its words play again the moment it appears. */
-  .head { animation: none; }
-  .head .w { display: inline-block; animation: word 760ms var(--ease-out) both; animation-delay: calc(90ms + var(--w, 0) * 75ms); }
-  @keyframes word { from { opacity: 0; transform: translateY(0.3em); filter: blur(10px); } to { opacity: 1; transform: none; filter: blur(0); } }
-
-  /* Colophon: the name rises from behind its hairline when it comes into view, fading downward. */
-  .colophon-word {
-    overflow: hidden; padding-top: 0.14em; margin-top: -0.14em;
-    color: color-mix(in srgb, var(--text) 11%, transparent);
-    -webkit-mask-image: linear-gradient(to bottom, #000 30%, rgba(0, 0, 0, 0.3));
-    mask-image: linear-gradient(to bottom, #000 30%, rgba(0, 0, 0, 0.3));
-  }
-  .colophon-word > span { display: block; transition: transform 1100ms var(--ease-out), opacity 1100ms var(--ease-out); }
-  .fx .colophon:not(.in) .colophon-word > span { transform: translateY(72%); opacity: 0; }
-
-  /* ==== The fix: sonar behind the number, and the number counting to each new value ==== */
-  .acc-wrap { position: relative; margin: 26px 0 30px; }
-  .acc-wrap .acc { position: relative; z-index: 1; margin: 0 0 0 -0.04em; }
-  .acc-roll { display: none; }
-  .rolling .acc-roll { display: block; }
-  .rolling #acc { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .acc-roll .pm, .acc-roll .u { display: none; }
-  .has-value .acc-roll .pm, .has-value .acc-roll .u { display: inline; }
-  .acc-roll .pm { opacity: 0.5; margin-right: 0.02em; }
-  .acc-roll .u { margin-left: 0.1em; font-size: 0.3em; font-style: italic; letter-spacing: 0; color: var(--muted); }
-
-  /* Rings tinted by the fix's quality: calm when good, quicker when it isn't; faint while waiting. */
-  .sonar { position: absolute; left: 28%; top: 50%; width: 0; height: 0; pointer-events: none; }
-  .sonar::before {
-    content: ""; position: absolute; left: -150px; top: -150px; width: 300px; height: 300px; border-radius: 50%;
-    background: radial-gradient(circle, color-mix(in srgb, var(--q) 16%, transparent), transparent 62%);
-    transition: background 400ms var(--ease-out);
-  }
-  .sonar i {
-    position: absolute; left: -130px; top: -130px; width: 260px; height: 260px; border-radius: 50%;
-    border: 1px solid var(--q); opacity: 0;
-    animation: sonar 5.4s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
-  }
-  .sonar i:nth-child(2) { animation-delay: 1.8s; }
-  .sonar i:nth-child(3) { animation-delay: 3.6s; }
-  .fix[data-state="warn"] .sonar i { animation-duration: 4.2s; }
-  .fix[data-state="bad"] .sonar i { animation-duration: 3s; }
-  .fix:not([data-state]) .sonar i { border-color: var(--faint); animation-duration: 7s; }
-  .fix:not([data-state]) .sonar::before { opacity: 0; }
-  @keyframes sonar { 0% { opacity: 0; transform: scale(0.1); } 10% { opacity: 0.5; } 100% { opacity: 0; transform: scale(1.75); } }
-  @media (prefers-reduced-motion: reduce) {
-    .sonar i:first-child { opacity: 0.22; transform: scale(0.7); }
-    .sonar i:nth-child(2) { opacity: 0.1; transform: scale(1.2); }
-  }
-  .fix[data-state="ok"] .quality::before { animation: breathe 2.8s ease-in-out infinite; }
+  @media (min-width: 760px) { .pickup { padding-top: 64px; } }
 </style>
 </head>
 <body>
@@ -203,40 +119,38 @@
     </div>
   </header>
 
-  <section class="hero" aria-label="Destination phone">
-    <div class="meta enter" style="--i: 1"><span class="index"><span class="when-off">Setup</span><span class="when-on">Now</span></span><span class="state"><i></i><span class="when-off">Destination phone</span><span class="when-on">Sharing location</span></span></div>
-    <h1 class="head when-off"><span class="w" style="--w: 0">The</span> <span class="w" style="--w: 1">destination.</span></h1>
-    <h1 class="head when-on"><span class="w" style="--w: 0">Walk</span> <span class="w" style="--w: 1">to</span> <em><span class="w" style="--w: 2">here.</span></em></h1>
-    <p class="lede enter when-off" style="--i: 7">Put this phone where the wearer should walk to. It shares its location with the laptop.</p>
-  </section>
+  <main class="pickup" aria-label="Destination phone">
+    <div class="pin" aria-hidden="true">
+      <svg viewBox="0 0 64 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 26h3.5l3.6-8.6A4 4 0 0 1 16.8 15h30.4a4 4 0 0 1 3.7 2.4L54.5 26H58a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-3"/>
+        <path d="M6 26v5a2 2 0 0 0 2 2h3"/>
+        <path d="M13 26h38"/>
+        <circle cx="19" cy="33" r="4"/>
+        <circle cx="45" cy="33" r="4"/>
+      </svg>
+    </div>
+    <h1 class="headline">Waymo pickup</h1>
+    <p class="lede">Put this phone where the wearer should walk to. It shares its location with the laptop.</p>
 
-  <main>
-    <section class="intro enter" id="intro" style="--i: 4" aria-label="Setup">
+    <section class="intro" id="intro" aria-label="Setup">
       <button id="start" class="primary">Share location <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
       <p class="hint">Outdoors, with Precise Location on, works best.</p>
     </section>
 
     <section class="fix" id="fix" hidden aria-label="GPS fix">
-      <div class="fix-meta"><span class="label">GPS accuracy</span><span class="quality" aria-hidden="true"></span></div>
-      <div class="acc-wrap">
-        <div class="sonar" aria-hidden="true"><i></i><i></i><i></i></div>
-        <div class="acc" id="acc" aria-live="polite">—</div>
-        <div class="acc acc-roll" aria-hidden="true"><span class="pm">±</span><span class="v">—</span><span class="u">m</span></div>
+      <div class="quality-row"><span class="pill" id="quality" aria-hidden="true"></span></div>
+      <div class="acc" id="acc" aria-live="polite">—</div>
+      <div class="rows">
+        <div><i></i><span>Updated</span><b id="age">Waiting for GPS…</b></div>
+        <div><i></i><span>Location</span><b id="coords"></b></div>
       </div>
-      <div class="readout"><span id="age">Waiting for GPS…</span><span id="coords"></span></div>
-      <div class="scale" aria-hidden="true"><span style="--c: var(--sage)">≤ 10 m</span><span style="--c: var(--amber)">≤ 100 m</span><span style="--c: var(--crimson)">Worse</span></div>
     </section>
 
     <section class="note" id="info" role="status" hidden></section>
-  </main>
 
-  <footer class="colophon">
-    <div class="colophon-word" aria-hidden="true"><span>Paradise</span></div>
-    <div class="colophon-row"><span>The destination phone</span><span>Keep this page open</span></div>
-  </footer>
+    <p class="foot">Keep this page open</p>
+  </main>
 </div>
-<div class="vignette" aria-hidden="true"></div>
-<div class="film" aria-hidden="true"><div class="grain"></div></div>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -309,50 +223,6 @@
       ws.send(JSON.stringify({ type: "beacon", lat: gps.lat, lon: gps.lon, acc: gps.acc, age }));
     }
   }, 1000);
-</script>
-<script>
-  // Presentation only: the accuracy counts to each new value; #acc stays the real (spoken) reading.
-  (() => {
-    document.documentElement.classList.add("fx");
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
-    const acc = document.getElementById("acc"), wrap = acc.parentElement, v = wrap.querySelector(".acc-roll .v");
-    wrap.classList.add("rolling");
-    let shown = null, target, raf = 0;
-    const paint = (n) => {
-      const text = n === null ? "—" : String(Math.round(n));
-      if (v.textContent !== text) v.textContent = text;
-      wrap.classList.toggle("has-value", n !== null);
-    };
-    const ease = (p) => 1 - Math.pow(1 - p, 4);
-    function countTo(next) {
-      cancelAnimationFrame(raf);
-      const from = shown === null ? 0 : shown;
-      if (next === null || reduce.matches || from === next) { shown = next; paint(next); return; }
-      const dur = Math.min(900, 380 + Math.abs(next - from) * 14), t0 = performance.now();
-      const step = (now) => {
-        const p = Math.min(1, (now - t0) / dur);
-        shown = p < 1 ? from + (next - from) * ease(p) : next;
-        paint(shown);
-        if (p < 1) raf = requestAnimationFrame(step);
-      };
-      raf = requestAnimationFrame(step);
-    }
-    const read = () => {
-      const m = /(\d+)/.exec(acc.textContent);
-      const next = m ? Number(m[1]) : null;
-      if (next !== target) { target = next; countTo(next); }
-    };
-    new MutationObserver(read).observe(acc, { childList: true, characterData: true, subtree: true });
-    read();
-
-    // Colophon: rises when it comes into view.
-    const colophon = document.querySelector(".colophon");
-    if ("IntersectionObserver" in window) {
-      new IntersectionObserver((entries, o) => {
-        if (entries.some((e) => e.isIntersecting)) { colophon.classList.add("in"); o.disconnect(); }
-      }, { threshold: 0.3 }).observe(colophon);
-    } else colophon.classList.add("in");
-  })();
 </script>
 </body>
 </html>

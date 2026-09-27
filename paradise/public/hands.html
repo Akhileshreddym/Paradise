@@ -1,9 +1,11 @@
 <!doctype html>
 <!-- Paradise "hands": laptop page. Drives the two wrist Joy-Cons (WebHID, so Chrome or Edge only),
-     runs all the guidance logic, and is what the room watches: the chest camera on the left; on
-     the right a dial whose arrow points where the wearer must go, the instruction, where they're
-     going, and the two wrists as the logo's two dots, lighting up as they buzz. The controls float
-     at the bottom; team tools are folded away below. -->
+     runs all the guidance logic, and is what the room watches. After Waymo's rider screen: the hero
+     is a top-down scene of what Paradise sees around the wearer (the wearer at the bottom facing up,
+     the planned path glowing to the target, the things the chest camera sees), with the instruction
+     over it and the two wrists at the wearer's sides as the logo's two dots, lighting up as they
+     buzz. Beside it: where they're going, any obstacle, the chest camera. The controls float at the
+     bottom; team tools are folded away below. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -11,7 +13,8 @@
 <title>Paradise</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='2' y='2' width='96' height='96' rx='30' fill='%23111113' stroke='%23c6c5c0' stroke-width='3'/%3E%3Ccircle cx='34.6' cy='50' r='11' fill='%23ffd60a'/%3E%3Ccircle cx='65.4' cy='50' r='11' fill='%23ffd60a'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Julius+Sans+One&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="paradise.css">
 <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
@@ -21,15 +24,15 @@
     <rect x="1.5" y="1.5" width="97" height="97" rx="30" fill="#111113" stroke="#c6c5c0" stroke-width="2"/>
     <g fill="#ffd60a"><g filter="url(#soft)" opacity=".55"><circle cx="34.6" cy="50" r="11"/><circle cx="65.4" cy="50" r="11"/></g><circle cx="34.6" cy="50" r="10.6"/><circle cx="65.4" cy="50" r="10.6"/></g>
   </symbol>
-  <symbol id="i-arrow" viewBox="0 0 100 100"><path d="M50 16 76 50H59v34H41V50H24z" stroke-linejoin="round" stroke-width="6" stroke="currentColor"/></symbol>
-  <symbol id="i-stop" viewBox="0 0 100 100"><rect x="22" y="44" width="56" height="12" rx="6"/></symbol>
-  <symbol id="i-done" viewBox="0 0 100 100"><path d="M26 52l16 16 32-34" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="i-wait" viewBox="0 0 100 100"><circle cx="30" cy="50" r="6"/><circle cx="50" cy="50" r="6"/><circle cx="70" cy="50" r="6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 100 100"><path d="M50 18 76 50H60v32H40V50H24z" stroke-linejoin="round" stroke-width="7" stroke="currentColor"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 100 100"><rect x="24" y="43" width="52" height="14" rx="7"/></symbol>
+  <symbol id="i-done" viewBox="0 0 100 100"><path d="M27 52l15 15 31-33" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-wait" viewBox="0 0 100 100"><circle cx="30" cy="50" r="7"/><circle cx="50" cy="50" r="7"/><circle cx="70" cy="50" r="7"/></symbol>
   <symbol id="i-dots" viewBox="0 0 100 100"><circle cx="36" cy="50" r="10"/><circle cx="64" cy="50" r="10"/></symbol>
 </svg>
 
-<header class="top">
-  <a class="brand" href="/" aria-label="Paradise"><svg class="brand-mark" aria-hidden="true"><use href="#mark"/></svg><span class="brand-word">Paradise</span></a>
+<header class="top bar">
+  <a class="brand" href="/" aria-label="Paradise"><span class="brand-word">Paradise</span></a>
   <div class="top-right">
     <div class="devices" role="group" aria-label="Devices">
       <span class="dev" id="phonePill" title="Chest camera">Camera</span>
@@ -45,72 +48,85 @@
 <div class="banner info" id="takeover" role="status" hidden><span>View only: another laptop page is guiding.</span><button id="takeControl" class="btn light">Take control</button></div>
 
 <main class="stage" aria-label="Live guidance">
-  <figure class="camera">
-    <div class="feed" id="feedBox">
-      <canvas id="feed" width="360" height="640" aria-label="Live chest camera feed"></canvas>
-      <div class="feed-empty"><svg class="empty-mark" aria-hidden="true"><use href="#mark"/></svg><p>Waiting for the chest camera</p><span>Open the phone link on the chest iPhone.</span></div>
-      <span class="live-tag"><i></i>Live</span>
-    </div>
-  </figure>
-
-  <section class="panel">
-    <section class="hero" id="guide" data-state="idle" data-pict="idle" aria-label="What the wearer is being told">
-      <div class="dial" aria-hidden="true">
-        <svg class="dial-ring" viewBox="0 0 200 200"><circle cx="100" cy="100" r="92"/><g class="ticks"></g></svg>
-        <svg class="dial-sym arrow" id="dialArrow"><use href="#i-arrow"/></svg>
-        <svg class="dial-sym stop"><use href="#i-stop"/></svg>
-        <svg class="dial-sym done"><use href="#i-done"/></svg>
-        <svg class="dial-sym wait"><use href="#i-wait"/></svg>
-        <svg class="dial-sym idle"><use href="#i-dots"/></svg>
-      </div>
-      <div class="hero-text">
-        <span class="state"><i></i><span id="guidanceState">Standing by</span></span>
+  <!-- The scene: what Paradise sees around the wearer, from above. Up = where the chest faces. -->
+  <section class="scene" id="guide" data-state="idle" data-pict="idle" aria-label="What the wearer is being told">
+    <canvas id="scene" aria-hidden="true"></canvas>
+    <div class="say">
+      <span class="state"><i></i><span id="guidanceState">Standing by</span></span>
+      <div class="say-row">
+        <div class="dial" aria-hidden="true">
+          <svg class="dial-sym arrow" id="dialArrow"><use href="#i-arrow"/></svg>
+          <svg class="dial-sym stop"><use href="#i-stop"/></svg>
+          <svg class="dial-sym done"><use href="#i-done"/></svg>
+          <svg class="dial-sym wait"><use href="#i-wait"/></svg>
+          <svg class="dial-sym idle"><use href="#i-dots"/></svg>
+        </div>
         <h1 class="head" id="guideHead" role="status" aria-live="polite">Ready</h1>
-        <p class="detail" id="guideDetail">Choose a destination or find an object to begin.</p>
       </div>
-      <div class="heard" id="heard" hidden></div>
-    </section>
-
-    <section class="facts" aria-label="Readings">
-      <div class="fact"><span class="k">Going to</span><span class="v" id="modeV">Nothing yet</span><span class="s num" id="modeS"></span></div>
-      <div class="fact"><span class="k">Distance</span><span class="v num" id="distV">—</span><span class="s" id="distS"></span></div>
-      <div class="fact" id="obsCard"><span class="k">Obstacle</span><span class="v" id="obsV">None</span><span class="s" id="obsS"></span></div>
-    </section>
-
-    <section class="wrists" aria-label="Wrists">
-      <div class="wrist" id="wristL"><span class="dot" aria-hidden="true"></span><div><span class="k">Left wrist</span><span class="w" id="wristLText">Standing by</span></div></div>
-      <div class="wrist" id="wristR"><span class="dot" aria-hidden="true"></span><div><span class="k">Right wrist</span><span class="w" id="wristRText">Standing by</span></div></div>
-      <div class="buzzlog" id="buzzLog" aria-live="off"></div>
-    </section>
-
-    <section class="extra ride" id="rideCard" hidden aria-label="The ride">
-      <p class="ride-now" id="ride"></p>
-      <ol class="steps" id="rideSteps"><li>Requested</li><li>Arrived</li><li>Found by the camera</li><li>At the door</li></ol>
-    </section>
-    <section class="extra scan" id="scanCard" hidden aria-label="Looking around">
-      <div class="ring" id="ring"><div class="hub" id="ringHub"></div></div>
-      <div class="scan-ai"><div class="ai" id="aiMeant" hidden></div><div class="ai"><b id="aiPick"></b><span id="aiWhy"></span></div></div>
-    </section>
+      <p class="detail" id="guideDetail">Choose a destination or find an object to begin.</p>
+    </div>
+    <div class="heard" id="heard" hidden></div>
+    <!-- The wrists, at the wearer's sides: the logo's two dots, lit as each Joy-Con buzzes (brighter = stronger). -->
+    <div class="wrist left" id="wristL"><span class="dot" aria-hidden="true"></span><span class="k">Left</span><span class="w" id="wristLText">Standing by</span></div>
+    <div class="wrist right" id="wristR"><span class="dot" aria-hidden="true"></span><span class="k">Right</span><span class="w" id="wristRText">Standing by</span></div>
+    <p class="scene-note" id="sceneNote" aria-hidden="true">Waiting for the chest camera</p>
   </section>
+
+  <aside class="side" aria-label="Readings">
+    <section class="card trip" aria-label="The trip">
+      <div class="trip-top"><span class="k">Going to</span><span class="timer num" id="modeS"></span></div>
+      <p class="trip-name" id="modeV">Nothing yet</p>
+      <div class="trip-dist"><span class="v num" id="distV">—</span><span class="s" id="distS"></span></div>
+    </section>
+
+    <section class="card obs" id="obsCard" aria-label="Obstacle">
+      <i aria-hidden="true"></i>
+      <div><span class="k">Obstacle</span><span class="v" id="obsV">None</span></div>
+      <span class="s" id="obsS"></span>
+    </section>
+
+    <section class="card cam" aria-label="Chest camera">
+      <div class="feed" id="feedBox">
+        <canvas id="feed" width="360" height="640" aria-label="Live chest camera feed"></canvas>
+        <div class="feed-empty"><svg class="empty-mark" aria-hidden="true"><use href="#mark"/></svg><p>Waiting for the chest camera</p><span>Open the phone link on the chest iPhone.</span></div>
+        <span class="live-tag"><i></i>Live</span>
+      </div>
+      <div class="cam-side">
+        <span class="k">Chest camera</span>
+        <ul class="key"><li style="--c: var(--stop)">Stop</li><li style="--c: var(--wait)">Go round</li><li style="--c: var(--guide)">Target</li></ul>
+        <span class="k sub">Wrist signals</span>
+        <div class="buzzlog" id="buzzLog" aria-live="off"></div>
+      </div>
+    </section>
+  </aside>
 </main>
 
 <div class="dock" role="toolbar" aria-label="Guidance controls">
   <div class="find">
     <label class="sr-only" for="findText">Find something</label>
     <input id="findText" placeholder="Find something…" autocomplete="off">
-    <button id="findGo" class="btn light">Find</button>
+    <button id="findGo" class="btn primary">Find</button>
   </div>
   <div class="chips" id="choices" role="group" aria-label="Go to"></div>
   <button id="stopMode" class="btn stop">Stop</button>
 </div>
 
 <section class="below" aria-label="More">
+  <section class="card extra ride" id="rideCard" hidden aria-label="The ride">
+    <p class="ride-now" id="ride"></p>
+    <ol class="steps" id="rideSteps"><li>Requested</li><li>Arrived</li><li>Found by the camera</li><li>At the door</li></ol>
+  </section>
+  <section class="card extra scan" id="scanCard" hidden aria-label="Looking around">
+    <div class="ring" id="ring"><div class="hub" id="ringHub"></div></div>
+    <div class="scan-ai"><div class="ai" id="aiMeant" hidden></div><div class="ai"><b id="aiPick"></b><span id="aiWhy"></span></div></div>
+  </section>
+
   <div class="compare">
-    <div><span class="k">Without Paradise</span><b class="num" id="beforeV">—</b><button id="beforeBtn" class="btn">Time it</button></div>
-    <div class="with"><span class="k">With Paradise</span><b class="num" id="afterV">—</b><em id="fasterV"></em></div>
+    <div class="card"><span class="k">Without Paradise</span><b class="num" id="beforeV">—</b><button id="beforeBtn" class="btn">Time it</button></div>
+    <div class="card with"><span class="k">With Paradise</span><b class="num" id="afterV">—</b><em id="fasterV"></em></div>
   </div>
 
-  <details data-key="settings" id="settings">
+  <details class="card" data-key="settings" id="settings">
     <summary>Settings</summary>
     <div class="body">
       <div class="setting"><label for="amp">Buzz strength</label><input id="amp" type="range" min="0.1" max="1" step="0.05" value="0.7"><span class="num"><span id="ampV">0.7</span></span></div>
@@ -124,7 +140,7 @@
       <label class="switchrow"><span>Follow walking routes</span><input type="checkbox" id="routeOn" class="switch" checked></label>
     </div>
   </details>
-  <details data-key="testing" id="testing">
+  <details class="card" data-key="testing" id="testing">
     <summary>Testing</summary>
     <div class="body">
       <div class="group"><span>Voice</span><div class="row">
@@ -148,24 +164,12 @@
       </div></div>
     </div>
   </details>
-  <details data-key="details">
+  <details class="card" data-key="details">
     <summary>Details</summary>
     <div class="body"><pre id="info">…</pre></div>
   </details>
   <p class="foot">Paradise · guidance by touch, for people who are blind or DeafBlind · <a href="/legend" target="_blank" rel="noopener">Buzz legend</a></p>
 </section>
-<script>
-  // The dial's tick marks (every 10°, longer every 90°), drawn once.
-  (() => {
-    const g = document.querySelector(".dial-ring .ticks");
-    let s = "";
-    for (let d = 0; d < 360; d += 10) {
-      const r = (d * Math.PI) / 180, long = d % 90 === 0, a = 92 - (long ? 12 : 6);
-      s += `<line class="${long ? "long" : ""}" x1="${100 + Math.sin(r) * 86}" y1="${100 - Math.cos(r) * 86}" x2="${100 + Math.sin(r) * (a - 6)}" y2="${100 - Math.cos(r) * (a - 6)}"/>`;
-    }
-    g.innerHTML = s;
-  })();
-</script>
 <script type="module">
   import { connectJoyCon, connectedJoyCons, JoyConLeft, JoyConRight }
     from "https://cdn.jsdelivr.net/npm/joy-con-webhid@0.11.0/+esm";
@@ -1168,6 +1172,7 @@
   let depthAround = null;  // { at, around: { distance, left, right } | null } the depth model's latest
   let detourAt = -Infinity; // last time a detour was on
   let rideStage = "", distanceShown = "—", distanceBy = "";
+  let sceneAim = null;     // { heading, distance, by, at }: where guidance is steering, for the scene only
   function resetGuidance() {
     cam = null; waymoSeen = null; yoloThing = null; lastCar = null; route = null; routeAsk.at = -Infinity;
     scan = shownScan = explore = null;
@@ -1260,6 +1265,7 @@
     }
     distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m`;
     distanceBy = distance == null ? "" : onRoute ? "route" : by;
+    sceneAim = target === null ? null : { heading: target, distance, by, at: now }; // for the scene (display only)
     if (target === null) {
       if (now >= nextPulse) { nextPulse = now + 1600; PATTERNS.search(); }
       return say(`SEARCHING: ${waiting}`);
@@ -1556,19 +1562,19 @@
   }
 
   // ---- Camera feed on the display: small frames from the phone, boxes drawn on top ----
-  // Red: obstacle in the walking path. Green: the Waymo / thing being steered to. White: anything
-  // else. Drawn at screen resolution, so the labels stay sharp on a small frame.
+  // Coral: obstacle in the walking path. Amber: in the way, to go round. Teal: the Waymo / thing
+  // being steered to. White: anything else. Drawn at screen resolution, so the labels stay sharp on a small frame.
   const feed = $("feed"), fctx = feed.getContext("2d");
   const feedImg = new Image();
   let feedBoxes = [], previewAt = -Infinity, previewCam = null;
-  const RED = "#ff453a", GREEN = "#30d158", YELLOW = "#ffd60a", WHITE = "rgba(245, 245, 247, 0.85)";
+  const RED = "#ff5f57", GREEN = "#3ad6d0", YELLOW = "#ffb547", WHITE = "rgba(238, 243, 248, 0.85)"; // coral, teal, amber, white
   const rr = (x, y, w, h, r) => (fctx.roundRect ? fctx.roundRect(x, y, w, h, r) : fctx.rect(x, y, w, h));
   function tag(text, x, y, color, px) { // a label on a coloured chip above a box (inside it, at the top edge)
-    fctx.font = `600 ${11 * px}px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif`;
+    fctx.font = `600 ${11 * px}px "Google Sans Flex", "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif`;
     const w = fctx.measureText(text).width + 12 * px, h = 20 * px, ty = y - h - 3 * px >= 0 ? y - h - 3 * px : y + 3 * px;
     fctx.fillStyle = color;
     fctx.beginPath(); rr(x, ty, w, h, 10 * px); fctx.fill();
-    fctx.fillStyle = color === RED ? "#fff" : "#111";
+    fctx.fillStyle = color === RED ? "#fff" : "#04121a";
     fctx.fillText(text, x + 6 * px, ty + 14 * px);
   }
   feedImg.onload = () => {
@@ -1681,6 +1687,217 @@
     if ((mode?.kind === "find" || mode?.kind === "waymo") && cam?.distance != null && o.distance >= cam.distance - 0.3) return false;
     return true;
   }
+
+  // ---- The scene: what Paradise sees around the wearer, from above (display only) ----
+  // After Waymo's "what the car sees" view. The wearer at the bottom, facing up (up = where the chest
+  // faces); faint range rings; the things the chest camera sees, where they are (coral: in the way);
+  // the planned path glowing from the wearer to the target, bending round a detour, turning coral
+  // and halting at a stop; a green pulse on arrival. It only reads the guidance's state, never
+  // changes it. Canvas 2D, ~30 frames a second, paused by the browser while the tab is hidden.
+  const sceneEl = $("scene"), sctx = sceneEl.getContext("2d");
+  const SCENE_FOV = 20.5; // ° either side of straight ahead the chest camera sees
+  const SCENE_RINGS = [0.5, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500]; // m
+  const scn = { w: 0, h: 0, dpr: 1, zoom: 8, aimA: 0, aimR: 0, hadAim: false, last: 0, note: "" };
+  let ink = {};
+  const rgba = (hex, a) => { const n = parseInt(String(hex).slice(1, 7), 16) || 0; return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`; };
+  function sceneFit() {
+    const r = sceneEl.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+    Object.assign(scn, { w: r.width, h: r.height, dpr });
+    const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+    if (sceneEl.width !== w || sceneEl.height !== h) { sceneEl.width = w; sceneEl.height = h; }
+    const css = getComputedStyle(document.documentElement), v = (n, d) => css.getPropertyValue(n).trim() || d;
+    ink = { teal: v("--teal", "#1ee3cf"), sky: v("--sky", "#3d8bff"), stop: v("--stop", "#ff5f57"), go: v("--go", "#34d399"),
+      text: v("--text", "#eef3f8"), muted: v("--muted", "#8b98a9"), surface: v("--surface", "#111821"), font: v("--font", "sans-serif") };
+    scn.last = 0;
+  }
+  new ResizeObserver(sceneFit).observe(sceneEl);
+  sceneFit();
+  const pill = (c, x, y, w, h) => { c.beginPath(); c.roundRect ? c.roundRect(x, y, w, h, h / 2) : c.rect(x, y, w, h); };
+  function drawScene(t) {
+    requestAnimationFrame(drawScene);
+    const { w, h, dpr } = scn;
+    if (!w || !h || t - scn.last < 32) return;
+    scn.last = t;
+    const c = sctx, now = performance.now(), TAU = Math.PI * 2;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    const state = $("guide").dataset.state, stopped = state === "stop", done = state === "done";
+    const live = now - lastEyes < 1000, compass = live && heading !== null && now - headingAt < 1000;
+    // The wearer: bottom centre (the wrist dots sit either side, placed by the CSS to match).
+    const ox = w / 2, oy = h - clamp(h * 0.14, 56, 110);
+    const R = Math.max(90, Math.min(oy - clamp(h * 0.27, 130, 210), w / 2 - 28));
+
+    // What there is to show.
+    const aim = mode && compass && sceneAim && (now - sceneAim.at < 400 || (stopped && now - sceneAim.at < 8000)) ? sceneAim : null;
+    const obs = obstacle && now - obstacle.at < OBSTACLE_HOLD ? obstacle : null;
+    const fromYolo = now - latestObjectsAt < 1500;
+    const things = !compass ? [] : fromYolo ? latestObjects.map((o) => ({ ...o, obstacle: isObstacle(o), avoid: isInTheWay(o), target: isTarget(o) }))
+      : now - previewAt < 1500 ? feedBoxes.map((b) => ({ ...b, box: [b.x1, b.y1, b.x2, b.y2] })) : [];
+    const fr = fromYolo && lastFrame ? lastFrame : previewCam?.focal && feedImg.width ? { w: feedImg.width, focal: previewCam.focal } : lastFrame;
+
+    // Zoom to what matters (the target, else what's close by), easing, on a log scale so 1 m and 40 m both fit.
+    let want = aim?.distance != null ? clamp(aim.distance * 1.35, 5, 600) : 8;
+    for (const o of things) if (o.distance != null && o.distance < 12) want = Math.max(want, Math.min(o.distance * 1.25, 12));
+    scn.zoom += (want - scn.zoom) * 0.08;
+    const Z = scn.zoom, L7 = Math.log(7);
+    const rOf = (d) => (R * Math.log1p((6 * Math.max(0, d)) / Z)) / L7;
+    const at = (a, d) => { const r = Math.min(rOf(d), R * 1.02), q = rad(a); return [ox + Math.sin(q) * r, oy - Math.cos(q) * r]; };
+
+    // Range rings, fading out with distance, labelled up the left.
+    c.lineWidth = 1; c.font = `500 11px ${ink.font}`; c.textAlign = "right"; c.textBaseline = "alphabetic";
+    let lastR = 0;
+    for (const d of SCENE_RINGS) {
+      const r = rOf(d);
+      if (r > R * 1.001) break;
+      if (r - lastR < 38) continue;
+      lastR = r;
+      const k = 1 - (r / R) * 0.6;
+      c.strokeStyle = `rgba(150, 180, 230, ${0.18 * k})`;
+      c.beginPath(); c.arc(ox, oy, r, 0, TAU); c.stroke();
+      const q = rad(-58);
+      c.fillStyle = rgba(ink.muted, 0.6 * k);
+      c.fillText(`${d} m`, ox + Math.sin(q) * r - 5, oy - Math.cos(q) * r - 5);
+    }
+
+    if (compass) {
+      // What the chest camera sees: a faint cone ahead.
+      const g = c.createRadialGradient(ox, oy, 0, ox, oy, R);
+      g.addColorStop(0, rgba(ink.sky, 0.13)); g.addColorStop(1, rgba(ink.sky, 0));
+      c.fillStyle = g;
+      c.beginPath(); c.moveTo(ox, oy); c.arc(ox, oy, R, rad(-90 - SCENE_FOV), rad(-90 + SCENE_FOV)); c.closePath(); c.fill();
+      // Magnetic north, on the outermost ring.
+      if (lastR) {
+        const q = rad(-heading), nx = ox + Math.sin(q) * lastR, ny = oy - Math.cos(q) * lastR;
+        if (nx > 12 && nx < w - 12 && ny > 12 && ny < h - 12) {
+          c.fillStyle = ink.surface; c.beginPath(); c.arc(nx, ny, 9, 0, TAU); c.fill();
+          c.fillStyle = rgba(ink.muted, 0.9); c.font = `600 10px ${ink.font}`; c.textAlign = "center"; c.textBaseline = "middle";
+          c.fillText("N", nx, ny + 0.5);
+        }
+      }
+    }
+
+    // Depth: something close ahead that YOLO can't name (a wall, a pole), as a soft band.
+    const dz = compass && $("depthOn").checked && depthAround && now - depthAround.at < 800 ? depthAround.around : null;
+    if (dz && dz.distance <= AVOID_AT) {
+      const r = rOf(dz.distance), a1 = (dz.left ?? -30) * 0.8, a2 = (dz.right ?? 30) * 0.8;
+      c.lineCap = "round"; c.lineWidth = 12;
+      c.strokeStyle = rgba(ink.stop, dz.distance <= Number($("stopDist").value) ? 0.5 : 0.26);
+      c.beginPath(); c.arc(ox, oy, r, rad(-90 + a1), rad(-90 + a2)); c.stroke();
+    }
+
+    // The things the camera sees: soft rounded blocks where they stand, facing the wearer.
+    c.font = `500 12px ${ink.font}`; c.textAlign = "center"; c.textBaseline = "alphabetic";
+    for (const o of things) {
+      if (o.distance == null || !Number.isFinite(o.angle)) continue;
+      let l = o.angle - 3, r = o.angle + 3;
+      if (o.box && fr?.focal && fr.w) { // as wide as its box, centred where the phone says it is
+        const half = clamp((deg((o.box[2] - 0.5) * fr.w, fr.focal) - deg((o.box[0] - 0.5) * fr.w, fr.focal)) / 2, 1.5, 30);
+        l = o.angle - half; r = o.angle + half;
+      }
+      const [x1, y1] = at(l, o.distance), [x2, y2] = at(r, o.distance);
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2, bw = clamp(Math.hypot(x2 - x1, y2 - y1), 18, 150), bd = clamp(bw * 0.4, 12, 28);
+      const col = o.obstacle || o.avoid ? ink.stop : o.target ? ink.teal : null;
+      c.save(); c.translate(cx, cy); c.rotate(rad(o.angle));
+      c.beginPath(); c.roundRect ? c.roundRect(-bw / 2, -bd / 2, bw, bd, Math.min(10, bd / 2)) : c.rect(-bw / 2, -bd / 2, bw, bd);
+      c.fillStyle = col ? rgba(col, o.obstacle ? 0.4 : 0.22) : "rgba(139, 152, 169, 0.2)"; c.fill();
+      c.lineWidth = 1.25; c.strokeStyle = col ? rgba(col, 0.85) : "rgba(170, 186, 206, 0.4)"; c.stroke();
+      c.restore();
+      if (!o.target) {
+        c.fillStyle = col ? rgba(col, 0.95) : rgba(ink.muted, 0.95);
+        c.fillText(`${capital(o.label)} · ${o.distance.toFixed(1)} m`, clamp(cx, 60, w - 60), Math.min(cy + bd / 2 + 16, h - 8));
+      }
+    }
+
+    // Looking round the room (find mode): the stops of the turn, done ones lit, around the wearer.
+    if (compass && mode?.kind === "find" && scan && (scan.phase === "turn" || scan.phase === "look")) {
+      const r = clamp(h - oy - 22, 46, 88);
+      for (let i = 0; i < SCAN_STOPS; i++) {
+        const q = rad(wrap180(scan.start + (i * 360) / SCAN_STOPS - heading)), x = ox + Math.sin(q) * r, y = oy - Math.cos(q) * r;
+        c.fillStyle = i < scan.i ? ink.teal : i === scan.i ? ink.text : "rgba(150, 180, 230, 0.22)";
+        c.beginPath(); c.arc(x, y, i === scan.i ? 5 : 3.5, 0, TAU); c.fill();
+        if (i === scan.i) { c.strokeStyle = rgba(ink.teal, 0.6); c.lineWidth = 2; c.beginPath(); c.arc(x, y, 10, 0, TAU); c.stroke(); }
+      }
+    }
+
+    // The path and the target.
+    if (aim) {
+      const a = wrap180(aim.heading - heading), r = Math.min(rOf(aim.distance ?? Z * 0.62), R);
+      if (!scn.hadAim) { scn.aimA = a; scn.aimR = r; }
+      else { scn.aimA += wrap180(a - scn.aimA) * 0.22; scn.aimR += (r - scn.aimR) * 0.18; }
+      scn.hadAim = true;
+      const q = rad(scn.aimA);
+      const T = [clamp(ox + Math.sin(q) * scn.aimR, 26, w - 26), clamp(oy - Math.cos(q) * scn.aimR, 26, h - 20)];
+      const S = [ox, oy - 22];
+      const unit = (p, q2) => { const dx = q2[0] - p[0], dy = q2[1] - p[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l, l]; };
+      const path = new Path2D();
+      path.moveTo(S[0], S[1]);
+      const D = detour && !stopped && !done ? at(wrap180(detour.heading - heading), Math.min((detour.distance ?? 1) + 1, Z * 0.7)) : null;
+      if (D) { // out along the detour heading, past what's in the way, then round to the target
+        const [ux, uy] = unit(S, T), l1 = unit(S, D)[2], l2 = unit(D, T)[2];
+        path.bezierCurveTo(S[0], S[1] - l1 * 0.4, D[0] - ux * l1 * 0.3, D[1] - uy * l1 * 0.3, D[0], D[1]);
+        path.bezierCurveTo(D[0] + ux * l2 * 0.35, D[1] + uy * l2 * 0.35, T[0], T[1] + 0, T[0], T[1]);
+      } else { // leaves straight ahead (where the chest faces), curving onto the target
+        const [, , L] = unit(S, T), up = L * 0.42 * clamp((S[1] - T[1]) / L * 0.5 + 0.5, 0.15, 1);
+        path.bezierCurveTo(S[0], S[1] - up, T[0] + (S[0] - T[0]) * 0.25, T[1] + (S[1] - up - T[1]) * 0.25, T[0], T[1]);
+      }
+      const col = stopped ? ink.stop : done ? ink.go : null;
+      const grad = col || (() => { const g = c.createLinearGradient(S[0], S[1], T[0], T[1]); g.addColorStop(0, ink.teal); g.addColorStop(1, ink.sky); return g; })();
+      c.lineCap = "round"; c.lineJoin = "round"; c.strokeStyle = grad;
+      if (stopped) { // halted: the plan dimmed, a short coral line up to a stop bar at the obstacle
+        c.globalAlpha = 0.22; c.lineWidth = 4; c.setLineDash([2, 9]); c.stroke(path); c.setLineDash([]);
+        const hy = oy - Math.max(34, rOf(obs?.distance ?? 0.6) - 6);
+        c.globalAlpha = 0.16; c.lineWidth = 20; c.beginPath(); c.moveTo(S[0], S[1]); c.lineTo(ox, hy); c.stroke();
+        c.globalAlpha = 1; c.lineWidth = 5; c.stroke();
+        c.lineWidth = 6; c.beginPath(); c.moveTo(ox - 24, hy - 6); c.lineTo(ox + 24, hy - 6); c.stroke();
+      } else {
+        for (const [lw, al] of [[24, 0.09], [12, 0.2], [5, 1]]) { c.globalAlpha = al; c.lineWidth = lw; c.stroke(path); }
+        if (state === "go") { // walking: light running along it, toward the target
+          c.globalAlpha = 0.5; c.strokeStyle = "#ffffff"; c.lineWidth = 2; c.setLineDash([3, 22]); c.lineDashOffset = -(now / 40) % 25;
+          c.stroke(path); c.setLineDash([]); c.lineDashOffset = 0;
+        }
+      }
+      c.globalAlpha = 1;
+      // The target: a ring, and on arrival a green pulse.
+      const pc = col || ink.teal;
+      if (done) for (const off of [0, 0.5]) {
+        const p = ((now / 1600) + off) % 1;
+        c.strokeStyle = rgba(ink.go, 0.55 * (1 - p)); c.lineWidth = 2; c.beginPath(); c.arc(T[0], T[1], 12 + p * 46, 0, TAU); c.stroke();
+      }
+      c.fillStyle = rgba(pc, 0.16); c.beginPath(); c.arc(T[0], T[1], 19, 0, TAU); c.fill();
+      c.fillStyle = ink.surface; c.beginPath(); c.arc(T[0], T[1], 10, 0, TAU); c.fill();
+      c.strokeStyle = pc; c.lineWidth = 3.5; c.stroke();
+      c.fillStyle = ink.text; c.beginPath(); c.arc(T[0], T[1], 3.5, 0, TAU); c.fill();
+      // Its name and distance on a chip beside it.
+      const name = aim.by === "explore" && explore ? `Looking: ${explore.target}` : aim.by === "handle" ? "Door handle"
+        : mode.kind === "find" ? capital(mode.what || "") : mode.kind === "test" ? "Test heading" : mode.name;
+      const dist = aim.distance != null ? distanceShown : "";
+      c.textBaseline = "middle"; c.textAlign = "left";
+      c.font = `600 13px ${ink.font}`; const nw = c.measureText(name).width;
+      c.font = `400 13px ${ink.font}`; const dw = dist ? c.measureText(dist).width + 8 : 0;
+      const cw = nw + dw + 26, ch = 30, right = T[0] >= ox ? T[0] + 24 + cw < w - 12 : T[0] - 24 - cw < 12; // outward from the wearer, when it fits
+      const cx = right ? T[0] + 24 : T[0] - 24 - cw, cy = clamp(T[1] - ch / 2, 8, h - ch - 8);
+      pill(c, cx, cy, cw, ch); c.fillStyle = "rgba(12, 17, 24, 0.9)"; c.fill();
+      c.lineWidth = 1; c.strokeStyle = rgba(pc, 0.5); c.stroke();
+      c.fillStyle = ink.text; c.font = `600 13px ${ink.font}`; c.fillText(name, cx + 13, cy + ch / 2 + 0.5);
+      if (dist) { c.fillStyle = ink.muted; c.font = `400 13px ${ink.font}`; c.fillText(dist, cx + 13 + nw + 8, cy + ch / 2 + 0.5); }
+    } else scn.hadAim = false;
+
+    // The wearer: a puck with a chevron facing up, in a soft halo.
+    const wc = stopped ? ink.stop : done ? ink.go : ink.teal;
+    const halo = c.createRadialGradient(ox, oy, 0, ox, oy, 66);
+    halo.addColorStop(0, rgba(wc, compass ? 0.24 : 0.08)); halo.addColorStop(1, rgba(wc, 0));
+    c.fillStyle = halo; c.beginPath(); c.arc(ox, oy, 66, 0, TAU); c.fill();
+    c.fillStyle = ink.surface; c.beginPath(); c.arc(ox, oy, 21, 0, TAU); c.fill();
+    c.lineWidth = 1.5; c.strokeStyle = compass ? rgba(wc, 0.55) : "rgba(238, 243, 248, 0.14)"; c.stroke();
+    c.beginPath(); c.moveTo(ox, oy - 10.5); c.lineTo(ox + 8.5, oy + 8.5); c.lineTo(ox, oy + 4); c.lineTo(ox - 8.5, oy + 8.5); c.closePath();
+    c.lineJoin = "round"; c.lineWidth = 2.5; c.fillStyle = c.strokeStyle = compass ? ink.text : rgba(ink.muted, 0.7); c.fill(); c.stroke();
+
+    const n = things.length;
+    const note = !live ? (lastEyes < 0 ? "Waiting for the chest camera" : "The chest camera went quiet") : !compass ? "Waiting for the chest compass"
+      : `Up is where the chest faces · ${n ? `${n} thing${n > 1 ? "s" : ""} in view` : "nothing in view"}`;
+    if (note !== scn.note) { scn.note = note; $("sceneNote").textContent = note; }
+  }
+  requestAnimationFrame(drawScene);
 
   // ---- Link to the phones (WebSocket relay in server.js) ----
   let phoneWs = null;

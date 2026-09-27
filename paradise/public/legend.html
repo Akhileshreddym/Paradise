@@ -1,9 +1,9 @@
 <!doctype html>
 <!-- Paradise "legend": what every buzz means, for the team, onlookers and the wearer's first practice.
-     ▶ shows a buzz's rhythm on the two wrist tiles; with the laptop page open in this same browser
-     and no mode on, it plays on the Joy-Cons too (hands.html listens on a BroadcastChannel, which
-     only reaches this browser's own tabs). Laid out like a printed care guide: a statement, a key,
-     the two wrists pinned while reading, then every buzz as numbered chapters. -->
+     ▶ shows a buzz's rhythm on the two wrist dots; with the laptop page open in this same browser and
+     no mode on, it plays on the Joy-Cons too (hands.html listens on a BroadcastChannel, which only
+     reaches this browser's own tabs). Laid out like a Waymo-app reference: a plain heading, a short
+     key, the two wrists pinned above the list while playing, then every buzz as a rounded card. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -12,306 +12,146 @@
 <link rel="stylesheet" href="paradise.css">
 <script src="appearance.js"></script>
 <style>
-  /* The same editorial language as the laptop page (dashboard.css): masthead, a huge serif
-     statement, hairline-topped columns, numbered chapters, a faint colophon. Colour only where it
-     means something: champagne = a wrist buzzing now, lilac = a high buzz, amber = a low one. */
-  .legend-page { --page: 1320px; --gutter: 40px; }
-  .measure { max-width: var(--page); margin: 0 auto; padding-inline: var(--gutter); }
-  main { counter-reset: chapter; }
+  /* Paradise legend, on top of paradise.css: masthead, one short intro and a key, the two wrists
+     pinned while reading, then every buzz as a rounded card — a pictogram, its name and meaning, a
+     timing strip (two lanes, rounded pulses), and a capsule Play button. Good from 390px to 1440px. */
+  .legend-page { --gutter: 20px; }
+  .measure { max-width: 920px; margin: 0 auto; padding-inline: var(--gutter); }
 
   /* ---- Masthead ---- */
-  .masthead { height: 68px; display: flex; align-items: center; gap: 22px; border-bottom: 1px solid var(--line); }
-  .masthead .brand-word { font-size: 12px; letter-spacing: 0.42em; }
-  .tagline { font: italic 400 16px/1 var(--serif); color: var(--muted); white-space: nowrap; }
-  .masthead-right { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 14px; }
-  .masthead .pill {
-    display: block; min-width: 0; min-height: 0; padding: 0; border: 0; background: none;
-    font-size: 12px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis;
-  }
-  .masthead .pill::before { display: inline-block; margin-right: 8px; vertical-align: 1px; }
+  .masthead { height: 60px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); }
+  .masthead .brand-word { font-size: 11.5px; letter-spacing: 0.42em; }
+  .tagline { font: 500 14px/1 var(--font); color: var(--muted); white-space: nowrap; }
+  .masthead-right { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 12px; }
+  .masthead .pill { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
   .sep { width: 1px; height: 16px; flex: none; background: var(--line-strong); }
   .masthead .icon-button { width: 32px; min-height: 32px; flex: none; border-color: transparent; background: transparent; color: var(--muted); }
 
-  /* ---- Opening: the statement, and how to read a strip ---- */
-  .opening { padding-top: 64px; padding-bottom: 88px; }
-  .meta { display: flex; align-items: baseline; gap: 18px; }
-  .index { font: italic 400 17px/1 var(--serif); color: var(--muted); }
-  .state { display: inline-flex; align-items: center; gap: 8px; font: 500 11px/1 var(--font); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-  .state i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-  .statement {
-    margin: 30px 0 0; max-width: 12ch;
-    font: 400 clamp(64px, 10.5vw, 160px)/0.9 var(--serif); letter-spacing: -0.03em; text-wrap: balance;
-    animation: arrive 620ms var(--ease-out) both;
-  }
-  .statement em { font-style: italic; }
-  @keyframes arrive { from { opacity: 0; transform: translateY(12px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+  /* ---- Opening: one heading, one short intro, the key ---- */
+  .opening { padding: 32px 0 28px; }
+  .opening h1 { font-size: clamp(30px, 6vw, 40px); }
+  .opening .lede { margin: 8px 0 0; max-width: 56ch; font-size: 15px; color: var(--muted); }
+  .brief { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px 48px; margin-top: 22px; align-items: start; }
+  .intro p { margin: 0; max-width: 52ch; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
+  .intro p + p { margin-top: 10px; }
+  .intro strong { font-weight: 600; color: var(--text); }
 
-  .brief { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 40px clamp(40px, 7vw, 120px); margin-top: 64px; align-items: start; }
-  .intro p { margin: 0; max-width: 44ch; font-size: 17px; line-height: 1.55; color: var(--muted); }
-  .intro p + p { margin-top: 14px; font-size: 14px; max-width: 52ch; }
-  .intro strong { font-weight: 400; color: var(--text); }
-
-  .key { padding-top: 16px; border-top: 1px solid var(--line); }
-  .key dl { margin: 14px 0 0; display: grid; grid-template-columns: 44px minmax(0, 1fr); }
-  .key dt, .key dd { display: flex; align-items: center; min-height: 40px; border-top: 1px solid var(--line); }
-  .key dt:first-of-type, .key dd:first-of-type { border-top: 0; }
-  .key dd { margin: 0; font-size: 13.5px; color: var(--muted); }
-  .key dd b { margin-right: 6px; font-weight: 400; color: var(--text); }
-  .key .letter { font: italic 400 20px/1 var(--serif); color: var(--muted); }
+  .key .label { display: block; margin-bottom: 12px; }
+  .key dl { margin: 0; display: grid; grid-template-columns: 30px minmax(0, 1fr); row-gap: 9px; }
+  .key dt, .key dd { display: flex; align-items: center; min-height: 22px; }
+  .key dt { font: 600 13px/1 var(--font); color: var(--guide); }
+  .key dd { margin: 0; font-size: 13px; color: var(--muted); }
+  .key dd b { margin-right: 5px; font-weight: 500; color: var(--text); }
   .swatch { display: flex; gap: 2px; }
-  .swatch i { width: 26px; height: 7px; border-radius: 1.5px; background: var(--text); }
-  .swatch.high i { background: var(--lilac); }
-  .swatch.low i { background: var(--amber); }
+  .swatch i { width: 22px; height: 8px; border-radius: 4px; background: var(--guide); }
+  .swatch.high i { background: var(--sky); }
+  .swatch.low i { background: var(--wait); }
   .swatch.soft i { width: 8px; }
-  .swatch.soft i:nth-child(1) { opacity: 0.3; }
-  .swatch.soft i:nth-child(2) { opacity: 0.65; }
-  .key .foot { margin: 12px 0 0; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--faint); }
+  .swatch.soft i:nth-child(1) { opacity: 0.35; }
+  .swatch.soft i:nth-child(2) { opacity: 0.7; }
+  .key .foot { margin: 12px 0 0; font-size: 12px; color: var(--faint); }
 
-  .enter { animation: arrive 760ms var(--ease-out) both; animation-delay: calc(160ms + var(--i, 0) * 110ms); }
-
-  /* ---- The two wrists, pinned while reading. Each is a label, an italic letter and a hairline;
-     the hairline turns champagne while that wrist buzzes, brighter for a stronger buzz. The page's
-     script sets that colour inline as the tile's background: here the background is clipped to the
-     tile's 2px content box, so the colour lands on the hairline only. On is instant, off eases. ---- */
+  /* ---- The two wrists, pinned while reading: the logo's two dots, glowing while buzzing ---- */
   .preview {
     position: sticky; top: 0; z-index: 5;
-    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
     -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
     border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
   }
-  .preview .measure {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
-    align-items: end; gap: 40px; padding-block: 18px 20px;
+  .preview .measure { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr); align-items: center; gap: 16px; padding-block: 14px; }
+  .wrist { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .wrist.right { justify-content: flex-end; flex-direction: row-reverse; }
+  .wrist-dot {
+    width: 20px; height: 20px; border-radius: 50%; flex: none;
+    background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line-strong);
+    transition: background-color 260ms var(--ease-out), box-shadow 260ms var(--ease-out);
   }
-  .wrist {
-    position: relative; height: 44px; padding-top: 42px;
-    background-color: var(--line-strong);
-    -webkit-background-clip: content-box !important; background-clip: content-box !important;
-    transition: background-color 380ms var(--ease-out);
-  }
-  .wrist.on { transition: none; }
-  .wrist-top { position: absolute; inset: 0 0 auto; display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
-  .wrist.right .wrist-top { flex-direction: row-reverse; }
-  .wrist .label { transition: color 380ms var(--ease-out); }
-  .wrist-letter { font: italic 400 30px/1 var(--serif); color: var(--faint); transition: color 380ms var(--ease-out); }
-  .wrist.on .wrist-letter { color: var(--champagne); transition: none; }
+  .wrist.on .wrist-dot { transition: none; box-shadow: 0 0 18px 3px color-mix(in srgb, var(--brand-yellow) 65%, transparent); }
+  .wrist .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px/1 var(--font); color: var(--muted); transition: color 260ms var(--ease-out); }
   .wrist.on .label { color: var(--text); transition: none; }
-
   .now {
-    min-width: 0; min-height: 1.35em; text-align: center;
-    font: italic 400 19px/1.35 var(--serif); color: var(--text); align-self: center;
+    min-width: 0; text-align: center; font: 500 14px/1.3 var(--font); color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .now:empty::before { content: "Press play on any buzz to watch it here"; color: var(--faint); }
+  .now:empty::before { content: "Press play on any buzz to watch it here"; color: var(--faint); font-weight: 400; }
 
-  /* ---- Chapters: one per group of buzzes (the script builds them) ---- */
-  #groups { padding-bottom: 0; }
-  .group { margin: 0; padding: 104px 0 0; background: none; border: 0; border-radius: 0; }
-  .group > .label, .chapter-head {
-    display: flex; align-items: baseline; gap: 8px 20px; margin: 0 0 8px; padding-top: 22px;
-    border-top: 1px solid var(--line);
-    font: 400 40px/1.05 var(--serif); letter-spacing: -0.015em; text-transform: none; color: var(--text);
-  }
-  .group > .label::before, .chapter-head::before {
-    counter-increment: chapter; content: counter(chapter, decimal-leading-zero);
-    flex: none; font: 500 11px/1 var(--mono); letter-spacing: 0; color: var(--faint);
-  }
-  .chapter-head h2 { font: inherit; letter-spacing: inherit; }
+  /* ---- Groups: plain headings ---- */
+  #groups { padding: 36px 0 8px; }
+  .group + .group { margin-top: 36px; }
+  .group > h2 { margin-bottom: 14px; }
 
-  /* An entry: name and where, what it means, its rhythm, a play button. */
+  /* ---- An item: a rounded card with a pictogram, name + meaning, a timing strip, a Play capsule ---- */
   .item {
-    position: relative; display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 4fr) minmax(220px, 290px) 40px;
-    grid-template-rows: auto 1fr; column-gap: 40px; align-items: start;
-    padding: 30px 0; border-top: 1px solid var(--line);
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) minmax(200px, 260px) 44px;
+    column-gap: 18px; align-items: center;
   }
-  .group > .label + .item { border-top: 0; }
-  .item > div { display: contents; }
-  .item h3 { grid-column: 1; grid-row: 1; margin: 0; font: 400 30px/1.05 var(--serif); letter-spacing: -0.01em; }
-  .item .where { grid-column: 1; grid-row: 2; margin-top: 12px; font: 500 10.5px/1.6 var(--font); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-  .item p { grid-column: 2; grid-row: 1 / 3; margin: 3px 0 0; max-width: 56ch; font-size: 14px; line-height: 1.6; color: var(--muted); }
-  .item > svg { grid-column: 3; grid-row: 1 / 3; align-self: center; display: block; width: 100%; height: auto; overflow: visible; }
-  .item > .play { grid-column: 4; grid-row: 1 / 3; align-self: center; }
+  .item .glyph {
+    width: 44px; height: 44px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-2); color: var(--guide);
+  }
+  .item .glyph svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .item h3 { margin: 0; font: 500 15.5px/1.3 var(--font); }
+  .item .where { margin-top: 2px; font: 500 10.5px/1.5 var(--font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+  .item p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+  .item > svg { width: 100%; height: auto; overflow: visible; display: block; }
 
-  /* The one that is playing: a champagne point beside its name. */
-  .item h3 { position: relative; }
-  .item h3::before {
-    content: ""; position: absolute; left: -22px; top: 0.42em; width: 6px; height: 6px;
-    border-radius: 50%; background: var(--champagne); opacity: 0; transition: opacity 240ms var(--ease-out);
-  }
-  .item.playing h3::before { opacity: 1; transition: none; }
+  .item.playing .glyph { background: var(--guide-soft); color: var(--guide); }
+  .item.playing h3 { color: var(--guide); }
 
   .play {
-    width: 40px; min-height: 40px; height: 40px; padding: 0; border-radius: 50%;
-    background: transparent; border: 1px solid var(--line-strong); color: var(--text);
+    width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%;
+    background: var(--surface-2); color: var(--text);
   }
   .play svg { width: 11px; height: 11px; margin-left: 2px; fill: currentColor; }
-  .item.playing .play { border-color: var(--champagne); color: var(--champagne); }
+  .item.playing .play { background: var(--path); color: #04121a; box-shadow: var(--glow); }
 
-  /* The rhythm strips: faint tracks, pulses in the text colour, lilac = high, amber = low. */
-  .item svg .lane { font: italic 400 12px var(--serif); fill: var(--faint); }
-  .item svg .track { fill: color-mix(in srgb, var(--text) 5%, transparent); rx: 1.5px; }
-  .item svg .pulse { fill: var(--text); rx: 1.5px; }
-  .item svg .pulse.high { fill: var(--lilac); }
-  .item svg .pulse.low { fill: var(--amber); }
-  .item svg .tick { font: 400 7.5px var(--mono); fill: var(--faint); }
-  .item svg .head { stroke: var(--champagne); stroke-width: 1; opacity: 0; }
-
-  /* ---- Notes: the last chapter, quiet ---- */
-  .notes { padding-top: 104px; }
-  .notes ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 64px; margin: 24px 0 0; padding: 0; list-style: none; }
-  .notes li { padding: 18px 0 22px; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.6; color: var(--muted); }
-  .notes strong { font-weight: 400; color: var(--text); }
-  .notes em { font: italic 400 1.14em/1 var(--serif); color: var(--text); }
-
-  /* ---- Colophon: the name, very large and very quiet ---- */
-  .colophon { margin-top: 150px; overflow: hidden; }
-  .colophon-word { font: 400 clamp(120px, 21vw, 320px)/0.8 var(--serif); letter-spacing: -0.045em; color: color-mix(in srgb, var(--text) 9%, transparent); user-select: none; margin-left: -0.04em; }
-  .colophon-row { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 22px 0 48px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
-  .colophon-row a { transition: color 200ms var(--ease-out); }
-
-  /* ================= Cinema: grain, vignette, reveals, the performance ================= */
-
-  /* Film grain (very fine, shifting) and a soft vignette, over everything, never in the way. */
-  body::before, body::after { content: ""; position: fixed; pointer-events: none; }
-  body::before {
-    inset: 0; z-index: 59;
-    background: radial-gradient(120% 90% at 50% 38%, transparent 58%, rgba(0, 0, 0, 0.42) 100%);
-  }
-  :root[data-theme="light"] body::before { background: radial-gradient(120% 90% at 50% 38%, transparent 62%, rgba(40, 30, 15, 0.07) 100%); }
-  body::after {
-    inset: -120px; z-index: 60; opacity: 0.06;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: 200px 200px;
-    animation: grain 900ms steps(6) infinite;
-  }
-  :root[data-theme="light"] body::after { opacity: 0.045; mix-blend-mode: multiply; }
-  @keyframes grain {
-    0% { transform: translate(0, 0); } 20% { transform: translate(-43px, 27px); } 40% { transform: translate(31px, -52px); }
-    60% { transform: translate(-67px, -18px); } 80% { transform: translate(58px, 41px); } 100% { transform: translate(-12px, 66px); }
-  }
-
-  /* The statement, letter by letter: each one rises out of a blur. */
-  .statement.split { animation: none; }
-  .statement .w { display: inline-block; white-space: nowrap; }
-  .statement .ch { display: inline-block; animation: letter 1000ms var(--ease-out) both; animation-delay: calc(90ms + var(--c) * 34ms); }
-  .statement em .ch { animation-duration: 1300ms; }
-  @keyframes letter { from { opacity: 0; transform: translateY(0.3em); filter: blur(14px); } to { opacity: 1; transform: none; filter: none; } }
-
-  /* Reveals on scroll (the script adds .rv, then .in as each one comes into view). */
-  .rv { opacity: 0; transform: translateY(16px); }
-  .rv.in { opacity: 1; transform: none; transition: opacity 800ms var(--ease-out) var(--rd, 0ms), transform 900ms var(--ease-out) var(--rd, 0ms); }
-  .rv.hl { position: relative; border-top-color: transparent; }
-  .rv.hl::after {
-    content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 1px; background: var(--line-strong);
-    transform: scaleX(0); transform-origin: left; transition: transform 1400ms var(--ease-out) calc(var(--rd, 0ms) + 80ms);
-  }
-  .rv.hl.in::after { transform: scaleX(1); }
-
-  /* The wrists perform: a bloom off the hairline on each buzz, the letter glowing, a live trace. */
-  .wrist-letter { transition: color 380ms var(--ease-out), text-shadow 700ms var(--ease-out); }
-  .wrist.on .wrist-letter { text-shadow: 0 0 18px color-mix(in srgb, var(--champagne) 60%, transparent), 0 0 42px color-mix(in srgb, var(--champagne) 25%, transparent); }
-  .wrist .bloom {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px; pointer-events: none;
-    background: var(--champagne); opacity: 0;
-    animation: bloom 760ms var(--ease-out) forwards;
-  }
-  .wrist.left .bloom { transform-origin: right center; }
-  .wrist.right .bloom { transform-origin: left center; }
-  @keyframes bloom {
-    0% { opacity: calc(0.55 * var(--s, 1)); transform: scale(0.35, 1); filter: blur(1px); }
-    100% { opacity: 0; transform: scale(1, 10); filter: blur(8px); }
-  }
-  .wrist .wave { position: absolute; left: 0; bottom: -11px; width: 100%; height: 24px; pointer-events: none; }
-
-  /* The strip that's playing: a glowing playhead with a champagne wake; pulses strike as it passes. */
-  .item svg .head { stroke-width: 1.25; stroke-linecap: round; filter: drop-shadow(0 0 3px var(--champagne)); }
-  .item svg .trail { pointer-events: none; opacity: 0; transition: opacity 500ms var(--ease-out); }
-  .item svg .pulse { transition: fill-opacity 600ms var(--ease-out); }
-  .item.playing svg .pulse:not(.lit) { fill-opacity: 0.4; transition: fill-opacity 200ms var(--ease-out); }
-  .item svg .pulse.lit { animation: strike 900ms var(--ease-out) both; }
-  @keyframes strike {
-    0% { fill: var(--champagne); filter: drop-shadow(0 0 5px var(--champagne)); }
-    100% { filter: drop-shadow(0 0 0 transparent); }
-  }
-  .pd-defs .t0 { stop-color: var(--champagne); stop-opacity: 0; }
-  .pd-defs .t1 { stop-color: var(--champagne); stop-opacity: 0.3; }
-  .pd-defs .s0, .pd-defs .s2 { stop-color: var(--text); stop-opacity: 0; }
-  .pd-defs .s1 { stop-color: var(--text); stop-opacity: 0.13; }
-  .item svg .sheen { pointer-events: none; opacity: 0; }
-  .item svg .track { transition: fill 400ms var(--ease-out); }
-  .item h3 { transition: transform 500ms var(--ease-out); }
-  .item.playing .play { box-shadow: 0 0 0 4px var(--champagne-soft), 0 0 24px color-mix(in srgb, var(--champagne) 22%, transparent); }
-  .play { transition: border-color 240ms var(--ease-out), color 240ms var(--ease-out), box-shadow 500ms var(--ease-out), transform 160ms var(--ease-out); }
-  .play:active { transform: scale(0.94); }
-
-  /* The colophon: the name, with a slow light passing over it. */
-  .colophon-word {
-    --c0: color-mix(in srgb, var(--text) 9%, transparent);
-    --c1: color-mix(in srgb, var(--text) 24%, transparent);
-    padding-block: 0.14em 0.04em; margin-block: -0.14em -0.04em;
-    color: transparent;
-    background: linear-gradient(100deg, var(--c0) 0%, var(--c0) 42%, var(--c1) 50%, var(--c0) 58%, var(--c0) 100%) 0 0 / 300% 100% no-repeat;
-    -webkit-background-clip: text; background-clip: text;
-    animation: shimmer 11s var(--ease-in-out) infinite;
-  }
-  @keyframes shimmer { 0% { background-position: 100% 0; } 55%, 100% { background-position: 0% 0; } }
-
-  @media (hover: hover) and (pointer: fine) {
-    .item:hover svg .track { fill: color-mix(in srgb, var(--text) 9%, transparent); }
-    .item:hover:not(.playing) svg .sheen { animation: sheen 1200ms var(--ease-out) both; }
-    .item:hover h3 { transform: translateX(4px); }
-    @keyframes sheen { 0% { opacity: 0; transform: translateX(0); } 18% { opacity: 1; } 100% { opacity: 0; transform: translateX(250px); } }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    body::after { animation: none; }
-    .rv { opacity: 1; transform: none; }
-    .item:hover h3 { transform: none; }
-  }
+  /* ---- The strip: rounded tracks, pulses as rounded capsules; sky = high, amber = low ---- */
+  .item svg .lane { font: 500 9px var(--font); fill: var(--faint); }
+  .item svg .track { fill: var(--surface-2); }
+  .item svg .pulse { fill: var(--guide); }
+  .item svg .pulse.high { fill: var(--sky); }
+  .item svg .pulse.low { fill: var(--wait); }
+  .item svg .tick { font: 400 7px var(--mono); fill: var(--faint); }
+  .item svg .head { stroke: var(--brand-yellow); stroke-width: 1.4; stroke-linecap: round; opacity: 0; }
 
   @media (hover: hover) and (pointer: fine) {
     .masthead .icon-button:hover { color: var(--text); background: var(--surface-2); }
-    .play:hover { background: transparent; border-color: var(--text); }
-    .item.playing .play:hover { border-color: var(--champagne); }
+    .play:hover { background: var(--surface-3); }
+    .item.playing .play:hover { filter: brightness(1.08); }
   }
   @media (pointer: coarse) { .play { width: 44px; height: 44px; min-height: 44px; } }
 
+  /* ---- Notes: same plain heading, a two-column list ---- */
+  .notes { padding: 40px 0 8px; }
+  .notes ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; margin: 14px 0 0; padding: 0; list-style: none; }
+  .notes li { padding: 14px 0; border-top: 1px solid var(--line); font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+  .notes strong { font-weight: 600; color: var(--text); }
+  .notes em { font-style: normal; font-weight: 500; color: var(--text); }
+
+  .colophon {
+    margin-top: 44px; padding: 22px 0 40px; border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 16px;
+    font-size: 12.5px; color: var(--muted);
+  }
+
   /* ---- Smaller screens ---- */
-  @media (max-width: 1100px) {
-    .item { grid-template-columns: minmax(0, 1fr) minmax(200px, 260px) 40px; grid-template-rows: auto auto 1fr; }
-    .item p { grid-column: 1; grid-row: 3; margin-top: 12px; }
-    .item > svg, .item > .play { grid-row: 1 / 4; }
-    .item > svg { grid-column: 2; }
-    .item > .play { grid-column: 3; }
-  }
-  @media (max-width: 860px) {
-    .legend-page { --gutter: 20px; }
-    .masthead { gap: 12px; }
-    .brief { grid-template-columns: minmax(0, 1fr); margin-top: 48px; }
+  @media (max-width: 900px) {
+    .brief { grid-template-columns: minmax(0, 1fr); }
     .notes ul { grid-template-columns: minmax(0, 1fr); }
-    .preview .measure { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 28px; padding-block: 8px 12px; }
-    .now { grid-column: 1 / -1; grid-row: 2; font-size: 16px; }
-    .wrist.right { grid-column: 2; grid-row: 1; }
-    .item h3::before { left: -13px; }
   }
-  @media (max-width: 640px) {
-    .masthead .sep { display: none; }
-    .masthead-right { gap: 8px; }
-    .opening { padding-top: 44px; padding-bottom: 64px; }
-    .statement { margin-top: 22px; font-size: clamp(56px, 18vw, 84px); }
-    .intro p { font-size: 16px; }
-    .item { grid-template-columns: minmax(0, 1fr) 44px; grid-template-rows: auto auto auto auto; column-gap: 16px; padding: 26px 0 28px; }
-    .item > svg { grid-column: 1 / -1; grid-row: 1; max-width: 360px; margin-bottom: 22px; }
-    .item h3 { grid-column: 1; grid-row: 2; font-size: 27px; }
-    .item .where { grid-column: 1; grid-row: 3; margin-top: 10px; }
-    .item p { grid-column: 1 / -1; grid-row: 4; margin-top: 12px; }
-    .item > .play { grid-column: 2; grid-row: 2 / 4; align-self: start; }
-    .group, .notes { padding-top: 80px; }
-    .group > .label, .chapter-head { font-size: 32px; }
-    .colophon { margin-top: 110px; }
-    .colophon-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  @media (max-width: 760px) {
+    .item { grid-template-columns: 40px minmax(0, 1fr) 40px; grid-template-rows: auto auto; row-gap: 12px; column-gap: 12px; }
+    .item .glyph { grid-column: 1; grid-row: 1; }
+    .item .meta-text { grid-column: 2; grid-row: 1; }
+    .item > .play { grid-column: 3; grid-row: 1; }
+    .item > svg { grid-column: 1 / -1; grid-row: 2; max-width: 320px; }
   }
-  @media (max-width: 420px) { .tagline { display: none; } }
+  @media (max-width: 480px) {
+    .tagline { display: none; }
+    .preview .measure { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 16px; }
+    .now { grid-column: 1 / -1; order: -1; font-size: 13px; }
+  }
 </style>
 </head>
 <body class="legend-page">
@@ -327,24 +167,22 @@
 
 <main>
   <section class="opening measure" aria-labelledby="statement">
-    <div class="meta enter" style="--i: 0"><span class="index">The legend</span><span class="state"><i></i>Every buzz, and what it means</span></div>
-    <h1 class="statement" id="statement">A language of <em>touch.</em></h1>
+    <h1 id="statement">Every buzz, and what it means</h1>
+    <p class="lede">The <strong>left</strong> Joy-Con means left, the <strong>right</strong> one means right, and
+      <strong>both together</strong> mean everything else.</p>
     <div class="brief">
-      <div class="intro enter" style="--i: 2">
-        <p>Everything the wrists say. The <strong>left</strong> Joy-Con means left, the <strong>right</strong> one
-          means right, and <strong>both together</strong> mean everything else.</p>
+      <div class="intro">
         <p>Press play on any buzz to watch its rhythm on the two wrists pinned below. With the laptop page
           open in this browser and no mode running, you feel it on the Joy-Cons too.</p>
       </div>
-      <aside class="key enter" style="--i: 3" aria-label="How to read a strip">
+      <aside class="key card" aria-label="How to read a strip">
         <span class="label">Reading a strip</span>
         <dl>
-          <dt><span class="letter">L</span></dt><dd><b>Upper lane</b>the left wrist</dd>
-          <dt><span class="letter">R</span></dt><dd><b>Lower lane</b>the right wrist</dd>
-          <dt><span class="swatch"><i></i></span></dt><dd><b>Normal</b>buzz</dd>
-          <dt><span class="swatch high"><i></i></span></dt><dd><b>High</b>buzz</dd>
-          <dt><span class="swatch low"><i></i></span></dt><dd><b>Low</b>buzz</dd>
-          <dt><span class="swatch soft"><i></i><i></i><i></i></span></dt><dd><b>Fainter</b>is softer</dd>
+          <dt>L</dt><dd><b>Upper lane</b>the left wrist</dd>
+          <dt>R</dt><dd><b>Lower lane</b>the right wrist</dd>
+          <dt><span class="swatch high"><i></i></span></dt><dd><b>High</b> buzz</dd>
+          <dt><span class="swatch low"><i></i></span></dt><dd><b>Low</b> buzz</dd>
+          <dt><span class="swatch soft"><i></i><i></i></span></dt><dd><b>Fainter</b> is softer</dd>
         </dl>
         <p class="foot">Each strip is 1.8 seconds, read left to right.</p>
       </aside>
@@ -354,11 +192,11 @@
   <div class="preview" aria-label="The two wrists">
     <div class="measure">
       <div class="wrist left" id="tileL">
-        <div class="wrist-top"><span class="label" id="tileLText">left wrist</span><span class="wrist-letter" aria-hidden="true">L</span></div>
+        <span class="wrist-dot" aria-hidden="true"></span><span class="label" id="tileLText">left wrist</span>
       </div>
       <div class="now" id="now" aria-live="polite"></div>
       <div class="wrist right" id="tileR">
-        <div class="wrist-top"><span class="label" id="tileRText">right wrist</span><span class="wrist-letter" aria-hidden="true">R</span></div>
+        <span class="wrist-dot" aria-hidden="true"></span><span class="label" id="tileRText">right wrist</span>
       </div>
     </div>
   </div>
@@ -366,7 +204,7 @@
   <div id="groups" class="measure"></div>
 
   <section class="notes measure" aria-labelledby="notesTitle">
-    <div class="chapter-head"><h2 id="notesTitle">Understanding the signals</h2></div>
+    <h2 id="notesTitle">Understanding the signals</h2>
     <ul>
       <li><strong>Quiet</strong> means carry on: after <em>Arrived</em> you're there, and during a room scan it
         means hold still while the camera looks.</li>
@@ -383,8 +221,8 @@
 </main>
 
 <footer class="colophon measure">
-  <div class="colophon-word" aria-hidden="true">Paradise</div>
-  <div class="colophon-row"><span>Guidance by touch, for people who are blind or DeafBlind.</span><a href="/" target="_blank" rel="noopener">The laptop page</a></div>
+  <span>Guidance by touch, for people who are blind or DeafBlind.</span>
+  <a href="/" target="_blank" rel="noopener">The laptop page</a>
 </footer>
 
 <script>
@@ -412,60 +250,78 @@
     stopped: () => [0, 600].map((t) => ["LR", t, 400, 1]),
   };
 
-  // What to show, in order. seq: when to play which pattern (ms from the start), with a few repeats
-  // so the rhythm shows, and its argument the way hands.html takes it (echo's count, a reach buzz's
-  // strength).
+  // What to show, in order, plus which pictogram to draw for it (see ICONS below). seq: when to play
+  // which pattern (ms from the start), with a few repeats so the rhythm shows, and its argument the
+  // way hands.html takes it (echo's count, a reach buzz's strength).
   const every = (ms, n, pattern, args) => Array.from({ length: n }, (_, i) => [i * ms, pattern, args?.(i)]);
-  const at = (times, pattern) => times.map((t) => [t, pattern]);
   const fading = (i) => [Math.max(0.4, 1 - i * 0.15)]; // stronger the further off: here, the hand closing in
   const LEGEND = [
     ["Talking to it: buttons and voice", [
-      { name: "Heard you", where: "Both wrists · two quick soft taps", seq: [[0, "listening"]],
+      { name: "Heard you", icon: "ear", where: "Both wrists · two quick soft taps", seq: [[0, "listening"]],
         what: "You said “Paradise” on its own: say what you want within 8 seconds, no need to say Paradise again. Also right after a command that needs thinking about: it's working on it, and the answer (Got it, or Didn't understand) follows in a second or so." },
-      { name: "Got it", where: "Both wrists", seq: [[0, "echo", [3]]],
+      { name: "Got it", icon: "count", where: "Both wrists", seq: [[0, "echo", [3]]],
         what: "Right after you choose, by buttons or by voice: one pulse per press, so you can count it. 1 = the Waymo, 2 and up = your saved places, a thing to find = 1. “Paradise, repeat” plays it again." },
-      { name: "Stopped", where: "Both wrists · two long buzzes", seq: [[0, "stopped"]],
+      { name: "Stopped", icon: "stopHand", where: "Both wrists · two long buzzes", seq: [[0, "stopped"]],
         what: "You said “Paradise, stop” (or cancel, wait, never mind, anywhere in what you said): guidance is off. Choose again whenever you like." },
-      { name: "Didn't understand", where: "Left, right, left · once", seq: [[0, "search"]],
+      { name: "Didn't understand", icon: "question", where: "Left, right, left · once", seq: [[0, "search"]],
         what: "It didn't understand what you said after “Paradise”: say it again. Or more presses than there are choices. Nothing changes." },
     ]],
     ["Walking", [
-      { name: "Turn left", where: "Left wrist · every 0.4 s", seq: every(400, 4, "left"),
+      { name: "Turn left", icon: "arrowLeft", where: "Left wrist · every 0.4 s", seq: every(400, 4, "left"),
         what: "Turn left until the pulses stop." },
-      { name: "Turn right", where: "Right wrist · every 0.4 s", seq: every(400, 4, "right"),
+      { name: "Turn right", icon: "arrowRight", where: "Right wrist · every 0.4 s", seq: every(400, 4, "right"),
         what: "Turn right until the pulses stop." },
-      { name: "Walk", where: "Both wrists · faster and stronger as you get closer", seq: [0, 520, 920, 1220, 1450, 1640].map((t, i) => [t, "approach", [[0.35, 0.45, 0.6, 0.75, 0.9, 1][i]]]),
+      { name: "Walk", icon: "walk", where: "Both wrists · faster and stronger as you get closer", seq: [0, 520, 920, 1220, 1450, 1640].map((t, i) => [t, "approach", [[0.35, 0.45, 0.6, 0.75, 0.9, 1][i]]]),
         what: "You're facing it: walk forward. The pulses get faster (1 to 4 a second) and stronger as you get closer: soft far away, full strength as you arrive." },
-      { name: "Arrived", where: "Both wrists · one long buzz", seq: [[0, "arrived"]],
+      { name: "Arrived", icon: "pin", where: "Both wrists · one long buzz", seq: [[0, "arrived"]],
         what: "You're there: the place, the car, the door handle, or arm's reach from the thing. Then quiet." },
-      { name: "Found it", where: "Both wrists · two quick pulses", seq: [[0, "connected"]],
+      { name: "Found it", icon: "target", where: "Both wrists · two quick pulses", seq: [[0, "connected"]],
         what: "The camera found your Waymo, or the thing you asked for. Steering to it starts." },
     ]],
     ["Stop and wait", [
-      { name: "Stop", where: "Both wrists, strong · again every 1.2 s", seq: every(1200, 2, "obstacle"),
+      { name: "Stop", icon: "stopHand", where: "Both wrists, strong · again every 1.2 s", seq: every(1200, 2, "obstacle"),
         what: "Something is in the way, close ahead. Stand still until the pulses end." },
-      { name: "Searching", where: "Left, right, left · every 1.6 s", seq: every(1600, 2, "search"),
+      { name: "Searching", icon: "search", where: "Left, right, left · every 1.6 s", seq: every(1600, 2, "search"),
         what: "Nothing to steer by yet: no signal from the chest phone, no compass, waiting for GPS, or the thing isn't in view. Stand still. Just once, then quiet: the search is over, it isn't anywhere around you." },
     ]],
     ["Reaching: at the door handle or the thing", [
-      { name: "Hand left", where: "Left wrist · every 0.3 s", seq: every(300, 6, "reachLeft", fading),
+      { name: "Hand left", icon: "arrowLeft", where: "Left wrist · every 0.3 s", seq: every(300, 6, "reachLeft", fading),
         what: "Move your hand left. Stronger the further off, softer as you get there." },
-      { name: "Hand right", where: "Right wrist · every 0.3 s", seq: every(300, 6, "reachRight", fading),
+      { name: "Hand right", icon: "arrowRight", where: "Right wrist · every 0.3 s", seq: every(300, 6, "reachRight", fading),
         what: "Move your hand right." },
-      { name: "Hand up", where: "Both wrists, high buzz · every 0.3 s", seq: every(300, 6, "reachUp", fading),
+      { name: "Hand up", icon: "arrowUp", where: "Both wrists, high buzz · every 0.3 s", seq: every(300, 6, "reachUp", fading),
         what: "Move your hand up." },
-      { name: "Hand down", where: "Both wrists, low buzz · every 0.3 s", seq: every(300, 6, "reachDown", fading),
+      { name: "Hand down", icon: "arrowDown", where: "Both wrists, low buzz · every 0.3 s", seq: every(300, 6, "reachDown", fading),
         what: "Move your hand down." },
-      { name: "Forward", where: "Both wrists · faster and stronger as you get closer", seq: [0, 450, 800, 1080, 1300, 1480, 1640].map((t, i) => [t, "reachForward", [[0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1][i]]]),
+      { name: "Forward", icon: "forward", where: "Both wrists · faster and stronger as you get closer", seq: [0, 450, 800, 1080, 1300, 1480, 1640].map((t, i) => [t, "reachForward", [[0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1][i]]]),
         what: "Your hand is lined up: move it forward. The taps get faster (2 to 6 a second) and stronger as your hand closes in." },
-      { name: "Reach out", where: "Both wrists · a longer buzz every 1.2 s", seq: every(1200, 2, "reachOut"),
+      { name: "Reach out", icon: "reach", where: "Both wrists · a longer buzz every 1.2 s", seq: every(1200, 2, "reachOut"),
         what: "Your hand isn't in the camera's view yet: reach out in front of your chest." },
-      { name: "Touching", where: "Both wrists · three quick high pulses", seq: [[0, "touch"]],
+      { name: "Touching", icon: "touch", where: "Both wrists · three quick high pulses", seq: [[0, "touch"]],
         what: "Your hand is on it." },
     ]],
   ];
 
-  // ---- The strips: two lanes (L, R), 1.8 s, one mark per pulse ----
+  // Small drawn pictograms, one per buzz, plain and monoline (24×24, stroke = currentColor).
+  const ICONS = {
+    ear: '<path d="M8 12a4 4 0 0 1 8 0v3a4 4 0 0 1-8 0z"/><path d="M8 12a4 4 0 0 0-4 4v1a4 4 0 0 0 4 4"/><path d="M16 12a4 4 0 0 1 4 4"/>',
+    count: '<path d="M8 6h.01M8 12h.01M8 18h.01M12 6h6M12 12h6M12 18h6"/>',
+    stopHand: '<path d="M8 3h8l5 5v8l-5 5H8l-5-5V8z"/>',
+    question: '<circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.8 2.8 0 1 1 3.9 2.6c-1 .5-1.6 1.1-1.6 2.4"/><path d="M12 17.2h.01"/>',
+    arrowLeft: '<path d="M19 12H5m6-7-7 7 7 7"/>',
+    arrowRight: '<path d="M5 12h14m-6-7 6 7-6 7"/>',
+    walk: '<circle cx="13" cy="4.5" r="1.8"/><path d="M9 21l1.6-5.6L9 13l1.5-3.5 3-1.4 2.7 2.6-1 4.6 2.6 5.2"/><path d="M6.5 21l2-4"/>',
+    pin: '<path d="M12 21s7-6.4 7-11.3A7 7 0 0 0 5 9.7C5 14.6 12 21 12 21z"/><circle cx="12" cy="9.6" r="2.4"/>',
+    target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+    search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.3-4.3"/>',
+    arrowUp: '<path d="M12 19V5m-7 6 7-7 7 7"/>',
+    arrowDown: '<path d="M12 5v14m7-6-7 7-7-7"/>',
+    forward: '<path d="m9 6 6 6-6 6"/>',
+    reach: '<path d="M3.5 12h10m0 0-3-3m3 3-3 3"/><path d="M17 8v8"/><path d="M20.5 9v6"/>',
+    touch: '<circle cx="12" cy="12" r="2.4"/><path d="M12 3v4m0 10v4m9-9h-4M7 12H3"/>',
+  };
+
+  // ---- The strips: two lanes (L, R), 1.8 s, one rounded capsule per pulse ----
   const SPAN = 1800, X0 = 16, X1 = 248, LANES = { L: 6, R: 26 }, LANE_H = 12;
   const xOf = (t) => X0 + (Math.min(t, SPAN) / SPAN) * (X1 - X0);
   function pulsesOf(item) {
@@ -473,41 +329,44 @@
       .map(([side, t, ms, s, pitch]) => ({ side, t: t0 + t, ms, s, pitch })));
   }
   function strip(item) {
-    let svg = `<svg viewBox="0 0 250 56" role="img" aria-label="${item.name}: ${item.where}">`;
+    let svg = `<svg viewBox="0 0 250 44" role="img" aria-label="${item.name}: ${item.where}">`;
     for (const [lane, y] of Object.entries(LANES)) {
-      svg += `<text class="lane" x="0" y="${y + 10}">${lane}</text><rect class="track" x="${X0}" y="${y}" width="${X1 - X0}" height="${LANE_H}" rx="3"/>`;
+      svg += `<text class="lane" x="0" y="${y + 9}">${lane}</text><rect class="track" x="${X0}" y="${y}" width="${X1 - X0}" height="${LANE_H}" rx="6"/>`;
     }
     for (const p of pulsesOf(item)) {
       if (p.t >= SPAN) continue;
       const w = Math.max(2.5, xOf(p.t + p.ms) - xOf(p.t));
       for (const lane of p.side === "LR" ? ["L", "R"] : [p.side]) {
-        svg += `<rect class="pulse ${p.pitch || ""}" x="${xOf(p.t).toFixed(1)}" y="${LANES[lane]}" width="${w.toFixed(1)}" height="${LANE_H}" rx="2" opacity="${(0.3 + 0.7 * p.s).toFixed(2)}"/>`;
+        svg += `<rect class="pulse ${p.pitch || ""}" x="${xOf(p.t).toFixed(1)}" y="${LANES[lane]}" width="${w.toFixed(1)}" height="${LANE_H}" rx="6" opacity="${(0.3 + 0.7 * p.s).toFixed(2)}"/>`;
       }
     }
-    for (const t of [0, 600, 1200, 1800]) svg += `<text class="tick" x="${xOf(t)}" y="52" text-anchor="${t ? (t === SPAN ? "end" : "middle") : "start"}">${t / 1000} s</text>`;
-    return `${svg}<line class="head" x1="${X0}" x2="${X0}" y1="2" y2="42"/></svg>`;
+    for (const t of [0, 600, 1200, 1800]) svg += `<text class="tick" x="${xOf(t)}" y="41" text-anchor="${t ? (t === SPAN ? "end" : "middle") : "start"}">${t / 1000} s</text>`;
+    return `${svg}<line class="head" x1="${X0}" x2="${X0}" y1="2" y2="34"/></svg>`;
   }
 
   const PLAY_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.8v12.4c0 .7.8 1.1 1.4.7l9.6-6.2c.5-.3.5-1.1 0-1.4L4.4 1.1C3.8.7 3 1.1 3 1.8z"/></svg>`;
   for (const [title, items] of LEGEND) {
-    const card = document.createElement("section");
-    card.className = "card group";
-    const label = document.createElement("div");
-    label.className = "label";
-    label.textContent = title;
-    card.append(label);
+    const section = document.createElement("section");
+    section.className = "group";
+    const h2 = document.createElement("h2");
+    h2.textContent = title;
+    section.append(h2);
+    const stack = document.createElement("div");
+    stack.className = "stack";
+    section.append(stack);
     for (const item of items) {
       const row = document.createElement("div");
-      row.className = "item";
-      row.innerHTML = `${strip(item)}<div><h3></h3><div class="where"></div><p></p></div>` +
-        `<button class="play" aria-label="Play ${item.name}">${PLAY_ICON}</button>`;
+      row.className = "item card";
+      row.innerHTML = `<div class="glyph"><svg viewBox="0 0 24 24">${ICONS[item.icon] || ""}</svg></div>` +
+        `<div class="meta-text"><h3></h3><div class="where"></div><p></p></div>` +
+        `${strip(item)}<button class="play" aria-label="Play ${item.name}">${PLAY_ICON}</button>`;
       row.querySelector("h3").textContent = item.name;
       row.querySelector(".where").textContent = item.where;
       row.querySelector("p").textContent = item.what;
       row.querySelector(".play").onclick = () => play(item, row);
-      card.append(row);
+      stack.append(row);
     }
-    $("groups").append(card);
+    $("groups").append(section);
   }
 
   // ---- Playing: the tiles above (always), the wrists (when the laptop page can) ----
@@ -564,203 +423,6 @@
   }
   setInterval(() => { link?.postMessage({ type: "hello" }); showWrists(); }, 1500);
   link?.postMessage({ type: "hello" });
-</script>
-
-<script>
-  // Presentation only: the letter-by-letter statement, reveals on scroll, the wrists' bloom and live
-  // trace, and the strip's playhead wake. Reads what the script above renders; changes no behaviour.
-  (() => {
-    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const SVGNS = "http://www.w3.org/2000/svg";
-
-    // ---- Shared gradients for the strips' wake and hover sheen ----
-    document.body.insertAdjacentHTML("beforeend",
-      `<svg class="pd-defs" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>` +
-      `<linearGradient id="pdTrail" x1="0" x2="1"><stop offset="0" class="t0"/><stop offset="1" class="t1"/></linearGradient>` +
-      `<linearGradient id="pdSheen" x1="0" x2="1"><stop offset="0" class="s0"/><stop offset=".5" class="s1"/><stop offset="1" class="s2"/></linearGradient>` +
-      `</defs></svg>`);
-    const rect = (cls, attrs) => {
-      const r = document.createElementNS(SVGNS, "rect");
-      r.setAttribute("class", cls);
-      for (const [k, v] of Object.entries(attrs)) r.setAttribute(k, v);
-      return r;
-    };
-    for (const svg of document.querySelectorAll(".item > svg")) {
-      const head = svg.querySelector(".head");
-      svg.insertBefore(rect("sheen", { x: -24, y: 4, width: 40, height: 36, fill: "url(#pdSheen)" }), head);
-      svg.insertBefore(rect("trail", { x: 16, y: 3, width: 0, height: 38, rx: 2, fill: "url(#pdTrail)" }), head);
-    }
-
-    // ---- The statement, letter by letter ----
-    const statement = document.getElementById("statement");
-    if (statement && !calm) {
-      statement.setAttribute("aria-label", statement.textContent.replace(/\s+/g, " ").trim());
-      let c = 0;
-      const split = (node) => {
-        for (const child of [...node.childNodes]) {
-          if (child.nodeType === 1) { split(child); continue; }
-          if (child.nodeType !== 3) continue;
-          const frag = document.createDocumentFragment();
-          for (const part of child.textContent.split(/(\s+)/)) {
-            if (!part) continue;
-            if (/^\s+$/.test(part)) { frag.append(document.createTextNode(" ")); continue; }
-            const w = document.createElement("span");
-            w.className = "w"; w.setAttribute("aria-hidden", "true");
-            for (const ch of part) {
-              const s = document.createElement("span");
-              s.className = "ch"; s.style.setProperty("--c", c++); s.textContent = ch;
-              w.append(s);
-            }
-            frag.append(w);
-          }
-          child.replaceWith(frag);
-        }
-      };
-      split(statement);
-      statement.classList.add("split");
-    }
-
-    // ---- Reveals on scroll, staggered within each batch ----
-    if (!calm && "IntersectionObserver" in window) {
-      const lines = [...document.querySelectorAll(".group > .label, .notes .chapter-head")];
-      const targets = [...lines, ...document.querySelectorAll(".item, .notes li, .colophon-word, .colophon-row")];
-      lines.forEach((el) => el.classList.add("hl"));
-      targets.forEach((el) => el.classList.add("rv"));
-      const io = new IntersectionObserver((entries) => {
-        const shown = entries.filter((e) => e.isIntersecting).map((e) => e.target)
-          .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-        shown.forEach((el, i) => {
-          el.style.setProperty("--rd", `${Math.min(i, 6) * 80}ms`);
-          el.classList.add("in");
-          io.unobserve(el);
-          // Clear the stagger once it's in, so hover and later transitions aren't delayed.
-          setTimeout(() => { el.style.removeProperty("--rd"); }, 1600);
-        });
-      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
-      targets.forEach((el) => io.observe(el));
-    }
-
-    // ---- The strip that's playing: the wake behind the head, pulses striking as it passes ----
-    const groups = document.getElementById("groups");
-    let active = null, lastX = -1, running = false;
-    const reset = (row) => {
-      row.querySelectorAll(".pulse.lit").forEach((p) => p.classList.remove("lit"));
-      const trail = row.querySelector(".trail");
-      if (trail) trail.style.opacity = 0;
-    };
-    const follow = () => {
-      const row = groups.querySelector(".item.playing");
-      if (row !== active) { if (active) reset(active); active = row; lastX = -1; }
-      if (!row) { running = false; return; }
-      const head = row.querySelector(".head"), trail = row.querySelector(".trail");
-      const x = parseFloat(head.getAttribute("x1")) || 16;
-      const visible = head.style.opacity === "1";
-      if (x + 0.5 < lastX) reset(row); // played again from the top
-      lastX = x;
-      if (trail) {
-        if (visible) {
-          const x0 = Math.max(16, x - 46);
-          trail.setAttribute("x", x0.toFixed(1));
-          trail.setAttribute("width", Math.max(0, x - x0).toFixed(1));
-          trail.style.opacity = 1;
-        } else trail.style.opacity = 0;
-      }
-      if (visible) {
-        for (const p of row.querySelectorAll(".pulse:not(.lit)")) {
-          if (parseFloat(p.getAttribute("x")) <= x + 0.5) p.classList.add("lit");
-        }
-      }
-      requestAnimationFrame(follow);
-    };
-    new MutationObserver(() => {
-      if (!running && groups.querySelector(".item.playing")) { running = true; requestAnimationFrame(follow); }
-      else if (!running && active) { reset(active); active = null; }
-    }).observe(groups, { subtree: true, attributes: true, attributeFilter: ["class"] });
-
-    // ---- The wrists: bloom on each buzz, and a live trace riding the hairline ----
-    if (calm) return;
-    const wrists = ["tileL", "tileR"].map((id) => {
-      const tile = document.getElementById(id);
-      if (!tile) return null;
-      const canvas = document.createElement("canvas");
-      canvas.className = "wave"; canvas.setAttribute("aria-hidden", "true");
-      tile.append(canvas);
-      return { tile, canvas, ctx: canvas.getContext("2d"), inner: id === "tileL" ? "right" : "left",
-        text: tile.querySelector(".label"), samples: [], env: 0, phase: 0, wasOn: false, lastBg: "", w: 0, h: 0 };
-    }).filter(Boolean);
-
-    const size = (w) => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const r = w.canvas.getBoundingClientRect();
-      w.w = r.width; w.h = r.height;
-      w.canvas.width = Math.round(r.width * dpr); w.canvas.height = Math.round(r.height * dpr);
-      w.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      w.samples = new Array(Math.ceil(r.width / 2)).fill(0);
-    };
-    wrists.forEach(size);
-    if ("ResizeObserver" in window) new ResizeObserver(() => wrists.forEach(size)).observe(document.querySelector(".preview"));
-
-    const strengthOf = (tile) => {
-      const m = /(\d+(?:\.\d+)?)%/.exec(tile.style.background || tile.style.backgroundColor || "");
-      return m ? Math.min(1, Math.max(0.15, (parseFloat(m[1]) - 35) / 65)) : 1;
-    };
-    const bloom = (w, s) => {
-      const b = document.createElement("span");
-      b.className = "bloom"; b.style.setProperty("--s", (0.45 + 0.55 * s).toFixed(2));
-      w.tile.append(b);
-      const all = w.tile.querySelectorAll(".bloom");
-      if (all.length > 4) all[0].remove();
-      setTimeout(() => b.remove(), 900);
-    };
-
-    let looping = false, color = "#d8b77a";
-    const draw = () => {
-      let alive = false;
-      for (const w of wrists) {
-        const on = w.tile.classList.contains("on");
-        const s = on ? strengthOf(w.tile) : 0;
-        const pitch = (w.text?.textContent || "").trim().split(" ")[0];
-        w.env += (s - w.env) * (s > w.env ? 0.55 : 0.14);
-        if (w.env < 0.002) w.env = 0;
-        w.phase += pitch === "high" ? 1.55 : pitch === "low" ? 0.5 : 0.95;
-        const v = w.env * Math.sin(w.phase) * (0.75 + 0.25 * Math.sin(w.phase * 0.13));
-        w.samples.pop(); w.samples.unshift(v);
-        const n = w.samples.length, { ctx } = w;
-        ctx.clearRect(0, 0, w.w, w.h);
-        if (w.samples.some((x) => Math.abs(x) > 0.003)) {
-          alive = true;
-          const mid = w.h / 2, amp = mid - 2;
-          const grad = ctx.createLinearGradient(w.inner === "right" ? w.w : 0, 0, w.inner === "right" ? 0 : w.w, 0);
-          grad.addColorStop(0, color); grad.addColorStop(1, "rgba(0,0,0,0)");
-          ctx.strokeStyle = grad; ctx.lineWidth = 1.25; ctx.lineJoin = "round";
-          ctx.shadowColor = color; ctx.shadowBlur = 6;
-          ctx.beginPath();
-          for (let i = 0; i < n; i++) {
-            const x = w.inner === "right" ? w.w - i * 2 : i * 2;
-            const y = mid - w.samples[i] * amp;
-            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-          }
-          ctx.stroke();
-        }
-        if (on) alive = true;
-      }
-      if (alive) requestAnimationFrame(draw); else looping = false;
-    };
-    const wake = () => {
-      if (looping) return;
-      looping = true;
-      color = getComputedStyle(document.documentElement).getPropertyValue("--champagne").trim() || color;
-      requestAnimationFrame(draw);
-    };
-
-    for (const w of wrists) {
-      new MutationObserver(() => {
-        const on = w.tile.classList.contains("on"), bg = w.tile.style.background;
-        if (on && (!w.wasOn || bg !== w.lastBg)) { bloom(w, strengthOf(w.tile)); wake(); }
-        w.wasOn = on; w.lastBg = bg;
-      }).observe(w.tile, { attributes: true, attributeFilter: ["class", "style"] });
-    }
-  })();
 </script>
 </body>
 </html>

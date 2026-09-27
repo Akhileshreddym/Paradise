@@ -1,331 +1,159 @@
 <!doctype html>
-<!-- Paradise "eyes": chest phone page. Finds objects with YOLO (cars, people, bikes…) and sends their
-     angle + distance to the laptop, with GPS, compass (the wearer's heading), tilt and what the mic
-     hears. Also sends small camera frames (for the laptop's display and the server's depth model)
-     and, when asked, bigger ones for the server's object finder (door handles, whatever's being
-     looked for). At the target, it tracks the wearer's hand (MediaPipe). Needs https. -->
+<!-- Paradise "eyes": chest phone page, styled like a Waymo rider screen — calm dark navy, a big
+     rounded camera card, a large light heading numeral, and a clean list of sensor rows. Finds
+     objects with YOLO (cars, people, bikes…) and sends their angle + distance to the laptop, with
+     GPS, compass (the wearer's heading), tilt and what the mic hears. Also sends small camera
+     frames (for the laptop's display and the server's depth model) and, when asked, bigger ones
+     for the server's object finder (door handles, whatever's being looked for). At the target, it
+     tracks the wearer's hand (MediaPipe). Needs https. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0a0b">
+<meta name="theme-color" content="#080b10">
 <title>Paradise · Eyes</title>
 <link rel="stylesheet" href="paradise.css">
 <script src="appearance.js"></script>
 <style>
-  /* Paradise chest phone, on top of paradise.css: the laptop display's editorial vocabulary,
-     set for one narrow column. Masthead; one serif statement; setup steps and one inverted-ink
-     button; once started, the camera as a framed photograph, the status as hairline rows, the
-     calibration folded away. Clear of the notch and the home bar. */
+  /* Paradise chest phone, on top of paradise.css: one narrow column, a top bar, a status
+     headline, a big rounded camera card with a "Live" capsule, the heading as a large light
+     numeral, and the sensors as plain rows. Nothing here changes what the page measures or
+     sends — it only draws it. */
   .page {
     --gutter: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
     max-width: 480px; margin: 0 auto;
     padding: 0 var(--gutter) max(28px, env(safe-area-inset-bottom));
     overflow-x: clip;
-    min-height: 100svh; display: flex; flex-direction: column;
+    min-height: 100svh; display: flex; flex-direction: column; gap: 20px;
   }
 
-  /* ---- Masthead ---- */
-  .masthead {
-    display: flex; align-items: center; gap: 14px;
-    min-height: calc(60px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top);
-    border-bottom: 1px solid var(--line);
-  }
-  .masthead .brand { gap: 10px; min-width: 0; }
-  .masthead .brand-word { font-size: 11.5px; letter-spacing: 0.42em; }
-  .masthead .brand .sub { font-size: 17px; }
-  .masthead-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-  .link { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  /* ---- Top bar ---- */
+  .top { padding-top: env(safe-area-inset-top); min-height: calc(60px + env(safe-area-inset-top)); border-bottom: 1px solid var(--line); }
+  .top .brand-word { font-size: 11.5px; }
+  .top .brand .sub { font-size: 16px; }
+  .link { display: inline-flex; align-items: center; gap: 8px; font: 500 12px/1 var(--font); color: var(--muted); white-space: nowrap; }
   .link i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); transition: background 240ms var(--ease-out); }
   .link .on { display: none; }
   body:has(.row-net[data-state="ok"]) .link { color: var(--text); }
-  body:has(.row-net[data-state="ok"]) .link i { background: var(--sage); }
+  body:has(.row-net[data-state="ok"]) .link i { background: var(--go); box-shadow: 0 0 8px var(--go); animation: breathe 2.8s ease-in-out infinite; }
   body:has(.row-net[data-state="ok"]) .link .on { display: inline; }
   body:has(.row-net[data-state="ok"]) .link .off { display: none; }
-  body:has(.row-net[data-state="bad"]) .link i { background: var(--crimson); }
-  .masthead .icon-button { width: 36px; min-height: 36px; margin-right: -8px; border-color: transparent; background: transparent; color: var(--muted); }
+  body:has(.row-net[data-state="bad"]) .link i { background: var(--stop); }
+  @keyframes breathe { 50% { opacity: 0.4; } }
+  .top .icon-button { width: 36px; min-height: 36px; margin-right: -8px; background: transparent; color: var(--muted); }
 
-  /* ---- The statement ---- */
-  .hero { padding: 40px 0 34px; }
-  .meta { display: flex; align-items: baseline; gap: 16px; }
-  .index { font: italic 400 17px/1 var(--serif); color: var(--muted); }
-  .state { display: inline-flex; align-items: center; gap: 8px; font: 500 11px/1 var(--font); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-  .state i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-  .head {
-    margin: 22px 0 18px; max-width: 9ch;
-    font: 400 clamp(60px, 19vw, 92px)/0.9 var(--serif); letter-spacing: -0.03em; text-wrap: balance;
-    animation: arrive 560ms var(--ease-out) both;
-  }
-  .head em { font-style: italic; }
-  .lede { margin: 0; max-width: 34ch; font-size: 15px; line-height: 1.5; color: var(--muted); }
-  @keyframes arrive { from { opacity: 0; transform: translateY(12px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
-  /* Before Start: "Setup"; after: "Now", and the statement says so. */
+  /* ---- Headline: what the phone is doing right now ---- */
+  .hero { padding: 20px 0 0; }
+  .lede { margin: 10px 0 0; max-width: 34ch; }
   .when-on { display: none; }
   body:has(#intro[hidden]) .when-off { display: none; }
-  body:has(#intro[hidden]) .when-on { display: inline; }
-  body:has(#intro[hidden]) .head.when-on { display: block; }
-  body:has(#intro[hidden]) .hero { padding-bottom: 28px; }
-  body:has(#intro[hidden]) .head { margin-bottom: 0; }
-  body:has(#intro[hidden]) .state { color: var(--text); }
-  body:has(#intro[hidden]) .state i { background: var(--text); }
+  body:has(#intro[hidden]) .when-on { display: block; }
 
-  /* ---- Setup: numbered hairline steps, then the one button ---- */
-  .steps { list-style: none; margin: 0 0 30px; padding: 0; counter-reset: s; border-bottom: 1px solid var(--line); }
-  .steps li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 3px 8px; padding: 16px 0; border-top: 1px solid var(--line); font-size: 13.5px; line-height: 1.5; color: var(--muted); }
-  .steps li::before { content: counter(s, decimal-leading-zero); grid-row: span 2; font: 11px/1.9 var(--mono); color: var(--faint); }
-  .steps b { color: var(--text); font-weight: 500; font-size: 14.5px; }
-  #start { width: 100%; min-height: 56px; border-radius: 999px; font-size: 15px; gap: 10px; }
-  .hint { margin: 16px 0 0; text-align: center; font-size: 12px; color: var(--faint); }
+  /* ---- Turn-on capsule: the one action before everything else works ---- */
+  .intro { text-align: center; padding: 4px 0; }
+  .intro .hint { margin: 14px 0 0; }
 
-  /* ---- The camera, framed like a photograph ---- */
-  .plate { margin: 0 0 8px; animation: rise 520ms var(--ease-out) both; }
-  .frame { position: relative; overflow: hidden; border-radius: 6px; background: #070708; box-shadow: 0 0 0 1px var(--line-strong); }
-  .frame canvas { display: block; width: 100%; height: auto; max-height: 72svh; object-fit: contain; }
-  .plate figcaption { display: flex; align-items: baseline; gap: 12px; margin-top: 14px; font-size: 12px; color: var(--muted); }
-  .fig { font: italic 400 15px/1 var(--serif); color: var(--text); }
-  .live-state { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; color: var(--text); }
-  .live-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--crimson); animation: breathe 2.4s ease-in-out infinite; }
+  /* ---- The camera, as a large rounded card ---- */
+  .plate { padding: 0; overflow: hidden; }
+  .frame { position: relative; border-radius: var(--radius); overflow: hidden; background: #05070a; }
+  .frame canvas { display: block; width: 100%; height: auto; max-height: 60svh; object-fit: contain; background: #05070a; }
+  .live-state {
+    position: absolute; top: 14px; right: 14px; z-index: 1;
+    display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px;
+    border-radius: var(--pill); background: rgba(6, 9, 14, 0.55); backdrop-filter: blur(8px);
+    color: #fff; font: 500 12px/1 var(--font);
+  }
+  .live-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--stop); animation: livedot 2.4s ease-in-out infinite; }
+  @keyframes livedot { 50% { opacity: 0.35; } }
   .live-state .off-text { display: none; }
-  @keyframes breathe { 50% { opacity: 0.35; } }
-  .seen { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
-  .seen .label { font-size: 10.5px; line-height: 1.9; }
-  .seen .mono { min-height: calc(1.7em * 3); font-size: 11.5px; color: var(--muted); }
-  /* No camera (GPS still works): no frame, the error in the note's place. */
+  .plate-foot { margin: 0; padding: 14px 20px 0; font-size: 12px; color: var(--muted); }
+  .seen { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 8px; padding: 10px 20px 20px; }
+  .seen .mono { min-height: calc(1.65em * 2); }
+  /* No camera (GPS still works): no frame, the error where the caption was. */
   .plate:has(#view[hidden]) .frame { display: none; }
-  .plate:has(#view[hidden]) figcaption { margin-top: 0; }
   .plate:has(#view[hidden]) .live-state i { background: var(--faint); animation: none; }
   .plate:has(#view[hidden]) .live-state .live-text { display: none; }
-  .plate:has(#view[hidden]) .live-state .off-text { display: inline; color: var(--muted); }
-  .plate:has(#view[hidden]) .seen .mono { min-height: 0; color: var(--crimson); }
+  .plate:has(#view[hidden]) .live-state .off-text { display: inline; }
+  .plate:has(#view[hidden]) .plate-foot { padding-top: 20px; }
+  .plate:has(#view[hidden]) .seen .mono { min-height: 0; color: var(--stop); }
 
-  /* ---- Chapters: mono index and a serif title on a hairline ---- */
-  .chapter { margin-top: 64px; }
-  body:has(#camera:not([hidden])) .chapter { margin-top: 56px; }
-  .chapter-head { display: flex; align-items: baseline; gap: 16px; padding-top: 18px; border-top: 1px solid var(--line); margin-bottom: 10px; }
-  .chapter-head .index { width: 34px; flex: none; margin-right: -8px; font: 500 11px/1 var(--mono); font-style: normal; color: var(--faint); }
-  .chapter-head h2 { font: 400 30px/1 var(--serif); letter-spacing: -0.015em; }
-  .chapter-head p { margin: 0 0 0 auto; font-size: 12px; color: var(--muted); }
+  /* ---- Heading: a large light numeral with a small arrow ---- */
+  .heading-display { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; }
+  .heading-display b { font: 400 clamp(46px, 15vw, 68px)/1 var(--font); letter-spacing: -0.02em; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .heading-display[data-state="ok"] b { color: var(--text); }
+  .heading-display[data-state="warn"] b, .heading-display[data-state="bad"] b { font: 500 15px/1.4 var(--font); }
+  .heading-display[data-state="bad"] b { color: var(--stop); }
+  .heading-display .arrow { width: 22px; height: 22px; flex: none; align-self: center; color: var(--faint); }
+  .heading-display[data-state="ok"] .arrow { color: var(--guide); }
 
-  /* Status rows (paradise.css .rows): the value in ink once it's working. */
-  .rows > div { grid-template-columns: 34px 72px minmax(0, 1fr); gap: 0 8px; padding: 15px 0; font-size: 13.5px; }
-  .rows b { color: var(--muted); }
-  .rows [data-state="ok"] b { color: var(--text); }
+  /* ---- Status rows ---- */
+  .card h2 { margin: 0 0 4px; }
 
-  /* Calibration: a hairline row with a serif title that opens. */
-  .tools { margin-top: 40px; }
-  .tools details.card > summary { min-height: 76px; font: 400 26px/1 var(--serif); letter-spacing: -0.01em; }
-  .tools summary .n { width: 34px; flex: none; margin-right: -8px; font: 500 11px/1 var(--mono); color: var(--faint); letter-spacing: 0; }
-  .summary-hint { margin-left: auto; font: 400 12px/1 var(--font); letter-spacing: 0; color: var(--muted); }
-  .tools details.card > .body { padding: 0 0 24px; }
-  .tools .intro-copy { margin: 0 0 6px; font-size: 13px; color: var(--muted); max-width: 38ch; }
-  .field { grid-template-columns: minmax(0, 1fr) 104px; padding: 10px 0; }
-  .field label { font-size: 13.5px; }
-  .field input { font-variant-numeric: tabular-nums; }
-  #calib { width: 100%; min-height: 50px; margin-top: 16px; padding: 10px 18px; border-radius: 999px; background: transparent; color: var(--text); white-space: normal; line-height: 1.35; text-align: center; }
+  /* ---- Calibration ---- */
+  .intro-copy { margin: 0 0 6px; font-size: 13px; color: var(--muted); max-width: 38ch; }
+  #calib { width: 100%; min-height: 50px; margin-top: 16px; white-space: normal; line-height: 1.35; text-align: center; }
 
-  /* ---- Colophon: the name, very large and very quiet ---- */
-  .colophon { margin-top: auto; padding-top: 104px; }
-  .colophon-word { font: 400 clamp(92px, 30vw, 150px)/0.8 var(--serif); letter-spacing: -0.045em; margin-left: -0.04em; color: color-mix(in srgb, var(--text) 9%, transparent); user-select: none; }
-  .colophon-row { display: flex; justify-content: space-between; gap: 16px; padding: 18px 0 4px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .footnote { text-align: center; margin: 0; font-size: 12px; }
 
   @media (hover: hover) and (pointer: fine) {
-    .masthead .icon-button:hover { color: var(--text); background: var(--surface-2); }
-    #calib:hover { background: var(--surface-2); }
+    .top .icon-button:hover { color: var(--text); background: var(--surface-2); }
   }
-  @media (min-width: 760px) {
-    .hero { padding-top: 72px; }
-  }
-
-  /* ==== Cinema: film grain, a soft vignette, the statement arriving word by word ==== */
-  /* A very fine grain over everything, shifted a few times a second like film; a vignette and a
-     faint warm key light behind everything. Both still for reduced-motion users. */
-  .film { position: fixed; inset: 0; z-index: 60; overflow: hidden; pointer-events: none; }
-  .grain {
-    position: absolute; inset: -40%; opacity: 0.045;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: 180px 180px;
-    animation: grain 0.9s steps(1) infinite;
-  }
-  :root[data-theme="light"] .grain { opacity: 0.055; }
-  @keyframes grain {
-    0% { transform: translate(0, 0); } 12% { transform: translate(-3%, -5%); } 25% { transform: translate(4%, 2%); }
-    37% { transform: translate(-6%, 4%); } 50% { transform: translate(2%, -6%); } 62% { transform: translate(-2%, 6%); }
-    75% { transform: translate(6%, -1%); } 87% { transform: translate(-5%, -3%); }
-  }
-  .vignette {
-    position: fixed; inset: 0; z-index: -1; pointer-events: none;
-    background:
-      radial-gradient(120% 60% at 50% -12%, color-mix(in srgb, var(--champagne) 7%, transparent), transparent 62%),
-      radial-gradient(150% 105% at 50% 38%, transparent 52%, rgba(0, 0, 0, 0.62) 100%);
-  }
-  :root[data-theme="light"] .vignette {
-    background:
-      radial-gradient(120% 60% at 50% -12%, color-mix(in srgb, var(--champagne) 9%, transparent), transparent 62%),
-      radial-gradient(150% 105% at 50% 38%, transparent 55%, rgba(70, 52, 24, 0.10) 100%);
-  }
-
-  /* The statement: each word rises out of a soft blur. The second statement is display:none until
-     Start, so its words play again the moment it appears. */
-  .head { animation: none; }
-  .head .w { display: inline-block; animation: word 760ms var(--ease-out) both; animation-delay: calc(90ms + var(--w, 0) * 75ms); }
-  @keyframes word { from { opacity: 0; transform: translateY(0.3em); filter: blur(10px); } to { opacity: 1; transform: none; filter: blur(0); } }
-
-  /* Colophon: the name rises from behind its hairline when it comes into view, fading downward. */
-  .colophon-word {
-    overflow: hidden; padding-top: 0.14em; margin-top: -0.14em;
-    color: color-mix(in srgb, var(--text) 11%, transparent);
-    -webkit-mask-image: linear-gradient(to bottom, #000 30%, rgba(0, 0, 0, 0.3));
-    mask-image: linear-gradient(to bottom, #000 30%, rgba(0, 0, 0, 0.3));
-  }
-  .colophon-word > span { display: block; transition: transform 1100ms var(--ease-out), opacity 1100ms var(--ease-out); }
-  .fx .colophon:not(.in) .colophon-word > span { transform: translateY(72%); opacity: 0; }
-
-  /* ==== The camera as a cinema viewfinder ==== */
-  /* It opens like a shutter (letterbox to full frame), then the brackets settle in. The overlay is
-     always light on the picture, whatever the page's appearance. */
-  .frame { animation: shutter 900ms var(--ease-out) backwards; }
-  @keyframes shutter { from { clip-path: inset(50% 0 50% 0 round 6px); } to { clip-path: inset(0 0 0 0 round 6px); } }
-  .vf {
-    position: absolute; inset: 0; pointer-events: none; color: rgba(255, 255, 255, 0.86);
-    font: 500 10px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
-    background: radial-gradient(130% 95% at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.38) 100%);
-  }
-  .corner { position: absolute; width: 18px; height: 18px; border: 0 solid rgba(255, 255, 255, 0.82); animation: bracket 620ms var(--ease-out) 420ms backwards; }
-  .corner.tl { top: 10px; left: 10px; border-width: 1.5px 0 0 1.5px; transform-origin: 0 0; }
-  .corner.tr { top: 10px; right: 10px; border-width: 1.5px 1.5px 0 0; transform-origin: 100% 0; }
-  .corner.bl { bottom: 10px; left: 10px; border-width: 0 0 1.5px 1.5px; transform-origin: 0 100%; }
-  .corner.br { bottom: 10px; right: 10px; border-width: 0 1.5px 1.5px 0; transform-origin: 100% 100%; }
-  @keyframes bracket { from { opacity: 0; transform: scale(1.6); } to { opacity: 1; transform: none; } }
-
-  /* Compass tape: 3 px a degree, ticks every 5°, a label every 15°, read under a champagne caret. */
-  .tape {
-    position: absolute; top: 12px; left: 38px; right: 38px; height: 26px; overflow: hidden;
-    -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
-    mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
-    transition: opacity 300ms var(--ease-out);
-  }
-  .tape-strip {
-    position: absolute; left: 50%; top: 0; bottom: 0; will-change: transform;
-    background:
-      linear-gradient(90deg, rgba(255, 255, 255, 0.8) 1px, transparent 1px) 0 100% / 45px 8px repeat-x,
-      linear-gradient(90deg, rgba(255, 255, 255, 0.4) 1px, transparent 1px) 0 100% / 15px 4px repeat-x;
-    transition: transform 460ms var(--ease-out);
-  }
-  .tape-strip span { position: absolute; top: 2px; transform: translateX(-50%); font-size: 9px; letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.62); }
-  .tape-strip span.cardinal { color: rgba(255, 255, 255, 0.95); }
-  .tape-caret { position: absolute; top: 38px; left: 50%; width: 0; height: 0; margin-left: -4px; border: 4px solid transparent; border-bottom-color: var(--champagne); border-top: 0; }
-  .tape-read { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); color: var(--champagne); letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
-  .vf.no-compass .tape { opacity: 0.3; }
-  .vf.no-compass .tape-caret, .vf.no-compass .tape-read { opacity: 0.5; }
-
-  /* Crosshair at the centre; an artificial horizon placed where level really is (from tilt and focal). */
-  .cross {
-    position: absolute; top: 50%; left: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px;
-    background:
-      linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)) center / 1px 100% no-repeat,
-      linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)) center / 100% 1px no-repeat;
-    -webkit-mask-image: radial-gradient(circle, transparent 3.5px, #000 4px);
-    mask-image: radial-gradient(circle, transparent 3.5px, #000 4px);
-  }
-  .horizon {
-    --hc: rgba(255, 255, 255, 0.72);
-    position: absolute; top: 50%; left: 50%; width: 52%; height: 7px; margin-top: -1px;
-    transform: translate(-50%, var(--hy, 0px)); transition: transform 520ms var(--ease-out), opacity 300ms var(--ease-out);
-    background:
-      linear-gradient(90deg, var(--hc) 0 36%, transparent 36% 64%, var(--hc) 64% 100%) 0 0 / 100% 1px no-repeat,
-      linear-gradient(var(--hc), var(--hc)) 0 0 / 1px 6px no-repeat,
-      linear-gradient(var(--hc), var(--hc)) 100% 0 / 1px 6px no-repeat;
-  }
-  .horizon[data-state="warn"] { --hc: var(--amber); }
-  .vf.no-tilt .horizon { opacity: 0; }
-
-  .vf-foot { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-  .rec { display: inline-flex; align-items: center; gap: 7px; }
-  .rec i { width: 6px; height: 6px; border-radius: 50%; background: var(--crimson); box-shadow: 0 0 8px var(--crimson); animation: recblink 1.2s var(--ease-in-out) infinite; }
-  @keyframes recblink { 55% { opacity: 1; } 70%, 95% { opacity: 0.2; } }
-  .tc, .tilt-read { font-variant-numeric: tabular-nums; }
-  .tc { color: #fff; }
-  .tilt-read { color: rgba(255, 255, 255, 0.72); }
-
-  /* ==== Status rows: ok dots breathe a halo; a row that changes state ripples once ==== */
-  .rows > div { position: relative; --rc: var(--faint); }
-  .rows > [data-state="ok"] { --rc: var(--sage); }
-  .rows > [data-state="warn"] { --rc: var(--amber); }
-  .rows > [data-state="bad"] { --rc: var(--crimson); }
-  .rows i { position: relative; }
-  .rows i::before, .rows i::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--rc); opacity: 0; pointer-events: none; }
-  .rows [data-state="ok"] i::after { animation: halo 3.2s var(--ease-out) infinite; animation-delay: calc(var(--n, 0) * 420ms); }
-  .rows > div:nth-child(2) { --n: 1; } .rows > div:nth-child(3) { --n: 2; } .rows > div:nth-child(4) { --n: 3; }
-  .rows > div:nth-child(5) { --n: 4; } .rows > div:nth-child(6) { --n: 5; } .rows > div:nth-child(7) { --n: 6; }
-  @keyframes halo { 0% { opacity: 0.45; transform: scale(1); } 60%, 100% { opacity: 0; transform: scale(3.4); } }
-  .rows > div::after {
-    content: ""; position: absolute; inset: 0 -10px; border-radius: 8px; pointer-events: none; opacity: 0;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--rc) 14%, transparent), transparent 70%);
-  }
-  .rows > div.changed::after { animation: rowflash 900ms var(--ease-out); }
-  .rows > div.changed i::before { animation: ripple 700ms var(--ease-out); }
-  .rows > div.changed b { animation: valuein 420ms var(--ease-out); }
-  @keyframes rowflash { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; } }
-  @keyframes ripple { from { opacity: 0.7; transform: scale(1); } to { opacity: 0; transform: scale(6); } }
-  @keyframes valuein { from { opacity: 0.2; transform: translateX(4px); } to { opacity: 1; transform: none; } }
-  body:has(.row-net[data-state="ok"]) .link i { animation: breathe 2.8s ease-in-out infinite; }
 </style>
 </head>
 <body>
 <div class="page">
-  <header class="masthead">
-    <a class="brand" href="/" aria-label="Paradise, Eyes"><span class="brand-word">PAR<em>A</em>DISE</span><span class="sub">Eyes</span></a>
-    <div class="masthead-right">
+  <header class="top">
+    <a class="brand" href="/" aria-label="Paradise, Eyes"><span class="brand-word">Paradise</span><span class="sub">Eyes</span></a>
+    <div class="top-actions">
       <span class="link" aria-hidden="true"><i></i><span class="off">Offline</span><span class="on">Laptop</span></span>
       <button class="icon-button ghost" data-theme-toggle aria-label="Switch appearance" title="Switch appearance"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></button>
     </div>
   </header>
 
   <section class="hero" aria-label="Chest phone">
-    <div class="meta enter" style="--i: 1"><span class="index"><span class="when-off">Setup</span><span class="when-on">Now</span></span><span class="state"><i></i><span class="when-off">Chest phone</span><span class="when-on">Running</span></span></div>
-    <h1 class="head when-off"><span class="w" style="--w: 0">Eyes</span> <span class="w" style="--w: 1">for</span> <span class="w" style="--w: 2">the</span> <span class="w" style="--w: 3">walk.</span></h1>
-    <h1 class="head when-on"><span class="w" style="--w: 0">The</span> <span class="w" style="--w: 1">eyes</span> <span class="w" style="--w: 2">are</span> <em><span class="w" style="--w: 3">open.</span></em></h1>
-    <p class="lede enter when-off" style="--i: 9">Camera, location, compass and microphone for the wearer. Mount it, start it, leave it running.</p>
+    <h1 class="head when-off">Turning on your eyes.</h1>
+    <h1 class="head when-on">Watching the road.</h1>
+    <p class="lede when-off">Camera, location, compass and microphone for the wearer. Mount it, start it, leave it running.</p>
   </section>
 
-  <main>
-    <section class="intro enter" id="intro" style="--i: 4" aria-label="Turn on compass and voice">
-      <button id="start" class="primary">Tap anywhere to turn on compass &amp; voice</button>
-      <p class="hint">The camera and GPS are already on. iPhones only allow the compass and the microphone after a tap.</p>
+  <main class="stack">
+    <section class="intro" id="intro" aria-label="Turn on compass and voice">
+      <button id="start" class="primary big">Tap anywhere to turn on compass &amp; voice</button>
+      <p class="hint muted">The camera and GPS are already on. iPhones only allow the compass and the microphone after a tap.</p>
     </section>
 
-    <figure class="plate" id="camera" hidden>
-      <div class="frame"><canvas id="view" aria-label="Chest camera view"></canvas>
-        <div class="vf" aria-hidden="true">
-          <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
-          <div class="tape"><div class="tape-strip"></div></div>
-          <span class="tape-caret"></span><span class="tape-read">———</span>
-          <span class="cross"></span>
-          <div class="horizon"></div>
-          <div class="vf-foot"><span class="rec"><i></i>REC <span class="tc">00:00:00:00</span></span><span class="tilt-read">TILT —</span></div>
-        </div>
+    <figure class="plate card" id="camera" hidden>
+      <div class="frame">
+        <canvas id="view" aria-label="Chest camera view"></canvas>
+        <span class="live-state"><i></i><span class="live-text">Live</span><span class="off-text">No camera</span></span>
       </div>
-      <figcaption><span class="fig">Fig. 1</span><span>Chest camera</span><span class="live-state"><i></i><span class="live-text">Live</span><span class="off-text">No camera</span></span></figcaption>
-      <div class="seen"><span class="label">In view</span><div id="info" class="mono" aria-live="polite"></div></div>
+      <figcaption class="plate-foot">Chest camera</figcaption>
+      <div class="seen"><span class="label muted">In view</span><div id="info" class="mono" aria-live="polite"></div></div>
     </figure>
 
-    <section class="chapter" aria-labelledby="statusTitle">
-      <div class="chapter-head"><span class="index n">01</span><h2 class="serif" id="statusTitle">Status</h2><p>Links and sensors</p></div>
+    <section class="card">
+      <span class="label muted">Heading</span>
+      <div class="heading-display" data-state="">
+        <b id="compassV" class="num">—</b>
+        <svg class="arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v13M12 4l-4.5 4.5M12 4l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Status">
+      <h2>Status</h2>
       <div class="rows">
         <div class="row-net" data-state="bad"><i></i><span>Laptop</span><b id="net">Not connected</b></div>
         <div><i></i><span>Objects</span><b id="yoloInfo">Not started</b></div>
         <div><i></i><span>Hands</span><b id="handsInfo">Not started</b></div>
         <div><i></i><span>Voice</span><b id="voiceInfo">Not started</b></div>
         <div><i></i><span>GPS</span><b id="gpsV" class="num">—</b></div>
-        <div><i></i><span>Compass</span><b id="compassV" class="num">—</b></div>
         <div><i></i><span>Tilt</span><b id="tiltV" class="num">—</b></div>
       </div>
     </section>
 
-    <section class="tools" aria-label="For the team">
+    <section aria-label="For the team">
       <details class="card" data-key="calibration">
-        <summary><span class="n">02</span><span>Calibration</span><span class="summary-hint">For distances</span></summary>
+        <summary><span>Calibration</span><span class="summary-hint">For distances</span></summary>
         <div class="body">
           <p class="intro-copy">Distances to people and cars are measured from these. To calibrate, have someone stand exactly 3.00 m away, whole body in view.</p>
           <div class="field"><label for="focal">Focal length (px)</label><input id="focal" type="number" step="1" value="720" inputmode="numeric"></div>
@@ -337,13 +165,8 @@
     </section>
   </main>
 
-  <footer class="colophon">
-    <div class="colophon-word" aria-hidden="true"><span>Paradise</span></div>
-    <div class="colophon-row"><span>The chest phone</span><span>Keep this page open</span></div>
-  </footer>
+  <p class="footnote muted">Keep this page open while you walk.</p>
 </div>
-<div class="vignette" aria-hidden="true"></div>
-<div class="film" aria-hidden="true"><div class="grain"></div></div>
 <video id="video" playsinline muted style="display:none"></video>
 <script>
   const $ = (id) => document.getElementById(id);
@@ -799,105 +622,6 @@
     }));
   }, 100);
   boot();
-</script>
-<script>
-  // Presentation only: reads what the page already shows, never changes what it sends.
-  (() => {
-    const el = (id) => document.getElementById(id);
-    document.documentElement.classList.add("fx");
-
-    // A status row that changes state ripples once (row() sets data-state on the value's parent).
-    const rowWatch = new MutationObserver((records) => {
-      for (const r of records) {
-        const d = r.target;
-        if (r.oldValue === d.getAttribute("data-state")) continue;
-        d.classList.remove("changed");
-        void d.offsetWidth; // restart the animation
-        d.classList.add("changed");
-      }
-    });
-    document.querySelectorAll(".rows > div").forEach((d) => {
-      rowWatch.observe(d, { attributes: true, attributeFilter: ["data-state"], attributeOldValue: true });
-      d.addEventListener("animationend", (e) => { if (e.animationName === "rowflash") d.classList.remove("changed"); });
-    });
-
-    // Colophon: rises when it comes into view.
-    const colophon = document.querySelector(".colophon");
-    if ("IntersectionObserver" in window) {
-      new IntersectionObserver((entries, o) => {
-        if (entries.some((e) => e.isIntersecting)) { colophon.classList.add("in"); o.disconnect(); }
-      }, { threshold: 0.3 }).observe(colophon);
-    } else colophon.classList.add("in");
-
-    // ---- Viewfinder ----
-    const vf = document.querySelector(".vf");
-    if (!vf) return;
-    const strip = vf.querySelector(".tape-strip"), tapeRead = vf.querySelector(".tape-read");
-    const horizon = vf.querySelector(".horizon"), tiltRead = vf.querySelector(".tilt-read"), tc = vf.querySelector(".tc");
-
-    // Compass tape, five turns long so it can always take the short way round.
-    const PPD = 3, FROM = -720, TO = 1080;
-    const NAMES = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
-    let labels = "";
-    for (let d = FROM; d <= TO; d += 15) {
-      const m = ((d % 360) + 360) % 360;
-      labels += `<span${NAMES[m] ? ' class="cardinal"' : ""} style="left:${(d - FROM) * PPD}px">${NAMES[m] || m}</span>`;
-    }
-    strip.innerHTML = labels;
-    strip.style.width = `${(TO - FROM) * PPD + 1}px`;
-    let heading = null; // unwrapped, so 359° → 1° moves 2°, not 358°
-    const place = (animate) => {
-      strip.style.transition = animate ? "" : "none";
-      strip.style.transform = `translateX(${-(heading - FROM) * PPD}px)`;
-    };
-    function onCompass() {
-      const m = /^(\d+(?:\.\d+)?)°$/.exec(el("compassV").textContent.trim());
-      vf.classList.toggle("no-compass", !m);
-      if (!m) { tapeRead.textContent = "———"; return; }
-      const v = Number(m[1]);
-      tapeRead.textContent = `${String(Math.round(v) % 360).padStart(3, "0")}°`;
-      if (heading === null) { heading = v; place(false); return; }
-      const norm = ((heading % 360) + 360) % 360; // same picture, back near the middle of the strip
-      if (norm !== heading) { heading = norm; place(false); void strip.offsetWidth; }
-      heading += ((((v - heading) % 360) + 540) % 360) - 180;
-      place(true);
-    }
-
-    // Artificial horizon: where level is in the picture, from the tilt row and the focal length.
-    function onTilt() {
-      const b = el("tiltV"), m = /^(\d+)° (down|up)$/.exec(b.textContent.trim());
-      vf.classList.toggle("no-tilt", !m);
-      horizon.dataset.state = b.parentElement.dataset.state || "";
-      if (!m) { tiltRead.textContent = "TILT —"; return; }
-      const t = Number(m[1]) * (m[2] === "down" ? 1 : -1);
-      const f = Number(el("focal").value) > 0 ? Number(el("focal").value) : 720;
-      const h = vf.clientHeight, ch = el("view").height || 540;
-      const y = Math.max(-0.42 * h, Math.min(0.42 * h, -Math.tan((t * Math.PI) / 180) * f * (h / ch)));
-      horizon.style.setProperty("--hy", `${y.toFixed(1)}px`);
-      tiltRead.textContent = `TILT ${m[1]}° ${m[2] === "down" ? "▾" : "▴"}`;
-    }
-    const watch = (id, fn) => new MutationObserver(fn).observe(el(id).parentElement,
-      { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["data-state"] });
-    watch("compassV", onCompass);
-    watch("tiltV", onTilt);
-    el("focal").addEventListener("input", onTilt);
-    addEventListener("resize", onTilt);
-
-    // Running timecode (HH:MM:SS:FF at 24 fps) while the camera shows.
-    const pad = (n) => String(n).padStart(2, "0");
-    let t0 = null;
-    function tick(now) {
-      if (el("view").hidden) return; // no camera
-      if (!el("camera").hidden) {
-        if (t0 === null) { t0 = now; onTilt(); }
-        const s = (now - t0) / 1000;
-        const text = `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(Math.floor(s) % 60)}:${pad(Math.floor((s % 1) * 24))}`;
-        if (tc.textContent !== text) tc.textContent = text;
-      }
-      requestAnimationFrame(tick);
-    }
-    el("start").addEventListener("click", () => requestAnimationFrame(tick), { once: true });
-  })();
 </script>
 </body>
 </html>
