@@ -29,7 +29,6 @@
     <button id="voiceBtn" class="pill toggle-pill ok" aria-pressed="true" title="Speak for the audience">Voice on</button>
     <span class="sep" aria-hidden="true"></span>
     <a class="textlink" href="/legend" target="_blank" rel="noopener">Legend</a>
-    <button class="icon-button ghost" data-open-setup aria-label="Device setup" title="Device setup"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></button>
     <button class="icon-button ghost" data-theme-toggle aria-label="Switch appearance" title="Switch appearance"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></button>
     <button id="connect" class="primary">Connect Joy-Con</button>
   </div>
@@ -53,8 +52,7 @@
       <div class="empty">
         <span class="empty-mark" aria-hidden="true"></span>
         <p class="empty-title">Waiting for the chest camera</p>
-        <p class="empty-copy">Open the Eyes link on the phone and tap Start.</p>
-        <button class="ghost" data-open-setup>How to connect</button>
+        <p class="empty-copy">Open the Eyes link on the phone; it connects by itself.</p>
       </div>
     </div>
     <figcaption><span class="fig">Fig. 1</span><span>Chest camera</span><span class="live-state"><i></i><span class="off-text">No signal</span><span class="live-text">Live</span></span></figcaption>
@@ -180,19 +178,6 @@
   <div class="colophon-word" aria-hidden="true">Paradise</div>
   <div class="colophon-row"><span>Guidance by touch, for people who are blind or DeafBlind.</span><nav aria-label="Jump to"><a href="#settings" data-open-section="settings">Settings</a><a href="#testing" data-open-section="testing">Testing</a><a href="/legend" target="_blank" rel="noopener">Buzz legend</a></nav></div>
 </footer>
-
-<dialog id="setupDialog" aria-labelledby="setupTitle">
-  <button class="icon-button ghost dialog-close" data-close-setup aria-label="Close"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
-  <span class="label">Setup</span>
-  <h2 class="serif" id="setupTitle">Connect the devices</h2>
-  <ol class="setup-steps">
-    <li><b>The chest phone</b>Open the Eyes link printed by the server, tap Start and allow everything.</li>
-    <li><b>Both wrists</b>Pair each Joy-Con in Bluetooth settings, then use Connect Joy-Con once for each.</li>
-    <li><b>Begin</b>Choose a destination or type something to find.</li>
-  </ol>
-  <div class="dialog-links"><a class="button primary" href="/eyes" target="_blank" rel="noopener">Eyes page</a><a class="button" href="/beacon" target="_blank" rel="noopener">Beacon page</a></div>
-</dialog>
-
 <script>
   // Presentation only (no guidance logic): the headline and readings arrive letter by letter,
   // the camera becomes a viewfinder (compass tape + timecode), the Go-to chips get a sliding
@@ -476,7 +461,7 @@
   const PATTERNS = {
     left: () => buzz("L", 1, 150),                                  // steer left (repeats every 400 ms)
     right: () => buzz("R", 1, 150),                                 // steer right
-    approach: () => both(0.5, 90),                                  // approaching (interval shrinks)
+    approach: (s = 0.5) => both(s, 90),                             // approaching: faster and stronger as it gets close
     arrived: () => both(1, 800),                                    // arrived: one long buzz
     obstacle: () => repeat(3, 180, () => both(1, 100)),             // stop: 3 sharp pulses
     search: () => { const m = meaning; [["L", 0], ["R", 450], ["L", 900]].forEach(([s, t]) => setTimeout(() => { meaning = m; buzz(s, 0.6, 200); }, t)); },
@@ -487,7 +472,7 @@
     reachRight: (s = 1) => buzz("R", s, 100),                       // move it right
     reachUp: (s = 1) => both(s, 100, HIGH),                         // move it up: a high buzz on both
     reachDown: (s = 1) => both(s, 100, LOW),                        // move it down: a low buzz on both
-    reachForward: () => both(0.4, 60),                              // lined up: forward (faster as it gets close)
+    reachForward: (s = 0.4) => both(s, 60),                         // lined up: forward (faster and stronger as it gets close)
     reachOut: () => both(0.6, 250),                                 // hand not in view yet: reach out (every 1.2 s)
     touch: () => repeat(3, 110, () => both(1, 60, HIGH)),           // touching it: 3 quick high buzzes
     // Voice: "heard you" (said "Paradise" alone, so listening for the command; or a command gone to
@@ -1437,7 +1422,11 @@
       const perSec = distance == null ? 1 : by === "handle" || by === "thing" ? clamp(5 / distance, 1, 4)
         : by === "object" ? clamp(15 / distance, 0.7, 4) : clamp(40 / distance, 0.7, 3);
       nextPulse = now + 1000 / perSec;
-      PATTERNS.approach();
+      // …and stronger: soft far away, full strength by the time they arrive (the last few meters
+      // for things and the door handle, the last ~12 m to the car, ~40 m by GPS).
+      const arriveAt = by === "handle" ? 0.8 : by === "object" || by === "thing" ? 1.0 : by === "gps" ? Number($("arrive").value) : 1.5;
+      const span = by === "handle" || by === "thing" ? 4 : by === "explore" ? 6 : by === "object" ? 12 : 40;
+      PATTERNS.approach(distance == null ? 0.5 : clamp(1 - (distance - arriveAt) / span, 0.35, 1));
       return say(walking);
     }
     nextPulse = now + 400;
@@ -1497,7 +1486,7 @@
       if (now >= reach.next && !quiet) { reach.next = now + 300; PATTERNS[{ left: "reachLeft", right: "reachRight", up: "reachUp", down: "reachDown" }[dir]](Math.min(1, 0.4 + off / 30)); }
       return say(`REACH: move your hand ${dir} ${off.toFixed(0)}°`);
     }
-    if (now >= reach.next && !quiet) { reach.next = now + 1000 / (gap != null ? clamp(1 / Math.max(gap, 0.05), 2, 6) : 2); PATTERNS.reachForward(); }
+    if (now >= reach.next && !quiet) { reach.next = now + 1000 / (gap != null ? clamp(1 / Math.max(gap, 0.05), 2, 6) : 2); PATTERNS.reachForward(gap != null ? clamp(1 - gap, 0.4, 1) : 0.4); }
     return say(`REACH: forward${gap != null ? ` (${Math.max(0, gap).toFixed(2)} m to go)` : ""}`);
   }
   // Where to reach, in words for the display ("a little left, low").

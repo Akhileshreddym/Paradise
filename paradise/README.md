@@ -444,8 +444,10 @@ Then, each time:
 1. In **Safari**, open the chest phone's link: `https://<your tunnel address>/eyes?k=<the key>`, as
    `npm start` printed it ([4.6](#46-give-the-laptop-an-https-address-cloudflare-tunnel)). Without the
    right key the **Laptop** row says `Wrong or missing link…`.
-2. Tap **Start** and **allow every prompt**: microphone (speech), motion & orientation (the compass
-   and tilt), location, camera. The first load downloads ~50 MB (use Wi-Fi).
+2. The camera, GPS and object detection start by themselves when the page opens (allow the camera
+   and location prompts). Then **tap anywhere once** and allow the rest: microphone (speech) and
+   motion & orientation (the compass and tilt). iPhones only allow those two from a tap. The first
+   load downloads ~50 MB (use Wi-Fi).
 3. Check the status rows; each gets a green dot once it works:
    - **Laptop**: `Connected · N updates`;
    - **Objects**: `Ready (webgpu)` (or `wasm` on phones without WebGPU), then `webgpu · N ms a frame`;
@@ -456,7 +458,7 @@ Then, each time:
 4. On the laptop page, the camera view appears and the **Phone** pill turns green.
 
 Keep the phone's screen on and this page in front. The page keeps the screen awake (and takes the
-wake lock back if you switch apps and return). If a prompt was refused, reload and tap Start again;
+wake lock back if you switch apps and return). If a prompt was refused, reload the page;
 if iOS doesn't ask again, quit Safari (swipe it away) and reopen it.
 
 ### 4.8 Mount the chest iPhone
@@ -589,7 +591,7 @@ over *person 1.0 m ahead*.
 
 ### 3. Chest phone and compass (indoors is fine)
 
-- Tunnel on, the chest phone's link (`/eyes?k=…`) open on the chest phone, **Start**, then mount it.
+- Tunnel on, the chest phone's link (`/eyes?k=…`) open on the chest phone, tap once, then mount it.
 - ✅ Phone: **Laptop** and **Objects** rows green. Laptop: the camera view appears, **Phone** pill
   green.
 - Stand still and press **90° right** (**Testing → Indoor steering test**).
@@ -1566,9 +1568,9 @@ Then restart `npm start`. To start from scratch (download the web photos again),
 | Phone: **Laptop** `Wrong or missing link: reopen the link printed by npm start` / beacon: **Wrong link** | The page's address has no `?k=…`, or the key of an earlier `npm start` (a new one every start). Open the links `npm start` printed this time ([4.6](#46-give-the-laptop-an-https-address-cloudflare-tunnel)), or set `PARADISE_TOKEN` in `.env` to keep one key. The server terminal says `refused an eyes page … wrong or missing link key`. |
 | Phone: `camera error` | Use the https tunnel address, not `http://…`. Allow the camera in Safari's site settings (**aA → Website Settings**). |
 | Phone: **Objects** `Failed to load` | The phone needs internet for the first load (~30 MB from jsDelivr and Hugging Face). Reload. |
-| `GPS error: User denied Geolocation` | Allow location ([4.7](#47-set-up-the-chest-iphone)); reload and tap Start again. |
+| `GPS error: User denied Geolocation` | Allow location ([4.7](#47-set-up-the-chest-iphone)); reload the page. |
 | GPS ±35 m or worse | You're indoors, or Precise Location is off. |
-| Laptop: *No compass* / phone: **Compass** `Not allowed (motion access)` | Allow motion & orientation when Start asks. Reload and tap Start again; if iOS doesn't ask, quit Safari and reopen it. |
+| Laptop: *No compass* / phone: **Compass** `Not allowed (motion access)` | Allow motion & orientation when the first tap asks. Reload and tap once again; if iOS doesn't ask, quit Safari and reopen it. |
 | Steers the wrong way | Phone upright, camera facing forward; turning right must make `heading` go **up**. Keep it away from magnets and steel. Joy-Cons on the right wrists (L left, R right). |
 | GPS targets consistently a bit off | Set `DECLINATION` for your location ([4.12](#412-set-your-magnetic-declination)). |
 | Joy-Con won't connect or buzz | Quit Steam/BetterJoy; re-pair; use Chrome; press a button on the Joy-Con to wake it. |

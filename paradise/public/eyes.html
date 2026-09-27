@@ -290,14 +290,9 @@
   </section>
 
   <main>
-    <section class="intro enter" id="intro" style="--i: 4" aria-label="Setup">
-      <ol class="steps">
-        <li><b>Mount it upright on the chest</b>Rear camera facing forward, tilted slightly down.</li>
-        <li><b>Tap Start, then allow everything</b>Camera, location, motion and microphone.</li>
-        <li><b>Keep this page open</b>The screen stays on by itself.</li>
-      </ol>
-      <button id="start" class="primary">Start <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
-      <p class="hint">Needs the https link printed by npm start.</p>
+    <section class="intro enter" id="intro" style="--i: 4" aria-label="Turn on compass and voice">
+      <button id="start" class="primary">Tap anywhere to turn on compass &amp; voice</button>
+      <p class="hint">The camera and GPS are already on. iPhones only allow the compass and the microphone after a tap.</p>
     </section>
 
     <figure class="plate" id="camera" hidden>
@@ -456,7 +451,8 @@
     if (!started) return;
     row("gpsV", gps ? `±${gps.acc.toFixed(0)} m` : gpsError || "Waiting…", gps ? (gps.acc <= 20 ? "ok" : "warn") : gpsError ? "bad" : "warn");
     const c = compassNow();
-    row("compassV", c !== null ? `${c.toFixed(0)}°` : compassError || (compass === null ? "Waiting…" : "Not updating"),
+    const needTap = !tapped && compassNeedsTap;
+    row("compassV", c !== null ? `${c.toFixed(0)}°` : compassError || (needTap ? "Tap the screen to turn on" : compass === null ? "Waiting…" : "Not updating"),
       c !== null ? "ok" : compassError ? "bad" : "warn");
     const t = performance.now() - tiltAt < 1000;
     row("tiltV", t ? `${Math.abs(tilt).toFixed(0)}° ${tilt >= 0 ? "down" : "up"}` : compassError || "Waiting…",
@@ -464,16 +460,12 @@
   }, 500);
 
   // ---- Camera ----
-  $("start").onclick = async () => {
-    $("intro").hidden = true;
-    started = true;
-    // iPhone only allows the motion (compass) and speech prompts straight from the tap: both start
-    // before the first await.
-    startVoice();
-    await startCompass();
-    startGps();
-    startYolo();
-    keepAwake();
+  // Opening the page starts everything that needs no tap: camera, GPS, objects, hands, screen on.
+  // iPhones only allow the compass (motion) and the microphone straight from a tap, so the first
+  // tap anywhere on the page turns those on (and retries the camera if it was refused at first).
+  let cameraOn = false, tapped = false;
+  async function startCamera() {
+    if (cameraOn) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -481,16 +473,40 @@
       });
       video.srcObject = stream;
       await video.play();
+      cameraOn = true;
       $("camera").hidden = false;
+      $("view").hidden = false;
       requestAnimationFrame(loop);
       startHands(); // in the background: it's only needed at the target
     } catch (err) {
       // GPS mode still works without the camera.
       $("camera").hidden = false;
       $("view").hidden = true;
-      $("info").textContent = `camera error: ${err.name}\n${err.message}\n(the page must be https)`;
+      $("info").textContent = `camera error: ${err.name}\n${err.message}\n(the page must be https; tap the screen to try again)`;
     }
-  };
+  }
+  function onFirstTap() {
+    if (tapped) return;
+    tapped = true;
+    $("intro").hidden = true;
+    // Both before the first await: iPhone only shows these prompts straight from the tap.
+    startVoice();
+    if (compassNeedsTap) startCompass();
+    keepAwake();
+    startCamera();
+  }
+  document.addEventListener("click", onFirstTap);
+  const compassNeedsTap = typeof window.DeviceOrientationEvent?.requestPermission === "function";
+  // Run once everything below is defined (called at the end of this script).
+  function boot() {
+    started = true;
+    startGps();
+    startYolo();
+    keepAwake();
+    startCamera();
+    if (!compassNeedsTap) startCompass(); // Android and desktop browsers need no tap for it
+    row("voiceInfo", "Tap the screen to turn on", "warn");
+  }
 
   // Keep the screen on. The browser drops the lock whenever the page is hidden (another app, the
   // lock screen), so take it again when the page comes back.
@@ -782,6 +798,7 @@
       gps: gps && { lat: gps.lat, lon: gps.lon, acc: gps.acc, age: Math.max(0, Date.now() - gps.time) },
     }));
   }, 100);
+  boot();
 </script>
 <script>
   // Presentation only: reads what the page already shows, never changes what it sends.
