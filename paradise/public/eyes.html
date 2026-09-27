@@ -609,7 +609,7 @@
   // ---- Car crops for the server's Waymo classifier, twice a second, in Waymo mode ----
   // Cut exactly like the training crops (training/crop.mjs): the car's box widened 5% each side
   // and extended 35% of its height upward so the roof sensors are in it, squashed to 224 × 224.
-  let wantCarsUntil = -Infinity;
+  let wantCarsUntil = -Infinity, carTurn = 0;
   const crop = document.createElement("canvas");
   crop.width = crop.height = 224;
   setInterval(() => {
@@ -617,9 +617,12 @@
     const k = view.width / video.videoWidth; // 960 px frame → camera pixels
     const cars = yolo.boxes.map((b, i) => ({ b, o: yolo.objects[i] }))
       .filter(({ b }) => ["car", "truck", "bus"].includes(b.label) && b.x2 - b.x1 > 40)
-      .sort((p, q) => (q.b.x2 - q.b.x1) * (q.b.y2 - q.b.y1) - (p.b.x2 - p.b.x1) * (p.b.y2 - p.b.y1))
-      .slice(0, 3);
+      .sort((p, q) => (q.b.x2 - q.b.x1) * (q.b.y2 - q.b.y1) - (p.b.x2 - p.b.x1) * (p.b.y2 - p.b.y1));
     if (!cars.length) return;
+    // Three at a time, taking turns round all the cars in view (biggest first), so with many cars
+    // around each one still gets checked every second or two.
+    const start = (carTurn++ * 3) % cars.length;
+    cars.splice(0, cars.length, ...[...cars.slice(start), ...cars.slice(0, start)].slice(0, 3));
     sentPicture();
     ws.send(JSON.stringify({
       type: "cars", to: "server", compass: compassNow(),
@@ -628,7 +631,7 @@
         const x1 = Math.max(0, b.x1 - 0.05 * w), x2 = Math.min(view.width, b.x2 + 0.05 * w);
         const y1 = Math.max(0, b.y1 - 0.35 * h), y2 = Math.min(view.height, b.y2);
         crop.getContext("2d").drawImage(video, x1 / k, y1 / k, (x2 - x1) / k, (y2 - y1) / k, 0, 0, 224, 224);
-        return { image: crop.toDataURL("image/jpeg", 0.85), angle: o.angle, distance: o.distance };
+        return { image: crop.toDataURL("image/jpeg", 0.85), angle: o.angle, distance: o.distance, box: o.box };
       }),
     }));
   }, 500);
