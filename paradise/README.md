@@ -173,7 +173,7 @@ or dark follows the Mac's setting.
 ```
  ┌──────────────── chest iPhone (Safari) ─────────────────┐     ┌──── beacon phone ────┐
  │ eyes.html                                              │     │ beacon.html          │
- │  camera → YOLOv10n (runs in the phone, 80 object kinds)│     │  GPS, once a second  │
+ │  camera → YOLOv10s (runs in the phone, 80 object kinds)│     │  GPS, once a second  │
  │  camera → MediaPipe hand tracking (at the target)      │     │  ("the Waymo")       │
  │  compass, tilt, GPS, microphone (speech → text)        │     │                      │
  └──────────────────────────┬─────────────────────────────┘     └──────────┬───────────┘
@@ -194,7 +194,7 @@ or dark follows the Mac's setting.
 
 | Part | Runs on | Its job | Why there |
 |---|---|---|---|
-| YOLOv10n (80 everyday object kinds) | Chest iPhone, in a web worker (WebGPU if available, else WebAssembly) | People, cars, bottles, chairs… several times a second: obstacles, cars to check, everyday things to find | Small (9 MB) and fast; only tiny results need sending |
+| YOLOv10s (80 everyday object kinds) | Chest iPhone, in a web worker (WebGPU if available, else WebAssembly) | People, cars, bottles, chairs… several times a second: obstacles, cars to check, everyday things to find | 29 MB (downloaded once), more accurate than the 9 MB nano model and still fast on the phone's GPU; only tiny results need sending. Each car's colour is read off its body pixels here too |
 | MediaPipe hand tracking | Chest iPhone, in the page (GPU, else CPU) | At the door handle or the thing: where the wearer's fingertips are and how far away the hand is, ~7 times a second | Small (8 MB model) and fast in a browser; the hand moves quicker than frames could make a round trip to the Mac |
 | Compass, tilt, GPS, speech-to-text | Chest iPhone | Which way the wearer faces, how far the camera looks down, where they are, what they said | The sensors are on the phone |
 | Beacon | Second phone | Shares "the Waymo's" location | Stands in for Waymo's app: there's no public API |
@@ -257,7 +257,7 @@ water bottle indoors.
 | Google Chrome (or Edge) | Current | Mac | Needed for WebHID (the Joy-Cons). Safari and Firefox can't. |
 | cloudflared | 2026.9.3 | Mac | The https tunnel. `brew install cloudflared` (Windows: `winget install --id Cloudflare.cloudflared`). |
 | Safari | Current iOS | Phones | Nothing to install. |
-| Loaded by the pages at runtime | `joy-con-webhid` 0.11.0 (laptop page); `onnxruntime-web` 1.22.0 and the YOLOv10n model, `@mediapipe/tasks-vision` 1.0.1 and its hand model (phone) | CDNs: jsDelivr, Hugging Face, Google (`storage.googleapis.com`, the hand model) | Cached by the browser after the first load (~50 MB on the phone: ~30 MB for YOLO, ~20 MB for hand tracking). |
+| Loaded by the pages at runtime | `joy-con-webhid` 0.11.0 (laptop page); `onnxruntime-web` 1.22.0 and the YOLOv10s model, `@mediapipe/tasks-vision` 1.0.1 and its hand model (phone) | CDNs: jsDelivr, Hugging Face, Google (`storage.googleapis.com`, the hand model) | Cached by the browser after the first load (~70 MB on the phone: ~50 MB for YOLO and its runtime, ~20 MB for hand tracking). |
 | Downloaded by the server on first start | Grounding DINO tiny, 8-bit (204 MB); CLIP ViT-B/32, 8-bit (vision 89 MB + text 65 MB); Depth Anything V2 small, 8-bit (27 MB) | Mac, into `paradise/models/` | ~390 MB once, then loaded from disk. |
 
 No accounts, no API keys, nothing paid, except two optional parts. Google Gemini understands voice
@@ -1472,7 +1472,7 @@ Measured on a MacBook Pro (M3 Pro); phone speeds vary and show on the phone page
 
 | What | Time |
 |---|---|
-| YOLOv10n in Chrome on the Mac | 14 ms a frame (WebGPU), ~170 ms (WebAssembly) |
+| YOLOv10n (the earlier nano model) in Chrome on the Mac | 14 ms a frame (WebGPU), ~170 ms (WebAssembly) |
 | Object finder (Grounding DINO tiny, 8-bit, CPU) | 1.1–1.6 s a frame |
 | CLIP (8-bit, CPU) | ~20–35 ms an image; the first check for a new thing also encodes ~80 text labels once |
 | Depth model (Depth Anything V2 small, 8-bit, 364 px, CPU) | ~80–90 ms a frame, including the floor fit; at 4 frames a second, about a third of one CPU core |
@@ -1737,7 +1737,7 @@ paradise/
 ├── public/                    the pages (served to browsers)
 │   ├── hands.html             laptop page: Joy-Cons, choosing, voice commands, all guidance (incl. the last reach), the display, the audience voice
 │   ├── eyes.html              chest phone: camera + YOLO, hand tracking (MediaPipe), compass, tilt, GPS, voice, frames and crops
-│   ├── yolo-worker.js         YOLOv10n in a web worker on the phone (WebGPU or WebAssembly)
+│   ├── yolo-worker.js         YOLOv10s in a web worker on the phone (WebGPU or WebAssembly)
 │   ├── paradise.css           the look shared by the pages (light and dark follow the device)
 │   ├── legend.html            the buzz legend: what every buzz means, shown and played (/legend)
 │   └── beacon.html            beacon phone: shares its GPS location
@@ -1758,7 +1758,7 @@ paradise/
 
 | Component | Source | License |
 |---|---|---|
-| YOLOv10n (phone) | [onnx-community/yolov10n](https://huggingface.co/onnx-community/yolov10n) (from THU-MIG's YOLOv10) | **AGPL-3.0**: check what this means for you before you distribute or host a product built on it |
+| YOLOv10s (phone) | [onnx-community/yolov10s](https://huggingface.co/onnx-community/yolov10s) (from THU-MIG's YOLOv10) | **AGPL-3.0**: check what this means for you before you distribute or host a product built on it |
 | Grounding DINO tiny (object finder) | [onnx-community/grounding-dino-tiny-ONNX](https://huggingface.co/onnx-community/grounding-dino-tiny-ONNX) (IDEA Research) | Apache-2.0 |
 | CLIP ViT-B/32 | [Xenova/clip-vit-base-patch32](https://huggingface.co/Xenova/clip-vit-base-patch32) (OpenAI CLIP) | OpenAI's CLIP release is MIT; check the model card for your use |
 | Depth Anything V2 Small (obstacles) | [onnx-community/depth-anything-v2-small](https://huggingface.co/onnx-community/depth-anything-v2-small) (from Depth Anything V2, HKU and TikTok) | Apache-2.0 (the Small model only: the bigger Depth Anything V2 models are non-commercial) |

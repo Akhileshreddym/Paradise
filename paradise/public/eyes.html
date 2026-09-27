@@ -95,6 +95,29 @@
 
   .footnote { text-align: center; margin: 0; font-size: 12px; }
 
+  /* ---- Setup: one progress bar and a checklist until everything's running ---- */
+  .setup { padding: 22px 20px 12px; transition: opacity 400ms var(--ease-out); }
+  .setup-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .setup-head h2 { font-size: 22px; }
+  .setup-pct { font: 400 28px/1 var(--font); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--guide); }
+  .bar { position: relative; height: 8px; margin: 16px 0 10px; border-radius: var(--pill); background: var(--surface-3); overflow: hidden; }
+  .bar i { position: absolute; inset: 0 auto 0 0; width: var(--p, 0%); border-radius: inherit; background: var(--path); box-shadow: var(--glow); transition: width 400ms var(--ease-out); }
+  .setup.done .bar i { background: var(--go); box-shadow: 0 0 16px rgba(52, 211, 153, 0.45); }
+  .setup.done .setup-pct { color: var(--go); }
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .steps li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+  .steps li:first-child { border-top: 0; }
+  .steps .ic { width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--surface-3); }
+  .steps li[data-s="busy"] .ic { box-shadow: inset 0 0 0 2px var(--surface-3); border: 2px solid transparent; border-top-color: var(--guide); animation: spin 900ms linear infinite; }
+  .steps li[data-s="ok"] .ic { background: var(--go) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M6 10.5l2.6 2.6L14 7.6' fill='none' stroke='%23062014' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 20px no-repeat; box-shadow: none; }
+  .steps li[data-s="tap"] .ic { box-shadow: inset 0 0 0 2px var(--guide); }
+  .steps li[data-s="bad"] .ic { background: var(--stop); box-shadow: none; }
+  .steps b { font-weight: 500; }
+  .steps span { font-size: 13px; color: var(--muted); text-align: right; max-width: 22ch; overflow-wrap: anywhere; }
+  .steps li[data-s="bad"] span { color: var(--stop); }
+  .steps li[data-s="tap"] span { color: var(--guide); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   @media (hover: hover) and (pointer: fine) {
     .top .icon-button:hover { color: var(--text); background: var(--surface-2); }
   }
@@ -117,6 +140,17 @@
   </section>
 
   <main class="stack">
+    <section class="setup card" id="setup" aria-label="Setup" aria-live="polite">
+      <div class="setup-head"><h2 id="setupTitle">Getting ready</h2><span class="setup-pct" id="setupPct">0%</span></div>
+      <div class="bar" role="progressbar" aria-labelledby="setupTitle" aria-valuemin="0" aria-valuemax="100" id="setupBar"><i></i></div>
+      <ol class="steps">
+        <li data-step="link"><i class="ic"></i><b>Laptop</b><span>Connecting…</span></li>
+        <li data-step="camera"><i class="ic"></i><b>Camera</b><span>Starting…</span></li>
+        <li data-step="detect"><i class="ic"></i><b>Object detection</b><span>Loading…</span></li>
+        <li data-step="gps"><i class="ic"></i><b>Location</b><span>Finding GPS…</span></li>
+        <li data-step="senses"><i class="ic"></i><b>Compass &amp; voice</b><span>Tap the screen</span></li>
+      </ol>
+    </section>
     <section class="intro" id="intro" aria-label="Turn on compass and voice">
       <button id="start" class="primary big">Tap anywhere to turn on compass &amp; voice</button>
       <p class="hint muted">The camera and GPS are already on. iPhones only allow the compass and the microphone after a tap.</p>
@@ -177,6 +211,44 @@
     if (v.textContent !== text) v.textContent = text;
     if (v.parentElement.dataset.state !== state) v.parentElement.dataset.state = state;
   }
+
+  // ---- Setup: a progress bar and checklist, read off the status rows (nothing here decides
+  // anything). The model download is most of the wait, so it's most of the bar. Once the laptop
+  // link, the camera, detection and the compass are all up, it says Ready and folds away; it comes
+  // back if one of them drops out.
+  const setup = { detect: 0, readyAt: 0 };
+  const stateOf = (id) => $(id).parentElement.dataset.state || "";
+  function step(name, s, text) {
+    const li = document.querySelector(`[data-step="${name}"]`);
+    if (li.dataset.s !== s) li.dataset.s = s;
+    const t = li.querySelector("span");
+    if (t.textContent !== text) t.textContent = text;
+  }
+  setInterval(() => {
+    const link = stateOf("net") === "ok";
+    step("link", link ? "ok" : linkRefused ? "bad" : "busy", link ? "Connected" : linkRefused ? "Old link: reopen the new one" : "Connecting…");
+    const cam = video.videoWidth > 0, camFail = $("view").hidden && !$("camera").hidden;
+    step("camera", cam ? "ok" : camFail ? "bad" : "busy", cam ? "Live" : camFail ? "Not allowed: tap to retry" : "Starting…");
+    const det = stateOf("yoloInfo"), detOk = det === "ok";
+    const detText = $("yoloInfo").textContent;
+    step("detect", detOk ? "ok" : det === "bad" ? "bad" : "busy", detOk ? "Ready" : det === "bad" ? "Failed: reload the page" : detText.replace(/^Loading.*/, "Loading…"));
+    const gps = stateOf("gpsV"), gpsOk = gps === "ok" || (gps === "warn" && /±/.test($("gpsV").textContent));
+    step("gps", gpsOk ? "ok" : gps === "bad" ? "bad" : "busy", gpsOk ? $("gpsV").textContent.split(",")[0] : gps === "bad" ? $("gpsV").textContent : "Finding GPS…");
+    const compassOk = stateOf("compassV") === "ok", voiceOk = stateOf("voiceInfo") === "ok" || stateOf("voiceInfo") === "bad"; // no mic: carries on without voice
+    const tapped = $("intro").hidden;
+    step("senses", compassOk && voiceOk ? "ok" : !tapped ? "tap" : "busy",
+      compassOk && voiceOk ? (stateOf("voiceInfo") === "ok" ? "On" : "Compass on, voice off") : !tapped ? "Tap the screen" : compassOk ? "Voice starting…" : "Compass starting…");
+    const p = 0.15 * link + 0.15 * cam + 0.45 * (detOk ? 1 : 0.9 * setup.detect) + 0.1 * gpsOk + 0.075 * compassOk + 0.075 * voiceOk;
+    const pct = Math.round(p * 100), ready = link && cam && detOk && compassOk;
+    $("setupPct").textContent = ready ? "Ready" : `${pct}%`;
+    $("setupTitle").textContent = ready ? "All set" : "Getting ready";
+    $("setupBar").style.setProperty("--p", `${ready ? 100 : pct}%`);
+    $("setupBar").setAttribute("aria-valuenow", String(ready ? 100 : pct));
+    $("setup").classList.toggle("done", ready);
+    if (ready && !setup.readyAt) setup.readyAt = performance.now();
+    if (!ready) setup.readyAt = 0;
+    $("setup").hidden = ready && performance.now() - setup.readyAt > 2500;
+  }, 250);
   // Which sections are open is remembered on this phone.
   document.querySelectorAll("details[data-key]").forEach((d) => {
     try { d.open = localStorage.getItem(`paradise.open.${d.dataset.key}`) === "1"; } catch {}
@@ -399,7 +471,7 @@
         ctx.strokeStyle = ctx.fillStyle = "#3d95ff";
         ctx.lineWidth = 4;
         ctx.beginPath(); rr(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1, 10); ctx.stroke();
-        const text = `${b.label} ${Math.round(b.score * 100)}%`, w = ctx.measureText(text).width + 16;
+        const text = `${b.color ? `${b.color} ` : ""}${b.label} ${Math.round(b.score * 100)}%`, w = ctx.measureText(text).width + 16;
         const ty = b.y1 - 36 >= 0 ? b.y1 - 36 : b.y1 + 4; // above the box, or inside it at the top
         ctx.beginPath(); rr(b.x1, ty, w, 32, 8); ctx.fill();
         ctx.fillStyle = "#fff"; ctx.fillText(text, b.x1 + 8, ty + 23);
@@ -413,7 +485,7 @@
     ctx.beginPath(); ctx.moveTo(view.width / 2, 0); ctx.lineTo(view.width / 2, view.height); ctx.stroke();
   }
 
-  // ---- Objects: YOLOv10n in yolo-worker.js ----
+  // ---- Objects: YOLOv10s in yolo-worker.js ----
   // Distance, two ways, taking the nearer:
   // - Size: from the box's height and the thing's usual height (only for classes listed; a box's
   //   height barely changes with viewing angle). Up close the box runs off the frame and this
@@ -429,7 +501,12 @@
     yolo.worker = new Worker("yolo-worker.js", { type: "module" });
     yolo.worker.onerror = (e) => row("yoloInfo", `Failed: ${e.message || "see console"}`, "bad");
     yolo.worker.onmessage = ({ data }) => {
-      if (data.type === "ready") row("yoloInfo", `Ready (${data.backend})`, "ok");
+      if (data.type === "progress") {
+        setup.detect = data.total ? data.loaded / data.total : 0;
+        const mb = (n) => (n / 1048576).toFixed(0);
+        row("yoloInfo", data.total ? `Downloading ${mb(data.loaded)} of ${mb(data.total)} MB` : "Downloading…", "warn");
+      } else if (data.type === "status") { setup.detect = 1; row("yoloInfo", data.text, "warn"); }
+      else if (data.type === "ready") row("yoloInfo", `Ready (${data.backend})`, "ok");
       else if (data.type === "error") row("yoloInfo", `Failed to load: ${data.message}`, "bad");
       else onBoxes(data);
     };
@@ -443,13 +520,44 @@
       yolo.worker.postMessage({ bitmap, minScore: 0.35 }, [bitmap]);
     }, () => (yolo.busy = false));
   }
+  // A vehicle's colour: the most common named colour in the middle of its body (below the windows,
+  // above the wheels, in from the ends), read off the camera at 16 × 16.
+  const VEHICLE = ["car", "truck", "bus", "motorcycle"];
+  const tint = document.createElement("canvas");
+  tint.width = tint.height = 16;
+  const tintCtx = tint.getContext("2d", { willReadFrequently: true });
+  function colorName(r, g, b) {
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), v = max / 255, s = max ? (max - min) / max : 0;
+    if (v < 0.2) return "black";
+    if (s < 0.22) return v > 0.66 ? "white" : v > 0.42 ? "silver" : "gray"; // (white paint in shade still reads ~0.7)
+    const d = max - min;
+    let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+    if (h < 15 || h >= 330) return "red";
+    if (h < 40) return v < 0.55 ? "brown" : "orange";
+    if (h < 70) return "yellow";
+    if (h < 165) return "green";
+    if (h < 255) return "blue";
+    return "purple";
+  }
+  function vehicleColor(b) {
+    if (!video.videoWidth) return null;
+    const k = view.width / video.videoWidth, w = b.x2 - b.x1, h = b.y2 - b.y1;
+    if (w < 24 || h < 16) return null;
+    tintCtx.drawImage(video, (b.x1 + 0.2 * w) / k, (b.y1 + 0.5 * h) / k, (0.6 * w) / k, (0.3 * h) / k, 0, 0, 16, 16);
+    const px = tintCtx.getImageData(0, 0, 16, 16).data, votes = {};
+    for (let i = 0; i < px.length; i += 4) { const c = colorName(px[i], px[i + 1], px[i + 2]); votes[c] = (votes[c] || 0) + 1; }
+    return Object.entries(votes).reduce((a, c) => (c[1] > a[1] ? c : a))[0];
+  }
   function onBoxes({ boxes, ms, backend, error }) {
     yolo.busy = false;
     const s = yolo.scale, f = focal(), W = view.width;
     HEIGHTS.person = personH();
     yolo.boxes = boxes.map((b) => ({ ...b, x1: b.x1 * s, y1: b.y1 * s, x2: b.x2 * s, y2: b.y2 * s }));
+    for (const b of yolo.boxes) if (VEHICLE.includes(b.label)) b.color = vehicleColor(b);
     yolo.objects = yolo.boxes.map((b) => ({
       label: b.label,
+      ...(b.color ? { color: b.color } : {}),
       score: Math.round(b.score * 100) / 100,
       angle: (Math.atan(((b.x1 + b.x2) / 2 - W / 2) / f) * 180) / Math.PI,
       distance: distanceOf(b, f, view.height),
@@ -542,7 +650,7 @@
       image: mini.toDataURL("image/jpeg", 0.6),
       cam: { focal: (focal() * 360) / 960, camH: camH(), pitch: tiltNow() },
       boxes: recent ? yolo.boxes.map((b, i) => ({
-        label: b.label, angle: yolo.objects[i].angle, distance: yolo.objects[i].distance,
+        label: b.label, color: b.color, angle: yolo.objects[i].angle, distance: yolo.objects[i].distance,
         x1: b.x1 / view.width, y1: b.y1 / view.height, x2: b.x2 / view.width, y2: b.y2 / view.height,
       })) : [],
     }));

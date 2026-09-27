@@ -872,11 +872,27 @@
   const VEHICLES = ["car", "truck", "bus"]; // YOLO can call a Zeekr Waymo a truck
   let waymoSeen = null;            // { heading, distance, prob, at } last confirmed Waymo
   let waymoBest = null;            // { prob, at } best score lately, for the details box
-  setInterval(() => { if (mode?.kind === "waymo" && phoneWs?.readyState === 1) phoneWs.send(JSON.stringify({ type: "want-cars", to: "eyes" })); }, 1000);
+  // Crops of every car in view, all the time (not only in Waymo mode), so the display can tell a
+  // Waymo from any other car wherever it is.
+  setInterval(() => { if (phoneWs?.readyState === 1) phoneWs.send(JSON.stringify({ type: "want-cars", to: "eyes" })); }, 1000);
+  let carVerdicts = []; // [{ heading, prob, at }]: the classifier's word on each car lately
+  // What to call a vehicle on the display and in messages: "Waymo" when the classifier was sure of
+  // that car lately, else its colour and kind from the phone ("white car", "red truck").
+  function vehicleName(o, now = performance.now()) {
+    if (!VEHICLES.includes(o.label)) return o.label;
+    if (heading !== null && typeof o.angle === "number") {
+      const h = wrap180(heading + o.angle);
+      if (carVerdicts.some((c) => now - c.at < 2500 && c.prob >= WAYMO_SURE && Math.abs(wrap180(c.heading - h)) < 8)) return "Waymo";
+    }
+    const kind = o.label === "truck" ? "car" : o.label; // YOLO calls many SUVs (and Waymos) trucks
+    return o.color ? `${o.color} ${kind}` : kind;
+  }
   function onWaymoScores({ cars, compass }) {
     const now = performance.now();
     if (!cars?.length || typeof compass !== "number") return;
     waymoBest = { prob: Math.max(...cars.map((c) => c.prob)), at: now };
+    carVerdicts = [...carVerdicts.filter((c) => now - c.at < 2500),
+      ...cars.map((c) => ({ heading: wrap180(compass + c.angle), prob: c.prob, at: now }))].slice(-30);
     // Demo switch (no real Waymo there): any car counts; the one in the beacon's direction is picked below.
     const sure = cars.filter((c) => c.prob >= WAYMO_SURE || $("anyCar").checked).map((c) => ({ ...c, heading: wrap180(compass + c.angle) }));
     if (!sure.length || mode?.kind !== "waymo") return;
@@ -1576,7 +1592,7 @@
       const color = b.obstacle ? RED : b.avoid ? YELLOW : b.target ? GREEN : WHITE, x = b.x1 * W, y = b.y1 * H;
       fctx.strokeStyle = color; fctx.lineWidth = 2.5 * px;
       fctx.beginPath(); rr(x, y, (b.x2 - b.x1) * W, (b.y2 - b.y1) * H, 6 * px); fctx.stroke();
-      tag(b.obstacle ? "STOP" : b.avoid ? "AVOID" : b.target ? (mode?.kind === "find" ? mode.what : "Waymo") : b.label, x, y, color, px);
+      tag(b.obstacle ? "STOP" : b.avoid ? "AVOID" : b.target ? (mode?.kind === "find" ? mode.what : "Waymo") : capital(vehicleName(b)), x, y, color, px);
     }
     // Reaching: the target (green ring) and the fingertips being steered to it (yellow).
     if (reach.view && (arrived === "handle" || arrived === "thing")) {
@@ -1657,7 +1673,7 @@
       const pad = (Math.atan(SHOULDERS / o.distance) * 180) / Math.PI;
       const l = deg((o.box[0] - 0.5) * lastFrame.w, lastFrame.focal) - pad, r = deg((o.box[2] - 0.5) * lastFrame.w, lastFrame.focal) + pad;
       if (l > 0 || r < 0) continue; // not in the way straight ahead
-      if (!best || o.distance < best.distance) best = { distance: o.distance, left: o.box[0] > 0.02 ? Math.round(l) : null, right: o.box[2] < 0.98 ? Math.round(r) : null, label: o.label };
+      if (!best || o.distance < best.distance) best = { distance: o.distance, left: o.box[0] > 0.02 ? Math.round(l) : null, right: o.box[2] < 0.98 ? Math.round(r) : null, label: vehicleName(o) };
     }
     return best;
   }
@@ -1789,7 +1805,7 @@
       c.restore();
       if (!o.target) {
         c.fillStyle = col ? rgba(col, 0.95) : rgba(ink.muted, 0.95);
-        c.fillText(`${capital(o.label)} · ${o.distance.toFixed(1)} m`, clamp(cx, 60, w - 60), Math.min(cy + bd / 2 + 16, h - 8));
+        c.fillText(`${capital(vehicleName(o))} · ${o.distance.toFixed(1)} m`, clamp(cx, 60, w - 60), Math.min(cy + bd / 2 + 16, h - 8));
       }
     }
 

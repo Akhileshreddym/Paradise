@@ -1,4 +1,4 @@
-// Paradise object detector: YOLOv10n (80 COCO classes: car, person, chair, …) in a worker, so a
+// Paradise object detector: YOLOv10s (80 COCO classes: car, person, chair, …) in a worker, so a
 // slow phone never stalls the camera preview or the 10-a-second link to the laptop (which gives
 // up after half a second of silence).
 //
@@ -6,7 +6,9 @@
 // [x1, y1, x2, y2, score, class] in 640 × 640 input pixels.
 import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.bundle.min.mjs";
 
-const MODEL = "https://huggingface.co/onnx-community/yolov10n/resolve/main/onnx/model.onnx";
+// The small model, not the nano one: clearly more accurate (COCO mAP 46 vs 39), 29 MB instead of
+// 9 MB (downloaded once, then cached), and still fast on a phone's GPU.
+const MODEL = "https://huggingface.co/onnx-community/yolov10s/resolve/main/onnx/model.onnx";
 const SIZE = 640;
 const LABELS = [
   "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
@@ -25,13 +27,36 @@ ort.env.wasm.numThreads = 1; // threads need cross-origin isolation, which the C
 
 // GPU when the phone has WebGPU (fast), plain WebAssembly otherwise (works everywhere, slower).
 let backend = "";
+// The download reports its progress (the page's setup bar), then one warm-up run on a blank image
+// compiles everything, so the first real frame isn't the slow one.
+async function download(url) {
+  const res = await fetch(url);
+  const total = Number(res.headers.get("content-length")) || 0;
+  if (!res.body) return new Uint8Array(await res.arrayBuffer());
+  const reader = res.body.getReader(), chunks = [];
+  let got = 0, told = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    if (Date.now() - told > 150) { told = Date.now(); postMessage({ type: "progress", loaded: got, total }); }
+  }
+  postMessage({ type: "progress", loaded: got, total: total || got });
+  const model = new Uint8Array(got);
+  let at = 0;
+  for (const c of chunks) { model.set(c, at); at += c.length; }
+  return model;
+}
 const ready = (async () => {
-  const model = new Uint8Array(await (await fetch(MODEL)).arrayBuffer());
+  const model = await download(MODEL);
+  postMessage({ type: "status", text: "Starting the model…" });
   let lastErr;
   for (const ep of self.navigator.gpu ? ["webgpu", "wasm"] : ["wasm"]) {
     try {
       const session = await ort.InferenceSession.create(model, { executionProviders: [ep] });
       backend = ep;
+      postMessage({ type: "status", text: "Warming up…" });
+      await session.run({ images: new ort.Tensor("float32", new Float32Array(3 * SIZE * SIZE), [1, 3, SIZE, SIZE]) });
       return session;
     } catch (err) { lastErr = err; }
   }
