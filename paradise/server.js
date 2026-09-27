@@ -84,6 +84,16 @@ const JOBS = {
   hands: { "ask-ai": onAskAi, "ask-what": onAskWhat, "ask-command": onAskCommand, say: onSay },
 };
 const own = (o, k) => (o && Object.hasOwn(o, k) ? o[k] : null); // (not "constructor" and the like: both come from outside)
+// Only one laptop page drives guidance: the one opened (or reloaded) last, or the one that took
+// control. The others still get everything to display, but what they'd ask for (frames, car
+// crops, hand tracking, Gemini, speech) is dropped here: a forgotten tab can't keep guiding,
+// searching or talking. Each laptop page is told whether it's the one: { type: "control", yours }.
+let leader = null;
+function setLeader(ws) {
+  leader = ws;
+  const tell = (c) => c.send(JSON.stringify({ type: "control", yours: c === leader }));
+  for (const c of wss.clients) if (c.role === "hands" && c.readyState === 1) tell(c);
+}
 const wss = new WebSocketServer({ server, path: "/ws" });
 const latest = { eyes: null, beacon: null, objects: [] }; // for the status line below
 const dropped = new Set(); // role + type: each kind of dropped message is logged once, not every time
@@ -109,11 +119,17 @@ wss.on("connection", (ws, req) => {
     return;
   }
   console.log(`${role} page connected (${device}); ${wss.clients.size} connected`);
-  ws.on("close", () => console.log(`${role} page disconnected (${device}); ${wss.clients.size} connected`));
+  if (role === "hands") setLeader(ws); // the newest laptop page takes over
+  ws.on("close", () => {
+    console.log(`${role} page disconnected (${device}); ${wss.clients.size} connected`);
+    if (leader === ws) setLeader([...wss.clients].filter((c) => c.role === "hands" && c.readyState === 1).at(-1) || null);
+  });
   ws.on("message", (data) => {
     let msg = null;
     try { msg = JSON.parse(data.toString()); } catch {}
     const type = typeof msg?.type === "string" ? msg.type : "";
+    if (role === "hands" && msg?.to === "server" && type === "take-control") return setLeader(ws);
+    if (role === "hands" && ws !== leader) return; // view only: its requests go nowhere
     if (msg?.to === "server") {
       // Anything can arrive here (the tunnel is public): a bad message is logged, never fatal.
       const job = own(own(JOBS, role), type);

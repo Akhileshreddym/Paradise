@@ -34,6 +34,7 @@
   </div>
 </header>
 <p class="notice" id="connectionHelp" role="status" hidden></p>
+<div class="takeover" id="takeover" role="status" hidden><span>View only · another laptop page is in control</span><button id="takeControl" class="primary">Take control</button></div>
 
 <!-- The stage: what the audience watches. -->
 <main class="stage" id="session" aria-label="Live guidance">
@@ -675,7 +676,23 @@
   // Every new choice: start fresh, buzz the echo, and hold guidance buzzes until the echo is over
   // so the wearer can count it.
   // (A voice command still waiting for Gemini is dropped: whatever was chosen since wins.)
+  // One laptop page drives guidance at a time (server.js decides: the newest, or the one that took
+  // control). The others are view only: no guidance, no buzzes, no voice, until "Take control"
+  // (or choosing something here, which takes control first).
+  let inControl = true;
+  function onControl(yours) {
+    const was = inControl;
+    inControl = yours;
+    $("takeover").hidden = yours;
+    if (was && !yours) stopGuidance();
+  }
+  function takeControl() {
+    if (!inControl && phoneWs?.readyState === 1) phoneWs.send(JSON.stringify({ type: "take-control", to: "server" }));
+    onControl(true);
+  }
+  $("takeControl").onclick = takeControl;
   function startMode(m, echo) {
+    takeControl();
     resetGuidance();
     dropCommand();
     mode = m;
@@ -927,7 +944,7 @@
   // And it's said even if it was said a moment ago: it answers something just asked ("Paradise,
   // repeat"), unlike an obstacle that's still there.
   function narrate(text, fresh) {
-    if (!$("voiceOn").checked) return;
+    if (!$("voiceOn").checked || !inControl) return;
     const now = performance.now();
     text = text.slice(0, 200);
     if (fresh) narrator.queue.length = 0;
@@ -1820,7 +1837,8 @@
       if (msg.type === "beacon") { beacon = { lat: msg.lat, lon: msg.lon, acc: msg.acc, at: now - (msg.age || 0) }; return; }
       if (msg.type === "found") return onFound(msg);
       if (msg.type === "preview") return onPreview(msg);
-      if (msg.type === "heard") return onHeard(msg.text);
+      if (msg.type === "control") return onControl(msg.yours);
+      if (msg.type === "heard") return inControl ? onHeard(msg.text) : undefined;
       if (msg.type === "waymo") return onWaymoScores(msg);
       if (msg.type === "depth") return onDepth(msg);
       if (msg.type === "ai") return onAi(msg);

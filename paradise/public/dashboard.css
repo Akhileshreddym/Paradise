@@ -466,3 +466,12 @@ html.fx .head-stack > .head:not(.fx-twin), html.fx .v-stack > .v:not(.fx-twin) {
   .reveal { opacity: 1; transform: none; }
   .wrist-wave i { transform: scaleY(var(--h)); }
 }
+
+/* Another laptop page is in control: this one is view only (server.js lets one page guide at a time). */
+.takeover {
+  position: fixed; top: 80px; left: 0; right: 0; z-index: 13; margin-inline: auto; width: max-content; max-width: calc(100vw - 32px);
+  display: flex; align-items: center; gap: 14px; padding: 7px 7px 7px 16px;
+  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface);
+  font-size: 13px; color: var(--muted); box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.5); animation: rise 240ms var(--ease-out);
+}
+.takeover button { min-height: 32px; border-radius: 999px; }
