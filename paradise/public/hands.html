@@ -567,7 +567,7 @@
   function choose(n) {
     const c = CHOICES[n - 1];
     if (!c) { PATTERNS.search("not a choice"); return; }
-    startMode(n === 1 ? { kind: "waymo", name: "Waymo" } : { kind: "place", name: c.name, place: c }, n);
+    startMode(n === 1 ? { kind: "waymo", name: "Waymo", what: "Waymo", coco: "car" } : { kind: "place", name: c.name, place: c }, n);
   }
   // One button per choice, numbered like the presses that pick it; the one in use is highlighted.
   // The Waymo and real saved places go in the dock; test spots (meters from where you stand) are
@@ -953,9 +953,21 @@
   // YOLO reports cars 5–15 times a second, the classifier twice: steer by the YOLO car that lines
   // up with the Waymo. (Not with the door handle: at the door the car's middle is well off to one
   // side, and losing track of the car would lose its distance, and make it an obstacle.)
+  // The beacon phone is where the Waymo is (it stands in for the car's location). Within
+  // BEACON_CAR_RANGE of it, a car in the beacon's direction (±25°) at about its distance (±8 m)
+  // counts as the Waymo whatever the classifier says, so the camera walks the wearer the last
+  // metres to it (GPS alone wobbles by several metres). No such car: GPS takes them to the beacon.
+  const BEACON_CAR_RANGE = 15; // m
+  function beaconCar(list, now) {
+    const g = fresh(beacon, now) ? gpsTo(beacon, now) : null;
+    if (!g || g.distance > BEACON_CAR_RANGE) return null;
+    const off = (o) => Math.abs(wrap180(heading + o.angle - g.heading));
+    const near = list.filter((o) => off(o) < 25 && (o.distance == null || Math.abs(o.distance - g.distance) < 8));
+    return near.length ? near.reduce((a, b) => (off(b) < off(a) ? b : a)) : null;
+  }
   function pickCar(list, now) {
     const aim = waymoHeading(now);
-    if (aim === null) return null;
+    if (aim === null) return beaconCar(list, now);
     const off = (o) => Math.abs(wrap180(heading + o.angle - aim));
     list = list.filter((o) => off(o) < 12);
     return list.length ? list.reduce((a, b) => (off(b) < off(a) ? b : a)) : null;
@@ -973,7 +985,7 @@
     const now = performance.now();
     // Near the car: the car (or its handle) seen lately, or we're standing at it.
     const nearCar = mode?.kind === "waymo" && cam && (now - cam.at < 4000 || arrived === cam.by) &&
-      cam.distance != null && cam.distance <= HANDLE_RANGE;
+      cam.distance != null && cam.distance <= HANDLE_RANGE && !waymoSeeking(now);
     const prompt = nearCar ? "a car door handle." : null;
     // Only while the phone is there: a request with nobody to answer it holds up the next one 5 s.
     if (!prompt || phoneWs?.readyState !== 1 || now < finder.retryAt || heading === null || now - lastEyes > 1000) return;
@@ -1028,9 +1040,21 @@
     Object.assign(seek, { waiting: null, presence: [], everSeen: false, raw: null, streak: 0, region: null, distance: null, lostAt: null, box: null, info: "idle" });
   }
   const aiAsk = { nextId: 0, meant: null, info: "not asked yet" }; // Gemini, only to work out what a vague request means
+  // Waymo mode, near the beacon (within WAYMO_NEAR, until back beyond WAYMO_FAR), or with no GPS to
+  // go by: find the car the way find mode finds a thing (this detector, 3 of 5 frames, the AI
+  // checking arrival), taking the car in the beacon's direction. Further away: GPS to the beacon.
+  const WAYMO_NEAR = 25, WAYMO_FAR = 35; // m
+  function waymoSeeking(now) {
+    if (mode?.kind !== "waymo") return false;
+    const g = fresh(beacon, now) ? gpsTo(beacon, now) : null;
+    if (!g) return true;
+    if (g.distance <= WAYMO_NEAR) mode.near = true;
+    else if (g.distance > WAYMO_FAR) mode.near = false;
+    return !!mode.near;
+  }
   setInterval(() => {
     const now = performance.now();
-    if (!inControl || mode?.kind !== "find" || !mode.coco || mode.found || phoneWs?.readyState !== 1 || heading === null || !lastFrame?.focal) return;
+    if (!inControl || (mode?.kind !== "find" && !waymoSeeking(now)) || !mode.coco || mode.found || phoneWs?.readyState !== 1 || heading === null || !lastFrame?.focal) return;
     if ((seek.waiting && now - seek.waiting.at < 2000) || now - seek.sentAt < SEEK.EVERY) return;
     // From the live video; without it, each small frame the phone sends through the server, once.
     let image = null;
@@ -1046,10 +1070,19 @@
     const req = seek.waiting;
     if (req?.id !== id) return;
     seek.waiting = null;
-    if (req.mode !== mode || mode?.kind !== "find") return;
+    if (req.mode !== mode || (mode?.kind !== "find" && !waymoSeeking(performance.now()))) return;
     if (!boxes) { seek.info = reason; return; } // loading, or still on another frame: the next one soon
     const now = performance.now();
-    const found = boxes.filter((b) => b.label === mode.coco && b.score >= SEEK.CONF);
+    let found = boxes.filter((b) => (mode.kind === "waymo" ? VEHICLES.includes(b.label) : b.label === mode.coco) && b.score >= SEEK.CONF);
+    // The Waymo: of the cars, only those within 40° of the beacon's direction, nearest to it first
+    // (with no GPS, the most centred, as for a thing).
+    const g = mode.kind === "waymo" && fresh(beacon, now) ? gpsTo(beacon, now) : null;
+    const fz = (req.focal960 * Math.max(w, h)) / 960;
+    const off = (b) => Math.abs(wrap180(req.heading + deg((b.x1 + b.x2) / 2 - w / 2, fz) - g.heading));
+    // …and only at about the beacon's distance (its height gives the car's): a car well nearer or
+    // further than the beacon phone isn't the one it's in, so GPS keeps going to the phone itself.
+    const carM = (b) => (fz * 1.5) / Math.max(b.y2 - b.y1, 1);
+    if (g) found = found.filter((b) => off(b) < 40 && Math.abs(carM(b) - g.distance) <= 6 + 0.4 * g.distance).sort((a, b) => off(a) - off(b)).slice(0, 1);
     seek.presence.push(found.length > 0);
     if (seek.presence.length > SEEK.WINDOW) seek.presence.shift();
     const hits = seek.presence.filter(Boolean).length;
@@ -1067,8 +1100,10 @@
       const cx = ((box[0] + box[2]) / 2 - 0.5) * w, cy = ((box[1] + box[3]) / 2 - 0.5) * h;
       cam = {
         heading: wrap180(req.heading + deg(cx, f)),
-        // From its usual size and the phone's focal length (a pinhole camera): its longest side.
-        distance: (f * (SIZE_M[mode.coco] ?? DEFAULT_SIZE_M)) / Math.max((box[2] - box[0]) * w, (box[3] - box[1]) * h, 1),
+        // From its usual size and the phone's focal length (a pinhole camera): its longest side (a
+        // car: its height, ~1.5 m, since its length depends on the angle it's seen from).
+        distance: mode.kind === "waymo" ? (f * 1.5) / Math.max((box[3] - box[1]) * h, 1)
+          : (f * (SIZE_M[mode.coco] ?? DEFAULT_SIZE_M)) / Math.max((box[2] - box[0]) * w, (box[3] - box[1]) * h, 1),
         up: -deg(cy, f) - req.pitch, // degrees above (+) or below (−) level at chest height
         box, boxHeading: req.heading, // where it was in the frame, and which way the chest faced (for reaching)
         region: seek.region, bucket: seek.distance, at: now, by: "thing", score: b.score,
@@ -1097,7 +1132,7 @@
   function scanTick(now, say) {
     const s = scan;
     if (s.phase === "done") return say(`NOT FOUND: ${s.why}`);
-    if (!seek.everSeen && now - task.at > SEEK.TIMEOUT) return giveUp(`no ${mode.what} anywhere around you in ${SEEK.TIMEOUT / 1000} s`, say);
+    if (mode.kind === "find" && !seek.everSeen && now - task.at > SEEK.TIMEOUT) return giveUp(`no ${mode.what} anywhere around you in ${SEEK.TIMEOUT / 1000} s`, say);
     const n = `${(s.i % SCAN_STOPS) + 1} of ${SCAN_STOPS}`;
     const err = wrap180(s.start + (s.i * 360) / SCAN_STOPS - heading);
     if (s.phase === "turn") {
@@ -1280,7 +1315,7 @@
     // Not while turning on the spot to look round the room (find mode, nothing seen lately), either:
     // there's nothing to walk into, and standing in front of a table mustn't stop the looking.
     const reaching = arrived === "handle" || arrived === "thing";
-    const scanning = mode.kind === "find" && !camTarget(SEEK.MEMORY);
+    const scanning = (mode.kind === "find" || (mode.kind === "waymo" && waymoSeeking(now) && !gpsTo(beacon, now))) && !camTarget(SEEK.MEMORY);
     // Only for something right in front (the stop distance, 0.8 m by default) or a wall filling the
     // view: anything further off is gone round instead (see "Going round things" below).
     if (obs && !reaching && !scanning && (obs.distance == null || obs.distance <= Number($("stopDist").value))) {
@@ -1307,7 +1342,17 @@
       if (fresh(beacon, now) && rideStage === "requested") rideStage = "here";
       // Camera first (car, then door handle), else GPS toward the beacon, along the walking route.
       const g = fresh(beacon, now) ? routeTo(beacon, now) || gpsTo(beacon, now) : null;
-      if (camTarget(2000)) { target = cam.heading; distance = cam.distance; by = cam.by; }
+      if (waymoSeeking(now)) {
+        // Near it: like find mode. Seen (in view, or where it was for MEMORY): go to it by the
+        // camera. Not seen: on toward the beacon by GPS while the detector looks (or, without GPS,
+        // turn round and look).
+        if (mode.found) return say("ARRIVED: at the Waymo");
+        if (camTarget(SEEK.MEMORY) && cam.by === "thing") { target = cam.heading; distance = cam.distance; by = "thing"; scan = null; rideStage = "found"; }
+        else if (g) { target = g.heading; distance = g.distance; by = "gps"; onRoute = !!g.route; }
+        else if (now < echoUntil) waiting = "the Waymo";
+        else { if (!scan) newScan(now); return scanTick(now, say); }
+      }
+      else if (camTarget(2000)) { target = cam.heading; distance = cam.distance; by = cam.by; }
       else if (g) { target = g.heading; distance = g.distance; by = "gps"; onRoute = !!g.route; }
       else waiting = fresh(beacon, now) ? "waiting for GPS" : "waiting for the Waymo's location (beacon)";
       // Near the beacon but no Waymo confirmed yet: keep heading for the beacon; the camera will
@@ -1350,7 +1395,7 @@
     // arm's length, a car box to about a meter, GPS only to within its radius. arrived = what we
     // arrived by: getting to the car and then seeing a handle starts the last steps to it.
     if (arrived && arrived !== by) arrived = false;
-    if (distance != null && by !== "thing" && !(mode.kind === "waymo" && by === "gps")) { // Waymo mode only arrives by camera
+    if (distance != null && by !== "thing") { // (Waymo mode: at the beacon by GPS, or at the car by camera)
       const radius = by === "handle" ? 0.8 : by === "object" ? 1.0 : Number($("arrive").value);
       if (!arrived && distance <= radius) {
         arrived = by;
@@ -1431,8 +1476,10 @@
   }
   function arriveTick(now, say, distance) {
     if (arriveAsk.yes) return reachedThing(now, say);
-    const offBottom = cam.box[3] > 0.97 && now - cam.at > 400 && distance != null && distance <= ARRIVE.OFF_BOTTOM_M;
-    const close = (distance != null && distance <= ARRIVE.ASK_M) || offBottom;
+    // (A car right in front fills the view: its distance from its height reads ~1.3 m at best.)
+    const car = mode.kind === "waymo", askM = car ? 1.8 : ARRIVE.ASK_M, localM = car ? 1.4 : ARRIVE.LOCAL_M;
+    const offBottom = cam.box[3] > 0.97 && now - cam.at > 400 && distance != null && distance <= (car ? 3 : ARRIVE.OFF_BOTTOM_M);
+    const close = (distance != null && distance <= askM) || offBottom;
     if (now < arriveAsk.stepUntil) { // the AI said not yet: a step forward (unless it's the wrong way)
       if (Math.abs(wrap180(cam.heading - heading)) > Number($("margin").value) + 5) return;
       if (now >= nextPulse) { nextPulse = now + 100; PATTERNS.approach(); }
@@ -1448,7 +1495,8 @@
       : videoLive(now) ? grabVideo(640)?.image : now - previewAt < 1000 ? feedImg.src : null;
     if (!image) { // judged by the camera alone
       arriveAsk.info = `by the camera: ${distance != null ? `${distance.toFixed(2)} m` : "?"}${arriveAsk.off ? ` (AI: ${arriveAsk.off})` : ""}`;
-      return distance != null && distance <= ARRIVE.LOCAL_M ? reachedThing(now, say) : undefined;
+      const filling = car && cam.box[3] - cam.box[1] > 0.85; // the car fills the view top to bottom: at it
+      return (distance != null && distance <= localM) || filling ? reachedThing(now, say) : undefined;
     }
     arriveAsk.calls++;
     arriveAsk.waiting = { id: ++arriveAsk.nextId, at: now, mode };
@@ -1659,8 +1707,8 @@
       `camera:  ${(now - latestObjectsAt < 1500 ? latestObjects : []).map((o) => `${o.label} ${o.distance ? o.distance.toFixed(1) + " m" : ""}`).join(", ") || "nothing"}\n` +
       `waymo classifier: ${waymoBest && now - waymoBest.at < 3000 ? `best ${Math.round(waymoBest.prob * 100)}% (sure at ${WAYMO_SURE * 100}%)` : "—"}\n` +
       `object finder: ${finder.info} (door handle)\n` +
-      `detector: ${mode?.kind === "find" ? seek.info : "— (find mode only)"}\n` +
-      `arrived?: ${mode?.kind === "find" ? arriveAsk.info : "— (find mode only)"}\n` +
+      `detector: ${mode?.kind === "find" || waymoSeeking(now) ? seek.info : "— (find mode, or near the Waymo)"}\n` +
+      `arrived?: ${mode?.kind === "find" || waymoSeeking(now) ? arriveAsk.info : "— (find mode, or near the Waymo)"}\n` +
       `ai:      ${aiAsk.info}\n` +
       `command: ${commandAsk.info}\n` +
       `speaker: ${$("voiceOn").checked ? narrator.info : "off"}\n` +
@@ -2202,7 +2250,7 @@
       // Waymo: the car to steer to, unless a door handle was seen recently or we're at it: that's
       // where to go, and the car's middle isn't.
       let car = null;
-      if (mode?.kind === "waymo") {
+      if (mode?.kind === "waymo" && !waymoSeeking(now)) {
         car = pickCar(msg.objects.filter((o) => VEHICLES.includes(o.label)), now);
         if (car?.distance != null) lastCar = { distance: car.distance, at: now };
         if (car && !(cam?.by === "handle" && (now - cam.at < 4000 || arrived === "handle"))) {
