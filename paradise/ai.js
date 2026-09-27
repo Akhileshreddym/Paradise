@@ -1,16 +1,12 @@
-// "Where should I look next?": the one place Paradise asks a cloud AI (Google Gemini), and only
-// when a full 360° scan of the room found nothing. Seeing, distances, obstacles and steering all
-// stay on the phone and this laptop (YOLO, the object finder, CLIP, the depth model).
+// The cloud AI Paradise asks (Google Gemini), for a few small jobs. Seeing, distances, obstacles and
+// steering all stay on the phone and this laptop (YOLO, the object finder, CLIP, the depth model).
 //
-// The laptop page sends the scan's small photos (the preview frames, 202 × 360: 258 tokens each),
-// one per stop, with how far round from the start each was taken. Gemini says either where the
-// thing is (it can see it), or the best place to walk to next to look for it ("the kitchen
-// counter", "the doorway on the left"), as a view number and a position across that view. The
-// laptop page turns that into a direction and walks the wearer there; the phone's detectors still
-// have to find the thing before the "found it" buzz.
+// "Have we really arrived?": in find mode, once the camera's distance says the wearer is close to
+// the thing, a photo from the chest camera → is it within arm's reach? The laptop page stops the
+// wearer while it asks, then either buzzes "reached" or takes them one more step and asks again.
 //
-// And one smaller job, text only: a request in plain language ("something to drink", "somewhere to
-// sit") → the thing to look for ("water bottle", "chair"), since the detectors need a thing's name.
+// A request in plain language ("something to drink", "somewhere to sit") → the thing to look for
+// ("water bottle", "chair"), since the detector needs a thing's name. Text only.
 //
 // And spoken commands, text only: what the wearer said after "Paradise" ("take me somewhere to sit",
 // "go to test north", "never mind") → one of the few things the laptop page can do. The page has its
@@ -22,57 +18,40 @@ const KEY = process.env.GEMINI_API_KEY || "";
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite"; // fast and cheap; "gemini-3.8-flash" to try a stronger one
 const URL_ = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 // Guards for the key and the bill: the pages are reachable through the tunnel (server.js also only
-// takes these from the laptop's own page), and a bug shouldn't be able to call it in a loop.
-// Commands get their own, bigger budget (they're small, text only, and a few a minute is normal
-// talking), so a chatty wearer can't use up the room scans' calls, nor a scan loop the commands'.
-// Commands also give up sooner: the laptop page falls back to its own grammar after 5 s anyway.
-const MAX_SHOTS = 12, MAX_IMAGE = 200_000; // chars of base64 per photo
-const SCANS = { perMinute: 6, perRun: 100, timeout: 20000, recent: [], calls: 0 };
+// takes these from the laptop's own page), and a bug shouldn't be able to call it in a loop. Each
+// job has its own budget, so a chatty wearer can't use up the arrival checks, nor the other way
+// round. Both give up after 8 s: the laptop page then goes on without the answer.
+const MAX_IMAGE = 300_000; // chars of base64 per photo
+const ARRIVALS = { perMinute: 20, perRun: 300, timeout: 8000, recent: [], calls: 0 };
 const COMMANDS = { perMinute: 20, perRun: 400, timeout: 8000, recent: [], calls: 0 };
 
 export const ai = { status: KEY ? `ready (${MODEL})` : "off: no GEMINI_API_KEY in paradise/.env", calls: 0, tokens: 0 }; // all jobs
-console.log(`ai (where to look next, commands): ${ai.status}`);
+console.log(`ai (arrival checks, commands): ${ai.status}`);
 
-// ("water bottle", [{ rel: degrees clockwise from the first photo, image: JPEG data URL }, …]) →
-// { visible, view, rel (the chosen photo's), x, target, distance_m, reason, tokens, ms }, or a reason string when there's
-// no usable answer (no key, too many calls, network, a reply that doesn't make sense).
-export async function whereToLook(what, shots) {
+// ("bottle", JPEG data URL of the chest camera now, whether the detector still sees it) →
+// { arrived, distance_m, reason, tokens, ms }, or a reason string when there's no usable answer.
+export async function checkArrived(what, image, inView) {
   what = String(what).slice(0, 80);
-  shots = shots.slice(0, MAX_SHOTS).filter((s) => typeof s?.image === "string" && s.image.length < MAX_IMAGE &&
-    /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(s.image) && Number.isFinite(s.rel));
-  if (!what || !shots.length) return "nothing to ask about";
-
-  const parts = [{ text:
-    `You are helping a blind person find: "${what}". They wear a phone on their chest, camera facing forward. ` +
-    `They just turned in a full circle where they stand; here is one photo per stop, in order. ` +
-    `A small on-device detector looked at every photo and did NOT find "${what}", but it misses small, ` +
-    `partly hidden or unusual-looking things.\n` +
-    `1. If "${what}" is visible in any photo, answer with that photo and where it is.\n` +
-    `2. Otherwise pick the one place, visible in a photo, that they should walk to next to find it: ` +
-    `where it's most likely to be (think about where people usually keep it), or a doorway or hallway ` +
-    `to where it's likely to be. It must be reachable on foot across open floor. ` +
-    `If no photo shows anywhere worth walking to, use view -1.\n` +
-    `Answer with JSON only: {"visible": true|false, "view": photo number, "x": horizontal position of ` +
-    `the thing or place in that photo, 0 = left edge, 1000 = right edge, "target": a short name for it ` +
-    `("the desk", "the doorway"), "distance_m": your rough guess of how far away it is, in meters, ` +
-    `"reason": one short sentence}` }];
-  shots.forEach((s, i) => parts.push(
-    { text: `Photo ${i}: ${Math.round(s.rel)}° clockwise from the first photo.` },
-    { inline_data: { mime_type: "image/jpeg", data: s.image.slice(s.image.indexOf(",") + 1) } },
-  ));
-
+  if (!what || typeof image !== "string" || image.length > MAX_IMAGE || !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(image)) return "nothing to ask about";
   const t0 = Date.now();
-  const a = await ask(parts);
+  const a = await ask([
+    { text:
+      `A blind person is walking to a ${JSON.stringify(what)}, guided by a phone on their chest (about 1.3 m above ` +
+      `the floor, camera facing forward). This is what the camera sees right now. ` +
+      (inView ? "" : `The detector lost sight of the ${what} a moment ago; up close it usually drops off the bottom ` +
+        `edge of the view (below the chest). `) +
+      `Are they right next to it: the ${what} within arm's reach, about 0.6 m or less from their chest, so they ` +
+      `could reach out and touch it without another step? If it isn't in the photo, judge from what is (the ` +
+      `edge of the table or counter it was on, right below the camera, means yes). When unsure, say no.\n` +
+      `Answer with JSON only: {"arrived": true|false, "distance_m": your estimate of how far it is in meters, or ` +
+      `null, "reason": "one short sentence"}` },
+    { inline_data: { mime_type: "image/jpeg", data: image.slice(image.indexOf(",") + 1) } },
+  ], ARRIVALS);
   if (typeof a === "string") return a;
-  const view = Number(a?.view), x = Number(a?.x);
-  if (view === -1) return `no good place to look (${String(a?.reason || "").slice(0, 120)})`;
-  if (!Number.isInteger(view) || view < 0 || view >= shots.length || !Number.isFinite(x)) return "Gemini's answer didn't point at a photo";
+  if (typeof a?.arrived !== "boolean") return "Gemini's answer didn't say yes or no";
   const dist = Number(a.distance_m);
-  return {
-    visible: a.visible === true, view, rel: shots[view].rel, x: Math.min(1000, Math.max(0, x)),
-    target: String(a.target || "that spot").slice(0, 60), reason: String(a.reason || "").slice(0, 160),
-    distance_m: Number.isFinite(dist) && dist > 0 ? Math.min(dist, 15) : null, tokens: a.tokens, ms: Date.now() - t0,
-  };
+  return { arrived: a.arrived, distance_m: Number.isFinite(dist) && dist >= 0 ? Math.round(Math.min(dist, 20) * 10) / 10 : null,
+    reason: String(a.reason || "").slice(0, 160), tokens: a.tokens, ms: Date.now() - t0 };
 }
 
 // "something to drink" → { thing: "water bottle", reason, tokens, ms }, or a reason string.
@@ -141,8 +120,8 @@ export async function understandCommand(text, places, current = "none") {
 }
 
 // One call, JSON back: the parsed answer (+ tokens), or a reason string. Each job's limits are its
-// own (SCANS, unless told otherwise); ai.calls and ai.tokens count them all.
-async function ask(parts, job = SCANS) {
+// own (COMMANDS, unless told otherwise); ai.calls and ai.tokens count them all.
+async function ask(parts, job = COMMANDS) {
   if (!KEY) return ai.status;
   const now = Date.now();
   while (job.recent.length && now - job.recent[0] > 60000) job.recent.shift();

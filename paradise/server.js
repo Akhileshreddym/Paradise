@@ -1,10 +1,9 @@
 // Paradise server: serves the pages in public/, relays WebSocket messages between them
-// (phone "eyes" page → laptop "hands" page), recognizes Waymos in car crops (clip.js), finds
-// things described in words (a door handle, a water bottle) in camera frames (object-finder.js,
-// with a second opinion from clip.js), finds obstacles in the preview frames (depth.js), and, only
-// when a scan of the room found nothing, asks Gemini where to look next (ai.js). It also turns what
-// the wearer said after "Paradise" into a command (ai.js), and sentences into speech for the people
-// around them (tts.js).
+// (phone "eyes" page → laptop "hands" page), recognizes Waymos in car crops (clip.js), finds a
+// Waymo's door handle in camera frames (object-finder.js), finds the thing being looked for in
+// find mode (detector.js: YOLOv8n, as Lumen does), and obstacles in camera frames (depth.js). It
+// also turns what the wearer said after "Paradise" into a command (ai.js), and sentences into
+// speech for the people around them (tts.js).
 //
 //   npm install
 //   npm start
@@ -21,7 +20,8 @@ import { WebSocketServer } from "ws";
 import { finder, findObjects } from "./object-finder.js";
 import { clip, classifyCars, checkBoxes } from "./clip.js";
 import { depth, findHazards } from "./depth.js";
-import { ai, whereToLook, whatToFind, understandCommand } from "./ai.js";
+import { detector, detect } from "./detector.js";
+import { ai, checkArrived, whatToFind, understandCommand } from "./ai.js";
 import { tts, speak } from "./tts.js";
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -74,19 +74,20 @@ const server = http.createServer(async (req, res) => {
 // depth, preview, ai, ai-what, ai-command, speech) come only from the functions below.
 //   role → { message type: the role it goes to }
 const RELAY = {
-  eyes: { eyes: "hands", heard: "hands" },                                          // updates, what the mic heard
+  eyes: { eyes: "hands", heard: "hands", rtc: "hands" },                            // updates, what the mic heard, video set-up
   beacon: { beacon: "hands" },                                                      // the Waymo's location
-  hands: { "frame-please": "eyes", "want-cars": "eyes", "want-hands": "eyes" },     // requests to the chest phone
+  hands: { "frame-please": "eyes", "want-cars": "eyes", "want-hands": "eyes",       // requests to the chest phone
+    rtc: "eyes", "video-ok": "eyes" },                                              // video set-up; "the live video is arriving"
 };
 // Messages for the server itself ("to": "server"), and which page may send each.
 const JOBS = {
   eyes: { frame: onFrame, cars: onCars, preview: onPreview },
-  hands: { "ask-ai": onAskAi, "ask-what": onAskWhat, "ask-command": onAskCommand, say: onSay },
+  hands: { "depth-frame": onDepthFrame, detect: onDetect, "ask-arrived": onAskArrived, "ask-what": onAskWhat, "ask-command": onAskCommand, say: onSay },
 };
 const own = (o, k) => (o && Object.hasOwn(o, k) ? o[k] : null); // (not "constructor" and the like: both come from outside)
 // Only one laptop page drives guidance: the one opened (or reloaded) last, or the one that took
-// control. The others still get everything to display, but what they'd ask for (frames, car
-// crops, hand tracking, Gemini, speech) is dropped here: a forgotten tab can't keep guiding,
+// control. The others still get everything to display (and their own live video: "rtc" passes),
+// but what they'd ask for (frames, car crops, hand tracking, Gemini, speech) is dropped here: a forgotten tab can't keep guiding,
 // searching or talking. Each laptop page is told whether it's the one: { type: "control", yours }.
 let leader = null;
 function setLeader(ws) {
@@ -129,7 +130,7 @@ wss.on("connection", (ws, req) => {
     try { msg = JSON.parse(data.toString()); } catch {}
     const type = typeof msg?.type === "string" ? msg.type : "";
     if (role === "hands" && msg?.to === "server" && type === "take-control") return setLeader(ws);
-    if (role === "hands" && ws !== leader) return; // view only: its requests go nowhere
+    if (role === "hands" && ws !== leader && type !== "rtc") return; // view only: its requests go nowhere
     if (msg?.to === "server") {
       // Anything can arrive here (the tunnel is public): a bad message is logged, never fatal.
       const job = own(own(JOBS, role), type);
@@ -195,26 +196,49 @@ async function onCars({ cars, compass }) {
   for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
 }
 
-// A preview frame from the phone (4 a second): on to the laptop page for its display, then (unless
-// the depth model is still busy with the last one) obstacles in the walking path, for the laptop page.
+// A preview frame from the phone (4 a second, only while the laptop page isn't getting the live
+// video): on to the laptop page for its display, then (unless the depth model is still busy with
+// the last one) obstacles in the walking path, for the laptop page.
 async function onPreview(msg, _ws, raw) {
   const pages = [...wss.clients].filter((c) => c.role === "hands" && c.readyState === 1);
   for (const client of pages) client.send(raw, { binary: false }); // as text, like it came: a page can't parse a binary frame
-  if (!pages.length || !msg.cam || typeof msg.image !== "string") return;
+  if (!pages.length) return;
+  await runDepth(msg);
+}
+// A small frame the laptop page took from the live video (WebRTC): the same depth run, no relay.
+// The page sends the next one when this one's answered, so a "skip" always goes back to it.
+async function onDepthFrame(msg, ws) {
+  const why = await runDepth(msg);
+  if (why && ws.readyState === 1) ws.send(JSON.stringify({ type: "depth-skip", why }));
+}
+// Obstacles in the walking path, for the laptop pages; a reason string when it didn't run.
+async function runDepth({ image, cam }) {
+  if (!cam || typeof image !== "string") return "no image";
   const t0 = Date.now();
-  const result = await findHazards(msg.image, msg.cam);
-  if (typeof result === "string") return; // loading or busy: the next frame is a quarter of a second away
+  const result = await findHazards(image, cam);
+  if (typeof result === "string") return result; // loading or busy: another frame comes soon
   latest.depth = { ...result, at: Date.now() };
   const reply = JSON.stringify({ type: "depth", ...result, ms: Date.now() - t0 });
   for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
+  return "";
 }
 
-// A full scan of the room found nothing → where to look next (ai.js), back to the page that asked.
-async function onAskAi({ id, what, shots }, ws) {
-  const answer = !ws.local ? NOT_LOCAL : await whereToLook(what, Array.isArray(shots) ? shots : []);
-  latest.ai = { text: typeof answer === "string" ? answer : `"${answer.target}" (${answer.ms} ms, ${answer.tokens} tokens)`, at: Date.now() };
-  console.log(`[ai] where to look for "${String(what).slice(0, 40)}": ${latest.ai.text} · ${ai.calls} calls, ${ai.tokens} tokens since start`);
-  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ai", id, ...(typeof answer === "string" ? { reason: answer } : { answer }) }));
+// Find mode: a frame the laptop page took from the live video → YOLOv8n's boxes (detector.js),
+// back to that page, which applies Lumen's rules to them. The page sends the next frame when this
+// one's answered, so there's always an answer (boxes, or why not).
+async function onDetect({ id, image }, ws) {
+  if (typeof image !== "string") return;
+  const r = await detect(image);
+  if (typeof r !== "string") latest.detect = { labels: r.boxes.map((b) => b.label), ms: r.ms, at: Date.now() };
+  if (ws.readyState === 1) ws.send(JSON.stringify(typeof r === "string" ? { type: "detected", id, reason: r } : { type: "detected", id, boxes: r.boxes, w: r.w, h: r.h, ms: r.ms }));
+}
+
+// Find mode, close to the thing: a photo from the chest camera → is it really within reach (ai.js)?
+async function onAskArrived({ id, what, image, inView }, ws) {
+  const answer = !ws.local ? NOT_LOCAL : await checkArrived(what, image, inView === true);
+  latest.ai = { text: typeof answer === "string" ? answer : `${answer.arrived ? "arrived" : "not yet"} (${answer.ms} ms, ${answer.tokens} tokens)`, at: Date.now() };
+  console.log(`[ai] arrived at "${String(what).slice(0, 40)}"? ${latest.ai.text}${typeof answer === "string" ? "" : `: ${answer.reason}`} · ${ai.calls} calls, ${ai.tokens} tokens since start`);
+  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ai-arrived", id, ...(typeof answer === "string" ? { reason: answer } : answer) }));
 }
 
 // A request in plain language ("something to drink") → the thing to look for (ai.js).
@@ -272,6 +296,8 @@ function printStatus() {
   if (clip.status !== "ready") line += ` | clip ${clip.status}`;
   else if (recent(latest.waymo)) line += ` | waymo ${Math.round(latest.waymo.best * 100)}%`;
   const dz = latest.depth;
+  if (detector.status !== "ready") line += ` | detector ${detector.status}`;
+  else if (recent(latest.detect)) line += ` | detector sees ${latest.detect.labels.join(", ") || "nothing"} (${latest.detect.ms} ms)`;
   if (depth.status !== "ready") line += ` | depth ${depth.status}`;
   else if (recent(dz)) line += ` | depth ${!dz.ok ? dz.why : dz.found.length ? dz.found.map((z) => `${z.kind} ${z.distance} m`).join(", ") : "clear"}`;
   if (finder.status !== "ready") line += ` | object finder ${finder.status}`;

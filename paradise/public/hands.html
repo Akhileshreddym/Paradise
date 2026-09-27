@@ -87,6 +87,7 @@
 
     <section class="card cam" aria-label="Chest camera">
       <div class="feed" id="feedBox">
+        <video id="feedVideo" autoplay playsinline muted aria-hidden="true"></video>
         <canvas id="feed" width="360" height="640" aria-label="Live chest camera feed"></canvas>
         <div class="feed-empty"><svg class="empty-mark" aria-hidden="true"><use href="#mark"/></svg><p>Waiting for the chest camera</p><span>Open the phone link on the chest iPhone.</span></div>
         <span class="live-tag"><i></i>Live</span>
@@ -138,19 +139,9 @@
   <details class="card" data-key="testing" id="testing">
     <summary>Testing</summary>
     <div class="body">
-      <div class="group"><span>Voice</span><div class="row">
-        <button class="btn" data-pattern="listening">Heard you</button><button class="btn" data-pattern="stopped">Stopped</button>
-      </div></div>
-      <div class="group"><span>Walking</span><div class="row">
-        <button class="btn" data-pattern="left">Steer left</button><button class="btn" data-pattern="right">Steer right</button>
-        <button class="btn" data-pattern="approach">Approaching</button><button class="btn" data-pattern="arrived">Arrived</button>
-        <button class="btn" data-pattern="obstacle">Obstacle</button><button class="btn" data-pattern="search">Search</button>
-        <button class="btn" data-pattern="connected">Found it</button><button class="btn" data-pattern="echo3">Echo 3</button>
-      </div></div>
-      <div class="group"><span>Reaching</span><div class="row">
-        <button class="btn" data-pattern="reachLeft">Hand left</button><button class="btn" data-pattern="reachRight">Hand right</button>
-        <button class="btn" data-pattern="reachUp">Hand up</button><button class="btn" data-pattern="reachDown">Hand down</button>
-        <button class="btn" data-pattern="reachForward">Forward</button><button class="btn" data-pattern="reachOut">Reach out</button><button class="btn" data-pattern="touch">Touch</button>
+      <div class="group"><span>Buzzes</span><div class="row">
+        <button class="btn" data-pattern="left">Rotate left</button><button class="btn" data-pattern="right">Rotate right</button>
+        <button class="btn" data-pattern="approach">Forward</button><button class="btn" data-pattern="arrived">Reached</button>
       </div></div>
       <div class="group"><span>Test places</span><div class="row" id="testPlaces"></div></div>
       <div class="group"><span>Indoor steering</span><div class="row">
@@ -293,6 +284,13 @@
     label.off = setTimeout(() => { label.textContent = idle; }, ms + 700);
   }
   const both = (strength, ms, hz) => { buzz("L", strength, ms, hz); buzz("R", strength, ms, hz); };
+  // One wrist off, now (a rotate buzz on one wrist ends the forward hold on the other at once).
+  function quiet(side) {
+    const icon = $(side === "L" ? "wristL" : "wristR");
+    clearTimeout(icon.off);
+    rumble(side === "L" ? joyL : joyR, 0);
+    icon.classList.remove("on");
+  }
   // Later pulses of a pattern keep its meaning, even if another pattern has started since.
   // Pulses scheduled for later are tracked, so Stop can cancel the rest of a pattern at once.
   const pending = new Set();
@@ -308,12 +306,18 @@
     }
   }
 
-  // ---- Buzz vocabulary (from the spec) ----
+  // ---- Buzz vocabulary: three signals, nothing else ----
+  //   left wrist, held on → rotate left   right wrist, held on → rotate right
+  //   both wrists, held on → go forward (for as long as you're facing it)
+  //   a double buzz on both → reached
+  // Everything else the guidance can say (stop for an obstacle, searching, found it, got it, heard
+  // you, stopped, and the hand steering at the end) is silent (SILENT below): no forward buzz means
+  // don't walk. The laptop's screen still says what's going on.
   const PATTERNS = {
-    left: () => buzz("L", 1, 150),                                  // steer left (repeats every 400 ms)
-    right: () => buzz("R", 1, 150),                                 // steer right
-    approach: (s = 0.5) => both(s, 90),                             // approaching: faster and stronger as it gets close
-    arrived: () => both(1, 800),                                    // arrived: one long buzz
+    left: () => { quiet("R"); buzz("L", 1, 200); },                 // rotate left: held on while it's refreshed (every 100 ms)
+    right: () => { quiet("L"); buzz("R", 1, 200); },                // rotate right
+    approach: () => both(0.8, 200),                                 // go forward: held on while it's refreshed (every 100 ms), off 0.2 s after
+    arrived: () => repeat(2, 400, () => both(1, 200)),              // reached: a double buzz, then quiet
     obstacle: () => repeat(3, 180, () => both(1, 100)),             // stop: 3 sharp pulses
     search: () => { const m = meaning; [["L", 0], ["R", 450], ["L", 900]].forEach(([s, t]) => later(() => { meaning = m; buzz(s, 0.6, 200); }, t)); },
     connected: () => repeat(2, 180, () => both(1, 80)),             // Waymo connected (and "found it"): 2 quick pulses
@@ -336,7 +340,7 @@
   // under the tiles lists the latest few, newest first ("R · turn right ×6"). For testing without
   // Joy-Cons, and for onlookers.
   const MEANING = {
-    left: "turn left", right: "turn right", approach: "walk", arrived: "arrived", obstacle: "STOP",
+    left: "rotate left", right: "rotate right", approach: "forward", arrived: "reached", obstacle: "STOP",
     search: (why) => why || "searching", connected: "found it", echo: (n) => `got it (${n} pulse${n > 1 ? "s" : ""})`,
     reachLeft: "hand left", reachRight: "hand right", reachUp: "hand up (high buzz)", reachDown: "hand down (low buzz)",
     reachForward: "hand forward", reachOut: "reach out", touch: "touching",
@@ -344,7 +348,10 @@
   };
   const WHERE = { left: "L", right: "R", reachLeft: "L", reachRight: "R", search: "L, R, L" }; // the rest: both
   const buzzLog = []; // [{ text, n, at }], newest first
+  const SILENT = ["obstacle", "search", "connected", "echo", "reachLeft", "reachRight", "reachUp", "reachDown",
+    "reachForward", "reachOut", "touch", "listening", "stopped"];
   for (const [k, play] of Object.entries(PATTERNS)) {
+    if (SILENT.includes(k)) { PATTERNS[k] = () => {}; continue; } // not in the vocabulary: nothing on the wrists
     PATTERNS[k] = (...args) => {
       meaning = typeof MEANING[k] === "function" ? MEANING[k](...args) : MEANING[k];
       const text = `${WHERE[k] || "L+R"} · ${meaning}`, now = performance.now(), last = buzzLog[0];
@@ -354,7 +361,9 @@
     };
   }
   document.querySelectorAll("[data-pattern]").forEach((b) => {
-    b.onclick = () => (b.dataset.pattern === "echo3" ? PATTERNS.echo(3) : PATTERNS[b.dataset.pattern]());
+    const hold = ["approach", "left", "right"].includes(b.dataset.pattern);
+    b.onclick = () => (hold ? repeat(15, 100, () => PATTERNS[b.dataset.pattern]()) // a hold, 1.5 s
+      : PATTERNS[b.dataset.pattern]());
   });
   // The /legend page (legend.html, which draws these same patterns: change one, change both), open in
   // this same browser, can play a buzz here so it can be learned by feel. Only while no mode is on,
@@ -368,51 +377,40 @@
     PATTERNS[data.pattern](...args);
   };
 
-  // ---- Finding things ("water bottle", "my keys", "trash can") ----
-  // Two detectors look at the same time:
-  // - the server's object finder (Grounding DINO) looks for exactly the words given, ~1.2 s a frame.
-  //   It boxes *something* nearly every time, so a box only counts if CLIP agrees it looks like the
-  //   thing (verified), or YOLO sees the same kind of thing in the same direction;
-  // - if the thing is one of YOLO's 80 classes, the phone's YOLO also reports it ~10 times a second,
-  //   which keeps the steering smooth in between.
-  // Distance: from its usual size (largest side, meters) when we know it, else from where it meets
-  // the floor. Things on a table aren't on the floor, so the sizes matter for tables.
+  // ---- Finding things ("water bottle", "my phone", "a chair") ----
+  // Found the way Lumen finds them (see "Find mode" below): YOLOv8n on the laptop, which knows the
+  // 80 COCO kinds of thing. So a thing must be one of those; anything else ("my keys") is refused
+  // with the search buzz. The words people use for them, like Lumen's ("phone" → cell phone,
+  // "fridge" → refrigerator); a COCO name said as it is ("toothbrush") works too.
   const THINGS = [
-    // [words that mean it, YOLO class or null, usual size in m]
-    [["water bottle", "bottle", "water"], "bottle", 0.25],
-    [["mug", "cup", "coffee"], "cup", 0.12],
-    [["phone", "iphone", "cell phone", "mobile"], "cell phone", 0.15],
-    [["backpack", "book bag", "bag"], "backpack", 0.45],
-    [["purse", "handbag"], "handbag", 0.3],
-    [["laptop", "computer"], "laptop", 0.33],
-    [["book"], "book", 0.24],
-    [["remote"], "remote", 0.18],
-    [["keyboard"], "keyboard", 0.44],
-    [["scissors"], "scissors", 0.2],
-    [["umbrella"], "umbrella", 0.9],
-    [["suitcase", "luggage"], "suitcase", 0.6],
-    [["glass", "wine glass"], "wine glass", 0.2],
-    [["bowl"], "bowl", 0.18],
-    [["banana"], "banana", 0.2], [["apple"], "apple", 0.08], [["orange"], "orange", 0.08],
-    [["ball"], "sports ball", 0.22],
-    [["plant"], "potted plant", 0.5],
-    [["chair", "seat"], "chair", 0.9],
-    [["couch", "sofa"], "couch", 0.9],
-    [["bench"], "bench", 1.2],
-    [["tv", "television"], "tv", 0.7],
-    [["fridge", "refrigerator"], "refrigerator", 1.7],
-    [["microwave"], "microwave", 0.5],
-    [["sink"], "sink", 0.6],
-    [["toilet"], "toilet", 0.75],
-    [["bike", "bicycle"], "bicycle", 1.7],
-    [["dog"], "dog", 0.6], [["cat"], "cat", 0.45],
-    [["person", "someone", "friend"], "person", 1.7],
-    [["keys", "key"], null, 0.08],
-    [["trash can", "trash", "garbage", "bin"], null, 0.65],
-    [["door"], null, 2.0],
-    [["wallet"], null, 0.11],
-    [["glasses", "sunglasses"], null, 0.14],
+    // [words that mean it, YOLO class]
+    [["water bottle", "bottle", "water"], "bottle"],
+    [["mug", "cup", "coffee"], "cup"],
+    [["phone", "iphone", "cell phone", "mobile", "fone"], "cell phone"],
+    [["backpack", "book bag", "bag"], "backpack"],
+    [["purse", "handbag"], "handbag"],
+    [["laptop", "computer"], "laptop"],
+    [["book"], "book"], [["remote", "remote control"], "remote"], [["keyboard"], "keyboard"], [["mouse"], "mouse"],
+    [["scissors"], "scissors"], [["clock"], "clock"], [["vase"], "vase"],
+    [["umbrella"], "umbrella"], [["suitcase", "luggage"], "suitcase"],
+    [["glass", "wine glass"], "wine glass"], [["bowl"], "bowl"],
+    [["banana"], "banana"], [["apple"], "apple"], [["orange"], "orange"], [["ball"], "sports ball"],
+    [["plant"], "potted plant"], [["chair", "seat"], "chair"], [["couch", "sofa"], "couch"], [["bed"], "bed"],
+    [["table", "dining table", "desk"], "dining table"], [["bench"], "bench"],
+    [["tv", "television", "monitor", "screen"], "tv"],
+    [["fridge", "refrigerator"], "refrigerator"], [["microwave"], "microwave"], [["oven", "stove"], "oven"], [["toaster"], "toaster"],
+    [["sink"], "sink"], [["toilet"], "toilet"],
+    [["bike", "bicycle"], "bicycle"], [["dog"], "dog"], [["cat"], "cat"],
+    [["person", "someone", "friend"], "person"],
   ];
+  const COCO = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
+    "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear",
+    "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
+    "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza",
+    "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
+    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors",
+    "teddy bear", "hair drier", "toothbrush"];
   // What was said or typed → just the thing: no punctuation (speech recognition adds it) or filler
   // ("Get me a water bottle, please." → "water bottle").
   const words = (text) => text.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9' -]+/g, " ").replace(/\s+/g, " ").trim();
@@ -424,14 +422,16 @@
     } while (t !== prev);
     return t;
   }
-  // What find mode needs to know about a thing: the object finder's prompt, YOLO's kind and its
-  // usual size (longest matching word wins: "water bottle" over "water"), and words for the same.
+  // What find mode needs to know about a thing: YOLO's kind for it (longest matching word wins:
+  // "water bottle" over "water"), or null when it isn't one. (prompt: null while a vague request is
+  // still being worked out, below.)
   function thingFields(what) {
     let best = null;
-    for (const [words, coco, size] of THINGS) for (const w of words) {
-      if (new RegExp(`\\b${w}\\b`).test(what) && (!best || w.length > best.w.length)) best = { w, coco, size, same: [...words, ...(coco ? [coco] : [])] };
+    for (const [words, coco] of THINGS) for (const w of words) {
+      if (new RegExp(`\\b${w}\\b`).test(what) && (!best || w.length > best.w.length)) best = { w, coco };
     }
-    return { name: `find "${what}"`, what, prompt: `a ${what}.`, coco: best?.coco ?? null, size: best?.size ?? null, same: best?.same ?? [] };
+    best ??= COCO.filter((c) => new RegExp(`\\b${c}\\b`).test(what)).map((c) => ({ w: c, coco: c })).sort((a, b) => b.w.length - a.w.length)[0];
+    return { name: `find "${what}"`, what, prompt: what, coco: best?.coco ?? null };
   }
   // Plain language ("something to drink", "somewhere to sit") isn't a thing the detectors can look
   // for: the AI (ai.js) names one ("water bottle", "chair"). One short text call, only for these;
@@ -466,26 +466,45 @@
   }
   $("findGo").onclick = () => findThing($("findText").value);
   $("findText").onkeydown = (e) => { if (e.key === "Enter") findThing($("findText").value); };
-  // How far away a box is (box = 0–1 of a w × h frame with this focal length and chest height).
-  const deg = (px, focal) => (Math.atan(px / focal) * 180) / Math.PI;
-  function thingDistance(box, frame, size) {
-    const [x1, y1, x2, y2] = box, bw = (x2 - x1) * frame.w, bh = (y2 - y1) * frame.h;
-    if (size) return (frame.focal * size) / Math.max(bw, bh, 1);
-    const below = Math.min(y2, 1) * frame.h - frame.h / 2; // floor contact, pixels below the middle
-    const down = rad(frame.pitch || 0) + Math.atan(below / frame.focal); // below level, with the camera's tilt
-    return down > 0.02 ? frame.camH / Math.tan(down) : null;
-  }
-  function thingSeen(box, frame, refHeading, score) {
-    const now = performance.now();
-    const cx = ((box[0] + box[2]) / 2) * frame.w - frame.w / 2, cy = ((box[1] + box[3]) / 2) * frame.h - frame.h / 2;
-    cam = {
-      heading: wrap180(refHeading + deg(cx, frame.focal)),
-      distance: thingDistance(box, frame, mode.size),
-      up: -deg(cy, frame.focal) - (frame.pitch || 0), // degrees above (+) or below (−) level at chest height
-      box, boxHeading: refHeading, // where it was in the frame, and which way the chest faced (for reaching)
-      at: now, by: "thing", score,
+  // ---- Lumen's spatial rules (spatial_reasoning.py) ----
+  // A box (0–1 of the frame) → left / centre / right, from its middle (split at 35% and 65% of the
+  // width), and near / medium / far, from how big it looks (the larger of its width and height, as a
+  // share of the frame) against how big that kind of thing looks at arm's reach (~40 cm): at 85% of
+  // that or more it's near, at 35% or less far. Per kind, so a laptop filling 40% of the view and a
+  // cup filling 18% are both near.
+  const REGION_LEFT_MAX = 0.35, REGION_RIGHT_MIN = 0.65, NEAR_RATIO_MIN = 0.85, FAR_RATIO_MAX = 0.35;
+  const NEAR_APPARENT = {
+    // Lumen's (PER_CLASS_NEAR_APPARENT)
+    "cell phone": 0.12, remote: 0.12, mouse: 0.10, scissors: 0.10, cup: 0.18, bottle: 0.18, clock: 0.18, vase: 0.18, book: 0.22,
+    keyboard: 0.40, laptop: 0.40, microwave: 0.40, sink: 0.40, toilet: 0.40, chair: 0.40,
+    oven: 0.50, "dining table": 0.50, tv: 0.55, couch: 0.60, bed: 0.60, refrigerator: 0.60,
+    // Paradise's guesses for the other things it lets you ask for (Lumen doesn't list them)
+    person: 0.9, bicycle: 0.6, backpack: 0.3, handbag: 0.25, suitcase: 0.4, umbrella: 0.3, bench: 0.5, "potted plant": 0.3,
+    dog: 0.4, cat: 0.3, "wine glass": 0.18, bowl: 0.2, banana: 0.12, apple: 0.1, orange: 0.1, "sports ball": 0.15, toaster: 0.3,
+  };
+  const DEFAULT_NEAR_APPARENT = 0.22; // roughly book-sized
+  // How far away a thing is: its usual size (its longest side, meters) and how big it looks, through
+  // the phone's focal length. Lumen's near / medium / far above assumes a phone held out in front,
+  // in landscape; on a chest, in portrait, things look bigger and "near" came ~1.2 m early.
+  const SIZE_M = {
+    bottle: 0.22, cup: 0.1, "cell phone": 0.15, backpack: 0.45, handbag: 0.3, laptop: 0.33, book: 0.24, remote: 0.18,
+    keyboard: 0.44, mouse: 0.1, scissors: 0.18, clock: 0.3, vase: 0.25, umbrella: 0.9, suitcase: 0.6, "wine glass": 0.2,
+    bowl: 0.15, banana: 0.2, apple: 0.08, orange: 0.08, "sports ball": 0.22, "potted plant": 0.5, chair: 0.9, couch: 0.9,
+    bed: 2.0, "dining table": 1.2, bench: 1.2, tv: 0.9, refrigerator: 1.7, microwave: 0.5, oven: 0.7, toaster: 0.3,
+    sink: 0.6, toilet: 0.7, bicycle: 1.7, dog: 0.6, cat: 0.45, person: 1.7,
+  };
+  const DEFAULT_SIZE_M = 0.3;
+  const REGION_WORDS = { left: "to your left", center: "straight ahead", right: "to your right" };
+  function locate(box, label) {
+    const cx = (box[0] + box[2]) / 2, apparent = Math.max(box[2] - box[0], box[3] - box[1]);
+    const ratio = apparent / (NEAR_APPARENT[label] ?? DEFAULT_NEAR_APPARENT);
+    return {
+      region: cx < REGION_LEFT_MAX ? "left" : cx > REGION_RIGHT_MIN ? "right" : "center",
+      distance: ratio >= NEAR_RATIO_MIN ? "near" : ratio <= FAR_RATIO_MAX ? "far" : "medium",
+      ratio,
     };
   }
+  const deg = (px, focal) => (Math.atan(px / focal) * 180) / Math.PI;
 
   // ---- Choosing where to go ----
   // Button presses: press any Joy-Con button N times; 1.5 s after the last press it counts.
@@ -541,8 +560,8 @@
     if (m.kind !== "test" && m.prompt !== null) narrate(modeSentence(m), true); // a vague request: once it's known what (settleWhat)
   }
   function playEcho(n) {
-    PATTERNS.echo(n);
-    nextPulse = echoUntil = performance.now() + n * 300 + 400;
+    PATTERNS.echo(n); // silent (see SILENT): so no waiting for it to be counted
+    nextPulse = echoUntil = performance.now();
   }
   function choose(n) {
     const c = CHOICES[n - 1];
@@ -859,9 +878,6 @@
   const OBSTACLE_HOLD = 1200;
   let latestObjects = [], latestObjectsAt = -Infinity; // for the display
   let lastFrame = null;            // { w, h, focal, camH, pitch } the phone measures boxes in
-  let yoloThing = null;            // { heading, at } last time YOLO saw the kind of thing being found
-  let yoloOthers = { at: -Infinity, list: [] }; // what else YOLO saw last: [{ label, heading }]
-  let lockSeenByYolo = -Infinity;  // last time YOLO saw the thing where it's being steered to
 
   // ---- Waymo: which car ----
   // While in Waymo mode the phone sends crops of the cars it sees, twice a second, and the server's
@@ -903,29 +919,27 @@
     return list.length ? list.reduce((a, b) => (off(b) < off(a) ? b : a)) : null;
   }
 
-  // ---- Object finder frames: the Waymo's door handle, or the thing being found ----
+  // ---- Object finder frames: the Waymo's door handle ----
   // Ask the phone for camera frames, one at a time, with what to look for; the server's object
   // finder (object-finder.js, ~1.2 s a frame) answers with boxes. In between, the compass keeps
-  // the target's direction as the wearer turns.
-  // Waymo: only within HANDLE_RANGE of the car. Find mode: all the time.
+  // the target's direction as the wearer turns. Only within HANDLE_RANGE of the car. (Find mode
+  // has its own detector: see "Find mode" below.)
   const HANDLE_RANGE = 4;    // m
   const HANDLE_WIDTH = 0.25; // m, roughly; seen at an angle the box is narrower, so distance reads long
-  const THING_SURE = 0.25;   // object finder score to count (bottles scored 0.27–0.44 in tests, most things 0.6+)
-  const finder = { waiting: null, nextId: 0, answered: 0, retryAt: 0, info: "idle", box: null }; // answered: id of the last frame it looked at
+  const finder = { waiting: null, nextId: 0, retryAt: 0, info: "idle" };
   setInterval(() => {
     const now = performance.now();
     // Near the car: the car (or its handle) seen lately, or we're standing at it.
     const nearCar = mode?.kind === "waymo" && cam && (now - cam.at < 4000 || arrived === cam.by) &&
       cam.distance != null && cam.distance <= HANDLE_RANGE;
-    const prompt = nearCar ? "a car door handle." : mode?.kind === "find" ? mode.prompt : null;
+    const prompt = nearCar ? "a car door handle." : null;
     // Only while the phone is there: a request with nobody to answer it holds up the next one 5 s.
     if (!prompt || phoneWs?.readyState !== 1 || now < finder.retryAt || heading === null || now - lastEyes > 1000) return;
     if (finder.waiting && now - finder.waiting.at < 5000) return; // one at a time; give up on lost ones
     // The frame is taken right after this; remember which way the chest faced, and for which mode
     // (an answer that comes back after the mode changed is about something else).
-    finder.waiting = { id: ++finder.nextId, at: now, heading, purpose: nearCar ? "handle" : "thing", mode };
-    const check = nearCar ? undefined : { what: mode.what, same: mode.same };
-    phoneWs.send(JSON.stringify({ type: "frame-please", to: "eyes", id: finder.nextId, prompt, check }));
+    finder.waiting = { id: ++finder.nextId, at: now, heading, mode };
+    phoneWs.send(JSON.stringify({ type: "frame-please", to: "eyes", id: finder.nextId, prompt }));
   }, 100);
   function onFound({ id, boxes, reason, note, w, h, focal, ms }) {
     const req = finder.waiting;
@@ -935,8 +949,6 @@
     // Busy (still on an earlier frame, e.g. right after a mode change): again shortly. Loading or
     // failed: every 2 s.
     if (!boxes) { finder.retryAt = performance.now() + (reason === "busy" ? 500 : 2000); finder.info = reason; return; }
-    finder.answered = id;
-    if (req.purpose === "thing") return onThingBoxes(req, boxes, w, h, focal, ms, note);
     // The model also scores the whole car as "handle"; keep small boxes only, best first.
     const b = boxes.filter((b) => b.x2 - b.x1 < 0.4 * w && b.score >= 0.12).sort((a, b) => b.score - a.score)[0];
     const deg = (px) => (Math.atan(px / focal) * 180) / Math.PI;
@@ -954,105 +966,115 @@
     }
     finder.info = `door handle: ${ms} ms · ${b ? `${Math.round(b.score * 100)}%` : "none in view"}`;
   }
-  // Find mode: the best box that isn't the whole scene; while already steering to one, the one
-  // closest to it (so two bottles don't make it flip between them).
-  function onThingBoxes(req, boxes, w, h, focal, ms, note) {
-    if (mode?.kind !== "find") return;
-    const frame = { w, h, focal, camH: lastFrame?.camH ?? 1.3, pitch: lastFrame?.pitch ?? 0 };
+  // ---- Find mode: Lumen's detector and rules ----
+  // As Lumen does it (object_allocation.py; github.com/diaabadaha/lumen-graduation-project), on
+  // frames this page takes from the live video (640 px, like Lumen's), as fast as they're answered
+  // (up to 10 a second; Lumen does 5):
+  // - YOLOv8n on the laptop (detector.js) finds the thing's kind; boxes under 35% are dropped;
+  // - it only counts once it's in 3 of the last 5 frames (no single-frame flickers);
+  // - of several, the one nearest the middle of the view (the most head-on);
+  // - left / centre / right and near / medium / far (see "Lumen's spatial rules" above), a change
+  //   only counting after 2 frames in a row (so box jitter at a boundary doesn't flip it).
+  // The wrists (the Joy-Cons) then say what Lumen says out loud: left or right → that wrist's turn
+  // buzz; centre → walk (both wrists, faster and stronger as it gets closer); near → arrived, then
+  // the reach (below). What Paradise adds: where it was seen is kept as a compass heading, so when
+  // it drops out of view the wrists turn the wearer back to it (for MEMORY), instead of just saying
+  // which side it was on.
+  const SEEK = { WINDOW: 5, MIN_HITS: 3, CONF: 0.35, STREAK: 2, EVERY: 100, MEMORY: 8000, TIMEOUT: 60000 };
+  const seek = { waiting: null, nextId: 0, sentAt: -Infinity, lastPreview: -Infinity, presence: [], everSeen: false, raw: null, streak: 0, region: null, distance: null, lostAt: null, box: null, info: "idle" };
+  function resetSeek() {
+    Object.assign(seek, { waiting: null, presence: [], everSeen: false, raw: null, streak: 0, region: null, distance: null, lostAt: null, box: null, info: "idle" });
+  }
+  const aiAsk = { nextId: 0, meant: null, info: "not asked yet" }; // Gemini, only to work out what a vague request means
+  setInterval(() => {
     const now = performance.now();
-    const headingOf = (o) => wrap180(req.heading + deg(((o.box[0] + o.box[2]) / 2 - 0.5) * w, focal));
-    const yoloAgrees = (o) => yoloThing && now - yoloThing.at < 1500 && Math.abs(wrap180(headingOf(o) - yoloThing.heading)) < 10;
-    // When the thing is one of YOLO's classes, YOLO leads: a box YOLO doesn't back up only counts if
-    // YOLO hasn't seen the thing anywhere lately, and never where YOLO sees something else (the
-    // object finder and CLIP will both call a phone "a water bottle").
-    const small = (label) => !["person", "dining table", "chair", "couch", "bed", "bench", "car", "truck", "bus"].includes(label);
-    const clash = (o) => now - yoloOthers.at < 1500
-      && yoloOthers.list.some((x) => small(x.label) && Math.abs(wrap180(headingOf(o) - x.heading)) < 7);
-    const yoloSeesIt = mode.coco && yoloThing && now - yoloThing.at < 5000;
-    const ok = boxes.filter((b) => b.score >= THING_SURE && b.x2 - b.x1 < 0.8 * w && b.y2 - b.y1 < 0.9 * h)
-      .map((b) => ({ score: b.score, verified: b.verified, box: [b.x1 / w, b.y1 / h, b.x2 / w, b.y2 / h] }))
-      .filter((o) => yoloAgrees(o) || (o.verified && !(mode.coco && (yoloSeesIt || clash(o)))));
-    const tracking = cam?.by === "thing" && now - cam.at < 3000;
-    const b = ok.length ? ok.reduce((a, c) => (tracking
-      ? (Math.abs(wrap180(headingOf(c) - cam.heading)) < Math.abs(wrap180(headingOf(a) - cam.heading)) ? c : a)
-      : (c.score > a.score ? c : a))) : null;
-    if (b) { thingSeen(b.box, frame, req.heading, b.score); finder.box = { box: b.box, at: now }; }
-    finder.info = `"${mode.what}": ${ms} ms · ${b ? `${Math.round(b.score * 100)}%` : "not in view"}${note ? ` (${note})` : ""}`;
+    if (!inControl || mode?.kind !== "find" || !mode.coco || mode.found || phoneWs?.readyState !== 1 || heading === null || !lastFrame?.focal) return;
+    if ((seek.waiting && now - seek.waiting.at < 2000) || now - seek.sentAt < SEEK.EVERY) return;
+    // From the live video; without it, each small frame the phone sends through the server, once.
+    let image = null;
+    if (videoLive(now)) image = grabVideo(640)?.image;
+    else if (now - previewAt < 500 && previewAt !== seek.lastPreview) { seek.lastPreview = previewAt; image = feedImg.src; }
+    if (!image) return;
+    seek.sentAt = now;
+    // Which way the chest faced when it was taken, and what the phone measures with then.
+    seek.waiting = { id: ++seek.nextId, at: now, heading, mode, focal960: lastFrame.focal, pitch: lastFrame.pitch || 0 };
+    phoneWs.send(JSON.stringify({ type: "detect", to: "server", id: seek.nextId, image }));
+  }, 20);
+  function onDetected({ id, boxes, reason, w, h, ms }) {
+    const req = seek.waiting;
+    if (req?.id !== id) return;
+    seek.waiting = null;
+    if (req.mode !== mode || mode?.kind !== "find") return;
+    if (!boxes) { seek.info = reason; return; } // loading, or still on another frame: the next one soon
+    const now = performance.now();
+    const found = boxes.filter((b) => b.label === mode.coco && b.score >= SEEK.CONF);
+    seek.presence.push(found.length > 0);
+    if (seek.presence.length > SEEK.WINDOW) seek.presence.shift();
+    const hits = seek.presence.filter(Boolean).length;
+    seek.info = `${ms} ms · ${found.length ? `${found.length} ${mode.coco}` : `no ${mode.coco}`} in view · in ${hits} of the last ${seek.presence.length} frames`;
+    if (hits >= SEEK.MIN_HITS && found.length) {
+      const b = found.reduce((a, c) => (Math.abs((c.x1 + c.x2) / 2 - w / 2) < Math.abs((a.x1 + a.x2) / 2 - w / 2) ? c : a));
+      const box = [b.x1 / w, b.y1 / h, b.x2 / w, b.y2 / h], at = locate(box, mode.coco);
+      const key = `${at.region} ${at.distance}`;
+      seek.streak = key === seek.raw ? seek.streak + 1 : 1;
+      seek.raw = key;
+      if (seek.streak >= SEEK.STREAK || !seek.region) Object.assign(seek, { region: at.region, distance: at.distance });
+      const first = !seek.everSeen;
+      Object.assign(seek, { everSeen: true, lostAt: null, box: { box, at: now } });
+      const f = (req.focal960 * Math.max(w, h)) / 960; // the phone's focal length, in this frame's pixels
+      const cx = ((box[0] + box[2]) / 2 - 0.5) * w, cy = ((box[1] + box[3]) / 2 - 0.5) * h;
+      cam = {
+        heading: wrap180(req.heading + deg(cx, f)),
+        // From its usual size and the phone's focal length (a pinhole camera): its longest side.
+        distance: (f * (SIZE_M[mode.coco] ?? DEFAULT_SIZE_M)) / Math.max((box[2] - box[0]) * w, (box[3] - box[1]) * h, 1),
+        up: -deg(cy, f) - req.pitch, // degrees above (+) or below (−) level at chest height
+        box, boxHeading: req.heading, // where it was in the frame, and which way the chest faced (for reaching)
+        region: seek.region, bucket: seek.distance, at: now, by: "thing", score: b.score,
+      };
+      seek.info += ` · ${seek.region}, ${seek.distance}`;
+      if (first) narrate(`Found the ${mode.what}, ${REGION_WORDS[seek.region]}.`, true);
+    } else if (seek.everSeen && hits === 0 && seek.lostAt === null) {
+      // Seen, then gone for a whole window: said once (Lumen: "I lost sight of your cup, it was to
+      // your left"). The wrists keep turning the wearer back to where it was (see guideTick).
+      seek.lostAt = now;
+      narrate(`Lost sight of the ${mode.what}. It was ${REGION_WORDS[seek.region]}.`);
+    }
   }
 
-  // ---- Find mode: scanning the room, and asking the AI where to look next ----
-  // Not in view: the wrists turn the wearer round a full circle, a stop at a time (turn pulses until
-  // lined up, then quiet: hold still while the detectors look), keeping each stop's photo. Found at
-  // any stop: steered to it as usual. Nothing all the way round: the photos go to the AI (ai.js on
-  // the server: Gemini), which says where it can see it, or the best place to walk to and look. The
-  // wearer is walked that way (obstacle stops as always) until something's in the way or they've
-  // gone about as far as the AI guessed, then turns round again. The AI only picks where to go:
-  // "found it" still takes the phone's and the laptop's own detectors. At most AI_CALLS a search.
-  const SCAN_STOPS = 10;                  // 36° apart; the camera sees ~41° across, so they overlap a little
-  const SCAN_LINED = 10;                  // ° from a stop: close enough, hold still
-  const LOOK_MIN = 800, LOOK_MAX = 4000;  // ms at a stop: until the object finder has answered for a frame taken there
-  const AI_CALLS = 3;                     // per search, at most
-  const WALK_SPEED = 0.5;                 // m/s, walking slowly behind the buzzes: how long to keep going toward the AI's pick
-  let scan = null;       // { start, i, phase: "turn" | "look" | "ask" | "done", at, lookId, shots: [{ rel, heading, image, w, focal }], why? }
-  let shownScan = null;  // the scan on the display (stays there once it's over)
-  let explore = null;    // { heading, target, until }: walking to the AI's pick
-  let lastShot = null;   // { image, w, h, focal, at }: the latest preview frame, for the scan's photos
-  const aiAsk = { calls: 0, nextId: 0, waiting: null, pick: null, meant: null, info: "not asked yet" }; // calls: this search
+  // Not seen yet (or not for MEMORY): the wrists turn the wearer round the room, a stop at a time
+  // (turn pulses until lined up, then quiet: hold still while the detector looks, long enough for
+  // 3 of 5 frames), round and round. Never seen in TIMEOUT (60 s, Lumen's): give up.
+  const SCAN_STOPS = 10;  // 36° apart; the camera sees ~41° across, so they overlap a little
+  const SCAN_LINED = 10;  // ° from a stop: close enough, hold still
+  const LOOK = 1200;      // ms at a stop
+  let scan = null;        // { start, i, phase: "turn" | "look" | "done", at, why? }
+  let shownScan = null;   // the scan on the display (stays there once it's over)
   function newScan(now) {
-    scan = shownScan = { start: heading, i: 0, phase: "turn", at: now, lookId: 0, shots: [] };
+    scan = shownScan = { start: heading, i: 0, phase: "turn", at: now };
   }
   function scanTick(now, say) {
-    const s = scan, n = `${Math.min(s.i + 1, SCAN_STOPS)} of ${SCAN_STOPS}`;
+    const s = scan;
     if (s.phase === "done") return say(`NOT FOUND: ${s.why}`);
-    if (s.phase === "ask") {
-      if (now - s.at > 25000) giveUp("not anywhere around you (the AI didn't answer)");
-      return say("THINKING: not anywhere around you; asking the AI where to look");
-    }
+    if (!seek.everSeen && now - task.at > SEEK.TIMEOUT) return giveUp(`no ${mode.what} anywhere around you in ${SEEK.TIMEOUT / 1000} s`, say);
+    const n = `${(s.i % SCAN_STOPS) + 1} of ${SCAN_STOPS}`;
     const err = wrap180(s.start + (s.i * 360) / SCAN_STOPS - heading);
     if (s.phase === "turn") {
       if (Math.abs(err) > SCAN_LINED) {
-        if (now >= nextPulse) { nextPulse = now + 400; PATTERNS[err < 0 ? "left" : "right"](); }
+        if (now >= nextPulse) { nextPulse = now + 100; PATTERNS[err < 0 ? "left" : "right"](); }
         return say(`SCANNING: turn ${err < 0 ? "left" : "right"} ${Math.abs(err).toFixed(0)}° (stop ${n})`);
       }
-      Object.assign(s, { phase: "look", at: now, lookId: finder.nextId });
+      Object.assign(s, { phase: "look", at: now });
     }
-    // Holding still until the object finder has answered for a frame taken here (YOLO looks too).
-    if (!(finder.answered > s.lookId && now - s.at >= LOOK_MIN) && now - s.at < LOOK_MAX) return say(`SCANNING: hold still, looking (stop ${n})`);
-    if (lastShot?.focal && now - lastShot.at < 1000) s.shots.push({ rel: (s.i * 360) / SCAN_STOPS, heading, image: lastShot.image, w: lastShot.w, focal: lastShot.focal });
+    if (now - s.at < LOOK) return say(`SCANNING: hold still, looking (stop ${n})`);
     Object.assign(s, { phase: "turn", i: s.i + 1 });
-    if (s.i < SCAN_STOPS) return say(`SCANNING: next stop (${s.i + 1} of ${SCAN_STOPS})`);
-    askAi(now);
-    return say(scan.phase === "ask" ? "THINKING: not anywhere around you; asking the AI where to look" : `NOT FOUND: ${scan.why}`);
-  }
-  function askAi(now) {
-    const s = scan;
-    if (!$("aiOn").checked) return giveUp("not anywhere around you (asking the AI is switched off)");
-    if (aiAsk.calls >= AI_CALLS) return giveUp(`not anywhere around you, after asking the AI ${AI_CALLS} times`);
-    if (!s.shots.length || phoneWs?.readyState !== 1) return giveUp("not anywhere around you");
-    aiAsk.calls++;
-    aiAsk.waiting = { id: ++aiAsk.nextId, shots: s.shots, mode, scan: s };
-    aiAsk.info = `asking (call ${aiAsk.calls} of ${AI_CALLS} this search)…`;
-    Object.assign(s, { phase: "ask", at: now });
-    phoneWs.send(JSON.stringify({ type: "ask-ai", to: "server", id: aiAsk.nextId, what: mode.what, shots: s.shots.map(({ rel, image }) => ({ rel, image })) }));
+    return say(`SCANNING: next stop (${(s.i % SCAN_STOPS) + 1} of ${SCAN_STOPS})`);
   }
   // Nothing more to try: the search buzz once, then quiet (the wearer can choose again).
-  function giveUp(why) {
+  function giveUp(why, say) {
     Object.assign(scan, { phase: "done", why });
     PATTERNS.search("not found");
-  }
-  function onAi({ id, answer, reason }) {
-    const req = aiAsk.waiting;
-    if (req?.id !== id) return;
-    aiAsk.waiting = null;
-    if (req.mode !== mode || scan !== req.scan || scan.phase !== "ask") return;
-    const shot = answer && req.shots.find((s) => s.rel === answer.rel);
-    if (!shot) { aiAsk.info = reason || "no usable answer"; return giveUp(`not anywhere around you (AI: ${aiAsk.info})`); }
-    // Where across that photo → which way that is: the heading the photo was taken at + its angle in it.
-    const target = wrap180(shot.heading + deg((answer.x / 1000 - 0.5) * shot.w, shot.focal));
-    aiAsk.pick = { ...answer, scan };
-    aiAsk.info = `"${answer.target}"${answer.visible ? " (sees it)" : ""} · ${(answer.ms / 1000).toFixed(1)} s · ${answer.tokens} tokens · call ${aiAsk.calls} of ${AI_CALLS}`;
-    explore = { heading: target, target: answer.target, until: performance.now() + (clamp(answer.distance_m ?? 3, 1, 8) / WALK_SPEED) * 1000 + 3000 };
-    scan = null;
+    narrate(`I couldn't find the ${mode.what}.`, true);
+    return say(`NOT FOUND: ${why}`);
   }
 
   // ---- GPS ----
@@ -1178,12 +1200,14 @@
   let rideStage = "", distanceShown = "—", distanceBy = "";
   let sceneAim = null;     // { heading, distance, by, at }: where guidance is steering, for the scene only
   function resetGuidance() {
-    cam = null; waymoSeen = null; yoloThing = null; lastCar = null; route = null; routeAsk.at = -Infinity;
-    scan = shownScan = explore = null;
-    Object.assign(aiAsk, { calls: 0, waiting: null, pick: null, meant: null });
+    cam = null; waymoSeen = null; lastCar = null; route = null; routeAsk.at = -Infinity;
+    scan = shownScan = null;
+    resetSeek();
+    resetArrive();
+    aiAsk.meant = null;
     onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—"; distanceBy = ""; blockedRuns = 0; detour = null;
     Object.assign(reach, { view: null, touched: false });
-    Object.assign(finder, { waiting: null, retryAt: 0, info: "idle", box: null });
+    Object.assign(finder, { waiting: null, retryAt: 0, info: "idle" });
   }
   function guideTick() {
     const now = performance.now();
@@ -1211,15 +1235,13 @@
 
     // Obstacle close ahead: stop, overriding everything else, for as long as it's there. Not while
     // reaching for the handle / the thing: it's right in front, and so is the wearer's own arm.
-    // Not while turning on the spot to look round the room (find mode, nothing seen, not walking to
-    // the AI's pick), either: there's nothing to walk into, and standing in front of a table mustn't
-    // stop the looking.
+    // Not while turning on the spot to look round the room (find mode, nothing seen lately), either:
+    // there's nothing to walk into, and standing in front of a table mustn't stop the looking.
     const reaching = arrived === "handle" || arrived === "thing";
-    const scanning = mode.kind === "find" && !camTarget(3000) && !(explore && now < explore.until);
+    const scanning = mode.kind === "find" && !camTarget(SEEK.MEMORY);
     // Only for something right in front (the stop distance, 0.8 m by default) or a wall filling the
     // view: anything further off is gone round instead (see "Going round things" below).
     if (obs && !reaching && !scanning && (obs.distance == null || obs.distance <= Number($("stopDist").value))) {
-      explore = null; // walking to the AI's pick and something's in the way: likely there; look round again
       detour = null;  // plan a new way round once it's clear
       if (now >= obstacleNext) {
         obstacleNext = now + 1200;
@@ -1254,14 +1276,18 @@
       if (now - task.at > 15000) settleWhat(null, "the AI didn't answer");
       return say(`THINKING: what to look for, for "${mode.asked}"`);
     }
+    if (mode.kind === "find" && !mode.coco) { // not something the detector knows
+      if (!mode.refused && now >= echoUntil) { mode.refused = true; PATTERNS.search("can't look for that"); narrate(`I can't look for ${mode.what}.`, true); }
+      return say(`CAN'T FIND: "${mode.what}" isn't one of the detector's kinds of thing (cup, bottle, phone, chair, laptop…)`);
+    }
+    if (mode.kind === "find" && mode.found) return say(`ARRIVED: the ${mode.what} is within reach`); // done
     if (mode.kind === "find") {
-      // Seen: go to it. Else walking to the AI's pick, for as long as it said. Else (once the
-      // selection echo is over) turn round and look, and if that finds nothing, ask the AI.
-      if (camTarget(3000)) { target = cam.heading; distance = cam.distance; by = "thing"; scan = explore = null; }
-      else if (explore && now < explore.until) { target = explore.heading; by = "explore"; }
+      // Seen lately (in view, or where it was for MEMORY): go to it. Else (once the selection echo is
+      // over) turn round and look.
+      if (camTarget(SEEK.MEMORY)) { target = cam.heading; distance = cam.distance; by = "thing"; scan = null; }
       else if (now < echoUntil) waiting = `the ${mode.what}`;
       else {
-        if (explore || !scan) { explore = null; newScan(now); }
+        if (!scan) newScan(now);
         return scanTick(now, say);
       }
       // Found it (after the selection echo, so the two can't blur together).
@@ -1275,13 +1301,15 @@
       return say(`SEARCHING: ${waiting}`);
     }
 
-    // Arrival: one long buzz, then quiet until they move back out. The door handle is judged to
+    // Find mode: arriving at the thing is checked (by the AI), not only measured: see arriveTick.
+    if (by === "thing") { const r = arriveTick(now, say, distance); if (r !== undefined) return r; }
+
+    // Arrival: the double buzz, then quiet until they move back out. The door handle is judged to
     // arm's length, a car box to about a meter, GPS only to within its radius. arrived = what we
     // arrived by: getting to the car and then seeing a handle starts the last steps to it.
     if (arrived && arrived !== by) arrived = false;
-    if (distance != null && !(mode.kind === "waymo" && by === "gps")) { // Waymo mode only arrives by camera
-      // Things: 1 m, about where a table-top thing drops out of the chest camera's view.
-      const radius = by === "handle" ? 0.8 : by === "object" || by === "thing" ? 1.0 : Number($("arrive").value);
+    if (distance != null && by !== "thing" && !(mode.kind === "waymo" && by === "gps")) { // Waymo mode only arrives by camera
+      const radius = by === "handle" ? 0.8 : by === "object" ? 1.0 : Number($("arrive").value);
       if (!arrived && distance <= radius) {
         arrived = by;
         PATTERNS.arrived();
@@ -1291,8 +1319,9 @@
       // Leaving again: 3 m past the radius for GPS, 0.5 m for the camera; 1 m while reaching (the hand
       // covers the target, which makes its box smaller and its distance read long).
       else if (arrived && distance > radius + (by === "gps" ? 3 : reaching ? 1 : 0.5)) arrived = false;
-      // At the door handle or the thing: steer the hand onto it (below).
-      if (arrived === "handle" || arrived === "thing") return reachTick(now, say);
+      // At the door handle: steer the hand onto it (below), when REACH is on.
+      if (arrived === "handle" && REACH) return reachTick(now, say);
+      if (arrived === "handle") return say("ARRIVED at the door handle");
       if (arrived) return say(by === "object" ? "AT THE CAR: turn slowly along it to find the door handle" : "ARRIVED");
     }
 
@@ -1318,35 +1347,90 @@
         detour.on = Math.abs(dErr) <= 8 + (detour.on ? 5 : 0);
         const text = detour.on ? `GO AROUND: walk past ${what}` : `GO AROUND: bear ${dErr < 0 ? "left" : "right"} ${Math.abs(dErr).toFixed(0)}° (${what} ahead)`;
         if (now < nextPulse) return say(text);
-        if (detour.on) { nextPulse = now + 700; PATTERNS.approach(0.5); }
-        else { nextPulse = now + 400; PATTERNS[dErr < 0 ? "left" : "right"](); }
+        if (detour.on) { nextPulse = now + 100; PATTERNS.approach(); }
+        else { nextPulse = now + 100; PATTERNS[dErr < 0 ? "left" : "right"](); }
         return say(text);
       }
     }
 
-    // Facing it (with hysteresis so it doesn't flicker) → approaching: both pulse, faster when
-    // closer. Otherwise the side to turn to pulses: 150 ms every 400 ms.
+    // Facing it (with hysteresis so it doesn't flicker) → approaching: both wrists held on.
+    // Otherwise the wrist on the side to turn to, held on. By the compass (updated many times a
+    // second), so the hold stops the moment the wearer faces it, not a detector frame later.
     const err = wrap180(target - heading); // − = turn left, + = turn right
     onTarget = Math.abs(err) <= Number($("margin").value) + (onTarget ? 5 : 0);
-    const toward = by === "explore" ? ` toward ${explore.target} (the AI's pick)` : "";
-    const walking = `APPROACHING${toward ? `: walk${toward}` : ""}`, turning = `TURN ${err < 0 ? "LEFT" : "RIGHT"} ${Math.abs(err).toFixed(0)}°${toward}`;
+    const toLeft = err < 0;
+    const seen = by !== "thing" || now - cam.at < 600;
+    const walking = "APPROACHING", turning = `TURN ${toLeft ? "LEFT" : "RIGHT"} ${Math.abs(err).toFixed(0)}°${seen ? "" : " (where it was)"}`;
     if (now < nextPulse) return say(onTarget ? walking : turning);
+    // Facing it: both wrists held on, refreshed every 100 ms, so the hold ends within 0.2 s of when
+    // it should (a turn, an obstacle, arriving).
     if (onTarget) {
-      const perSec = distance == null ? 1 : by === "handle" || by === "thing" ? clamp(5 / distance, 1, 4)
-        : by === "object" ? clamp(15 / distance, 0.7, 4) : clamp(40 / distance, 0.7, 3);
-      nextPulse = now + 1000 / perSec;
-      // …and stronger: soft far away, full strength by the time they arrive (the last few meters
-      // for things and the door handle, the last ~12 m to the car, ~40 m by GPS).
-      const arriveAt = by === "handle" ? 0.8 : by === "object" || by === "thing" ? 1.0 : by === "gps" ? Number($("arrive").value) : 1.5;
-      const span = by === "handle" || by === "thing" ? 4 : by === "explore" ? 6 : by === "object" ? 12 : 40;
-      PATTERNS.approach(distance == null ? 0.5 : clamp(1 - (distance - arriveAt) / span, 0.35, 1));
+      nextPulse = now + 100;
+      PATTERNS.approach();
       return say(walking);
     }
-    nextPulse = now + 400;
-    PATTERNS[err < 0 ? "left" : "right"]();
+    nextPulse = now + 100;
+    PATTERNS[toLeft ? "left" : "right"]();
     say(turning);
   }
   setInterval(guideTick, 50);
+
+  // ---- Find mode: have we really arrived? ----
+  // The camera's distance gets it close; the AI (Gemini, ai.js) says whether the thing is really
+  // within arm's reach. Close (ASK_M by the camera, or the thing just ran off the bottom of the view,
+  // which a chest camera does when it's close and low): the wrists go quiet (stand still) and a
+  // photo from the camera goes to the AI. "Yes": the double buzz, done. "Not yet": one step (a
+  // forward hold for STEP ms), then ask again. Without the AI (switched off, no key, too many
+  // calls, no answer): judged by the camera alone, at LOCAL_M.
+  const ARRIVE = { ASK_M: 0.8, LOCAL_M: 0.55, OFF_BOTTOM_M: 1.5, STEP: 1200, WAIT: 8000, MAX: 12 };
+  const arriveAsk = { waiting: null, nextId: 0, stepUntil: 0, yes: false, calls: 0, off: "", info: "—" };
+  function resetArrive() {
+    Object.assign(arriveAsk, { waiting: null, stepUntil: 0, yes: false, calls: 0, off: "", info: "—" });
+  }
+  function arriveTick(now, say, distance) {
+    if (arriveAsk.yes) return reachedThing(now, say);
+    const offBottom = cam.box[3] > 0.97 && now - cam.at > 400 && distance != null && distance <= ARRIVE.OFF_BOTTOM_M;
+    const close = (distance != null && distance <= ARRIVE.ASK_M) || offBottom;
+    if (now < arriveAsk.stepUntil) { // the AI said not yet: a step forward (unless it's the wrong way)
+      if (Math.abs(wrap180(cam.heading - heading)) > Number($("margin").value) + 5) return;
+      if (now >= nextPulse) { nextPulse = now + 100; PATTERNS.approach(); }
+      return say(`APPROACHING: a step closer (the AI: ${arriveAsk.info})`);
+    }
+    if (!close) return;
+    if (arriveAsk.waiting) {
+      if (now - arriveAsk.waiting.at < ARRIVE.WAIT) return say(`CHECKING: stand still, is the ${mode.what} within reach?`);
+      arriveAsk.waiting = null;
+      arriveAsk.off = "no answer in time";
+    }
+    const image = arriveAsk.off || !$("aiOn").checked || arriveAsk.calls >= ARRIVE.MAX || phoneWs?.readyState !== 1 ? null
+      : videoLive(now) ? grabVideo(640)?.image : now - previewAt < 1000 ? feedImg.src : null;
+    if (!image) { // judged by the camera alone
+      arriveAsk.info = `by the camera: ${distance != null ? `${distance.toFixed(2)} m` : "?"}${arriveAsk.off ? ` (AI: ${arriveAsk.off})` : ""}`;
+      return distance != null && distance <= ARRIVE.LOCAL_M ? reachedThing(now, say) : undefined;
+    }
+    arriveAsk.calls++;
+    arriveAsk.waiting = { id: ++arriveAsk.nextId, at: now, mode };
+    arriveAsk.info = `asking (${arriveAsk.calls} of ${ARRIVE.MAX})…`;
+    phoneWs.send(JSON.stringify({ type: "ask-arrived", to: "server", id: arriveAsk.nextId, what: mode.what, image, inView: now - cam.at < 600 }));
+    return say(`CHECKING: stand still, is the ${mode.what} within reach?`);
+  }
+  function onAiArrived({ id, arrived: yes, distance_m, reason, ms }) {
+    const req = arriveAsk.waiting;
+    if (req?.id !== id) return;
+    arriveAsk.waiting = null;
+    if (req.mode !== mode) return;
+    if (typeof yes !== "boolean") { arriveAsk.off = reason || "no answer"; arriveAsk.info = arriveAsk.off; return; } // then the camera judges
+    arriveAsk.info = `${yes ? "yes" : "not yet"}${distance_m != null ? `, about ${distance_m} m` : ""} · ${(ms / 1000).toFixed(1)} s · ${reason || ""}`;
+    if (yes) arriveAsk.yes = true;
+    else arriveAsk.stepUntil = performance.now() + ARRIVE.STEP;
+  }
+  function reachedThing(now, say) {
+    arrived = "thing";
+    mode.found = true;
+    PATTERNS.arrived();
+    narrate(`You're at the ${mode.what}.`, true);
+    return say(`ARRIVED: the ${mode.what} is within reach`);
+  }
 
   // ---- The last reach: steering the hand onto the door handle / the thing ----
   // At the target, the phone tracks the wearer's hand (MediaPipe). The wrist buzzes steer it:
@@ -1354,11 +1438,12 @@
   // pulses, faster as it gets closer, until the hand is about as far away as the target (the hand's
   // distance from how wide its knuckles look): the "touch" buzz. Without hand tracking, the display
   // just says where to reach.
+  const REACH = false; // off: the buzzes are only rotate / forward / reached, so arriving is the end
   const KNUCKLES = 0.08; // m, index-finger knuckle to little-finger knuckle, a typical adult hand
   const reach = { startAt: 0, next: 0, touched: false, view: null };
   let handsSeen = null; // { list: [{ tip, palm, width }], at } the phone's latest hand tracking
   setInterval(() => {
-    if ((arrived === "handle" || arrived === "thing") && phoneWs?.readyState === 1) phoneWs.send(JSON.stringify({ type: "want-hands", to: "eyes" }));
+    if (REACH && (arrived === "handle" || (arrived === "thing" && !mode?.found)) && phoneWs?.readyState === 1) phoneWs.send(JSON.stringify({ type: "want-hands", to: "eyes" }));
   }, 1000);
   function reachTick(now, say) {
     const what = arrived === "handle" ? "door handle" : mode.what;
@@ -1374,14 +1459,17 @@
     }
     // Where the target is in the frame now: where it was last seen, moved by however far the chest
     // has turned since (the hand in front of it often hides it).
+    // (Moved by however far the chest has turned since it was seen.)
+    const shift = (Math.tan(rad(wrap180(heading - cam.boxHeading))) * fr.focal) / fr.w;
     const [x1, y1, x2, y2] = cam.box;
-    const tx = (x1 + x2) / 2 - (Math.tan(rad(wrap180(heading - cam.boxHeading))) * fr.focal) / fr.w, ty = (y1 + y2) / 2;
+    const tx = (x1 + x2) / 2 - shift, ty = (y1 + y2) / 2;
     if (!hs.length) {
       if (now >= reach.next && !quiet) { reach.next = now + 1200; PATTERNS.reachOut(); }
       return say(`REACH OUT toward the ${what}: ${where}. Hand not in view yet`);
     }
     const hand = hs.reduce((a, b) => (Math.hypot(b.tip[0] - tx, b.tip[1] - ty) < Math.hypot(a.tip[0] - tx, a.tip[1] - ty) ? b : a));
     reach.view = { tx, ty, hx: hand.tip[0], hy: hand.tip[1] };
+    if (arrived === "thing") return lumenReach(now, say, what, hand, [x1 - shift, y1, x2 - shift, y2], fr, quiet);
     // How far off, in degrees (+: the target is right of / below the fingertips), and how close.
     const ax = deg((tx - hand.tip[0]) * fr.w, fr.focal), ay = deg((ty - hand.tip[1]) * fr.h, fr.focal);
     const tolX = Math.max(4, deg(((x2 - x1) * fr.w) / 2, fr.focal)), tolY = Math.max(4, deg(((y2 - y1) * fr.h) / 2, fr.focal));
@@ -1402,6 +1490,31 @@
     if (now >= reach.next && !quiet) { reach.next = now + 1000 / (gap != null ? clamp(1 / Math.max(gap, 0.05), 2, 6) : 2); PATTERNS.reachForward(gap != null ? clamp(1 - gap, 0.4, 1) : 0.4); }
     return say(`REACH: forward${gap != null ? ` (${Math.max(0, gap).toFixed(2)} m to go)` : ""}`);
   }
+  // A thing: Lumen's reach (reach_guidance.py). The index fingertip inside the thing's box →
+  // touching, and the search is over (Lumen's one automatic "done"); within 15% of the frame of its
+  // middle → forward; otherwise the bigger miss, in pixels → move the hand left / right / up / down.
+  const ALMOST_CENTER_FRAC = 0.15;
+  function lumenReach(now, say, what, hand, box, fr, quiet) {
+    const [fx, fy] = hand.index || hand.tip, [x1, y1, x2, y2] = box;
+    reach.view.hx = fx; reach.view.hy = fy;
+    if (fx >= x1 && fx <= x2 && fy >= y1 && fy <= y2) {
+      if (!quiet) {
+        PATTERNS.touch();
+        narrate(`Your hand is on the ${what}.`, true);
+        mode.found = true; // guideTick stops here: done
+      }
+      return say(`TOUCHING the ${what}`);
+    }
+    const dx = (x1 + x2) / 2 - fx, dy = (y1 + y2) / 2 - fy; // +: the thing is right of / below the fingertip
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < ALMOST_CENTER_FRAC) {
+      if (now >= reach.next && !quiet) { reach.next = now + 250; PATTERNS.reachForward(0.8); }
+      return say("REACH: almost there, forward");
+    }
+    const sideways = Math.abs(dx * fr.w) >= Math.abs(dy * fr.h);
+    const dir = sideways ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"), off = sideways ? Math.abs(dx) : Math.abs(dy);
+    if (now >= reach.next && !quiet) { reach.next = now + 300; PATTERNS[{ left: "reachLeft", right: "reachRight", up: "reachUp", down: "reachDown" }[dir]](Math.min(1, 0.4 + off * 2)); }
+    return say(`REACH: move your hand ${dir}`);
+  }
   // Where to reach, in words for the display ("a little left, low").
   function reachWords(err, up) {
     const side = Math.abs(err) < 8 ? "straight ahead" : `${Math.abs(err) < 25 ? "a little " : ""}${err < 0 ? "left" : "right"}`;
@@ -1419,7 +1532,7 @@
   const SOURCES = { gps: "by GPS", route: "by GPS, along the walking route",object: "to the car, by camera", handle: "to the door handle", thing: "by camera", test: "indoor test" };
   // "TURN RIGHT 12°" → "Turn right" over "12°"; the colour says what kind of message it is.
   const GUIDE_STATES = [[/^STOP/, "stop"], [/^(?:TURN|SCANNING|GO AROUND)/, "turn"], [/^APPROACHING/, "go"], [/^(?:ARRIVED|AT THE CAR|TOUCHING)/, "done"],
-    [/^(?:REACH|THINKING)/, "reach"], [/^(?:NO |NOT FOUND)/, "warn"]];
+    [/^(?:REACH|THINKING|CHECKING)/, "reach"], [/^(?:NO |NOT FOUND|CAN'T FIND)/, "warn"]];
   const put = (id, text) => { const el = $(id); if (el.textContent !== text) el.textContent = text; }; // only touch what changed
   // The dial: an arrow pointing where to go (up = straight ahead, turned by the message's angle
   // when it has one), or a symbol for stop / arrived / waiting / ready.
@@ -1464,7 +1577,7 @@
     $("buzzLog").classList.toggle("has", buzzLog.length > 0);
     put("modeV", mode ? mode.name : "Nowhere yet");
     // How long the task has taken: from the choice to the touch (or, for a place, arriving).
-    if (mode && task.at && !task.done && (/^TOUCHING/.test(guide) || (mode.kind === "place" && /^ARRIVED/.test(guide)))) {
+    if (mode && task.at && !task.done && (/^TOUCHING/.test(guide) || ((mode.kind === "place" || mode.kind === "find") && /^ARRIVED/.test(guide)))) {
       task.done = now;
     }
     put("modeS", mode && task.at ? `${task.done ? "done in " : ""}${clock((task.done || now) - task.at)}` : "");
@@ -1484,7 +1597,7 @@
     const phoneOk = now - lastEyes < 1000;
     $("phonePill").classList.toggle("ok", phoneOk);
     $("phonePill").classList.toggle("bad", !phoneOk && lastEyes > 0); // was connected, went quiet
-    $("feedBox").classList.toggle("live", now - previewAt < 2000);
+    $("feedBox").classList.toggle("live", now - previewAt < 2000 || videoLive(now));
 
     const pos = (p) => (p ? `${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} ±${p.acc.toFixed(0)} m, ${((now - p.at) / 1000).toFixed(0)} s old` : "—");
     put("info",
@@ -1495,10 +1608,13 @@
       `route:   ${!$("routeOn").checked ? "off (straight line)" : route?.off != null ? `${routeAsk.info} · ${Math.round(route.off)} m from it` : routeAsk.info}\n` +
       `camera:  ${(now - latestObjectsAt < 1500 ? latestObjects : []).map((o) => `${o.label} ${o.distance ? o.distance.toFixed(1) + " m" : ""}`).join(", ") || "nothing"}\n` +
       `waymo classifier: ${waymoBest && now - waymoBest.at < 3000 ? `best ${Math.round(waymoBest.prob * 100)}% (sure at ${WAYMO_SURE * 100}%)` : "—"}\n` +
-      `object finder: ${finder.info}\n` +
+      `object finder: ${finder.info} (door handle)\n` +
+      `detector: ${mode?.kind === "find" ? seek.info : "— (find mode only)"}\n` +
+      `arrived?: ${mode?.kind === "find" ? arriveAsk.info : "— (find mode only)"}\n` +
       `ai:      ${aiAsk.info}\n` +
       `command: ${commandAsk.info}\n` +
       `speaker: ${$("voiceOn").checked ? narrator.info : "off"}\n` +
+      `video:   ${videoLive(now) ? rtc.info : now - previewAt < 2000 ? "small frames through the server (no live video yet)" : "—"}\n` +
       `depth:   ${now - depthSeen.at < 2000 ? `${depthSeen.text} · ${depthSeen.ms} ms` : "—"}${$("depthOn").checked ? "" : " (not used: switched off)"}\n` +
       `hand:    ${handsSeen && now - handsSeen.at < 1000 ? `${handsSeen.list.length} in view` : "— (tracked only at the target)"}`);
   }
@@ -1506,8 +1622,8 @@
   const task = { at: 0, done: 0 }; // when the current choice was made, and when it was reached
   const clock = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 
-  // The room scan (find mode): each stop's photo round a circle, top = where the scan started; the
-  // stop being looked at; the photo the AI picked, and what it said. Rebuilt only when it changes.
+  // The room scan (find mode): its stops round a circle, top = where the scan started (the ones
+  // looked at filled in, the one being looked at ringed); and what a vague request was taken to mean.
   let ringKey = "";
   function renderScan() {
     const s = mode?.kind === "find" ? shownScan : null, meant = mode?.kind === "find" ? aiAsk.meant : null;
@@ -1516,42 +1632,32 @@
     if (meant) put("aiMeant", `AI: “${meant.asked}” means ${meant.what}. ${meant.reason}`);
     $("ring").hidden = !s;
     if (!s) { put("aiPick", ""); put("aiWhy", ""); return; }
-    const pick = aiAsk.pick, pickHere = pick?.scan === s;
-    const key = `${s.shots.length}|${s.i}|${s.phase}|${pickHere ? pick.rel : ""}`;
+    const live = scan === s && (s.phase === "turn" || s.phase === "look"), looked = Math.min(s.i, SCAN_STOPS);
+    const key = `${looked}|${s.i % SCAN_STOPS}|${live}`;
     if (key !== ringKey) {
       ringKey = key;
       const ring = $("ring");
-      ring.querySelectorAll("img, .slot").forEach((el) => el.remove());
-      const place = (el, rel) => {
-        el.style.left = `calc(50% + ${(Math.sin(rad(rel)) * 38).toFixed(1)}%)`;
-        el.style.top = `calc(50% - ${(Math.cos(rad(rel)) * 80).toFixed(0)}px)`;
-        ring.append(el);
-      };
-      for (const shot of s.shots) {
-        const img = new Image();
-        img.src = shot.image; img.alt = "";
-        if (pickHere && pick.rel === shot.rel) img.className = "pick";
-        place(img, shot.rel);
-      }
-      if (scan === s && (s.phase === "turn" || s.phase === "look")) {
-        const slot = document.createElement("div");
-        slot.className = "slot now";
-        place(slot, (s.i * 360) / SCAN_STOPS);
+      ring.querySelectorAll(".slot").forEach((el) => el.remove());
+      for (let i = 0; i < SCAN_STOPS; i++) {
+        const slot = document.createElement("div"), rel = (i * 360) / SCAN_STOPS;
+        slot.className = `slot${i < looked ? " done" : ""}${live && i === s.i % SCAN_STOPS ? " now" : ""}`;
+        slot.style.left = `calc(50% + ${(Math.sin(rad(rel)) * 38).toFixed(1)}%)`;
+        slot.style.top = `calc(50% - ${(Math.cos(rad(rel)) * 80).toFixed(0)}px)`;
+        ring.append(slot);
       }
     }
-    put("ringHub", scan === s ? { ask: "Asking the AI…", done: "Not found" }[s.phase] || `Looking round\n${s.shots.length} of ${SCAN_STOPS}`
-      : explore ? "Walking to the AI's pick" : "Found it");
-    put("aiPick", pick ? `AI${pickHere ? "" : " (last time)"}: ${pick.visible ? "it's at" : "look at"} ${pick.target}` : "");
-    put("aiWhy", pick ? `${pick.distance_m ? `, about ${pick.distance_m} m away` : ""}. ${pick.reason}`
-      : s.phase === "done" ? capital(s.why) : "The AI is only asked where to look if a full turn finds nothing.");
+    put("ringHub", scan === s ? (s.phase === "done" ? "Not found" : `Looking round\n${looked} of ${SCAN_STOPS}`) : "Found it");
+    put("aiPick", `Detector: ${seek.info}`);
+    put("aiWhy", s.phase === "done" ? `. ${capital(s.why)}.` : ". YOLOv8n on the laptop; it counts once it's in 3 of 5 frames.");
   }
 
-  // ---- Camera feed on the display: small frames from the phone, boxes drawn on top ----
+  // ---- Camera feed on the display: the live video from the phone, boxes drawn on top ----
+  // (Without the live video: the small frames the phone sends through the server, 4 a second.)
   // Coral: obstacle in the walking path. Amber: in the way, to go round. Teal: the Waymo / thing
   // being steered to. White: anything else. Drawn at screen resolution, so the labels stay sharp on a small frame.
   const feed = $("feed"), fctx = feed.getContext("2d");
   const feedImg = new Image();
-  let feedBoxes = [], previewAt = -Infinity, previewCam = null;
+  let feedBoxes = [], feedBoxesAt = -Infinity, previewAt = -Infinity, previewCam = null;
   const RED = "#ff5f57", GREEN = "#3ad6d0", YELLOW = "#ffb547", WHITE = "rgba(238, 243, 248, 0.85)"; // coral, teal, amber, white
   const rr = (x, y, w, h, r) => (fctx.roundRect ? fctx.roundRect(x, y, w, h, r) : fctx.rect(x, y, w, h));
   function tag(text, x, y, color, px) { // a label on a coloured chip above a box (inside it, at the top edge)
@@ -1563,16 +1669,22 @@
     fctx.fillText(text, x + 6 * px, ty + 14 * px);
   }
   feedImg.onload = () => {
-    const W = feedImg.width, H = feedImg.height, shown = feed.getBoundingClientRect();
-    lastShot = { image: feedImg.src, w: W, h: H, focal: previewCam?.focal, at: previewAt }; // a scan photo, if it's needed
+    if (videoLive(performance.now())) return; // (a last one from before the live video started)
+    drawFeed(feedImg, feedImg.width, feedImg.height);
+  };
+  // The frame (the preview image, or nothing: the live video shows through) and what's marked on
+  // it, in a W × H frame. The canvas has the video's shape, so both fit the box the same way.
+  function drawFeed(img, W, H) {
+    const shown = feed.getBoundingClientRect();
     const fit = Math.min(shown.width / W, shown.height / H) || 1; // screen pixels per frame pixel
     const k = Math.min(4, Math.max(1, fit * (window.devicePixelRatio || 1))); // canvas pixels per frame pixel
     if (feed.width !== Math.round(W * k) || feed.height !== Math.round(H * k)) { feed.width = Math.round(W * k); feed.height = Math.round(H * k); }
     fctx.setTransform(k, 0, 0, k, 0, 0);
-    fctx.drawImage(feedImg, 0, 0, W, H);
+    if (img) fctx.drawImage(img, 0, 0, W, H);
+    else fctx.clearRect(0, 0, W, H);
     const px = 1 / fit; // one screen pixel, in frame pixels
     fctx.lineJoin = "round";
-    for (const b of feedBoxes) {
+    for (const b of performance.now() - feedBoxesAt < 1500 ? feedBoxes : []) {
       const color = b.obstacle ? RED : b.avoid ? YELLOW : b.target ? GREEN : WHITE, x = b.x1 * W, y = b.y1 * H;
       fctx.strokeStyle = color; fctx.lineWidth = 2.5 * px;
       fctx.beginPath(); rr(x, y, (b.x2 - b.x1) * W, (b.y2 - b.y1) * H, 6 * px); fctx.stroke();
@@ -1588,20 +1700,129 @@
       fctx.moveTo(tx - 18 * px, ty); fctx.lineTo(tx + 18 * px, ty); fctx.moveTo(tx, ty - 18 * px); fctx.lineTo(tx, ty + 18 * px); fctx.stroke();
       fctx.fillStyle = YELLOW; fctx.beginPath(); fctx.arc(hx, hy, 7 * px, 0, 2 * Math.PI); fctx.fill();
     }
-    // The object finder's latest box, while it's recent (it's from a slightly older frame).
-    if (mode?.kind === "find" && finder.box && performance.now() - finder.box.at < 2000) {
-      const [x1, y1, x2, y2] = finder.box.box;
+    // The detector's latest box of the thing (find mode), while it's recent.
+    if (mode?.kind === "find" && seek.box && performance.now() - seek.box.at < 1000) {
+      const [x1, y1, x2, y2] = seek.box.box;
       fctx.strokeStyle = GREEN; fctx.lineWidth = 2 * px; fctx.setLineDash([6 * px, 4 * px]);
       fctx.beginPath(); rr(x1 * W, y1 * H, (x2 - x1) * W, (y2 - y1) * H, 6 * px); fctx.stroke(); fctx.setLineDash([]);
     }
-  };
+  }
+  // Mark the boxes the same way the guidance sees them (boxes as 0–1 of the frame).
+  function setFeedBoxes(boxes) {
+    feedBoxes = boxes.map((b) => ({ ...b, obstacle: isObstacle(b), avoid: isInTheWay(b), target: isTarget(b) }));
+    feedBoxesAt = performance.now();
+  }
   function onPreview(msg) {
-    // Mark the boxes the same way the guidance sees them.
-    feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), avoid: isInTheWay(b), target: isTarget(b) }));
+    setFeedBoxes(msg.boxes || []);
     previewAt = performance.now();
     previewCam = msg.cam;
     feedImg.src = msg.image;
   }
+
+  // ---- Live video from the chest phone (WebRTC) ----
+  // This page offers to receive video (through the server: "rtc" messages) and the phone answers
+  // with its camera. The video then comes straight from the phone, not through the server or the
+  // tunnel: H.264 first (the iPhone encodes it in hardware), up to 30 frames a second, shown as
+  // soon as each frame arrives (no smoothing buffer). While it arrives, this page tells the phone
+  // ("video-ok", so it stops sending small frames), redraws the boxes on every screen frame, and
+  // takes the depth model's frames from the video itself (sent to the server here, on this laptop:
+  // as fast as the model answers, up to ~7 a second, instead of 4 through the tunnel).
+  const feedVideo = $("feedVideo");
+  const ICE = [{ urls: "stun:stun.l.google.com:19302" }]; // finds a way through home routers; on the same Wi-Fi or hotspot it isn't needed
+  const RTC_PAGE = Math.random().toString(36).slice(2, 10); // this page, to the phone
+  const rtc = { pc: null, id: "", n: 0, at: -Infinity, frameAt: -Infinity, time: -1, answered: null, info: "—" };
+  const videoLive = (now) => now - rtc.frameAt < 1000;
+  const sendRtc = (m) => phoneWs?.readyState === 1 && phoneWs.send(JSON.stringify({ type: "rtc", page: RTC_PAGE, pc: rtc.id, ...m }));
+  function startVideo() {
+    rtc.pc?.close();
+    const pc = (rtc.pc = new RTCPeerConnection({ iceServers: ICE }));
+    rtc.id = `${RTC_PAGE}-${++rtc.n}`;
+    rtc.at = performance.now();
+    let answered;
+    rtc.answered = new Promise((r) => (answered = r));
+    rtc.answered.resolve = answered;
+    const line = pc.addTransceiver("video", { direction: "recvonly" });
+    try {
+      const rank = (c) => (/h264/i.test(c.mimeType) ? 0 : /vp8/i.test(c.mimeType) ? 1 : 2);
+      const codecs = RTCRtpReceiver.getCapabilities?.("video")?.codecs;
+      if (codecs?.length) line.setCodecPreferences([...codecs].sort((a, b) => rank(a) - rank(b)));
+    } catch {}
+    try { line.receiver.jitterBufferTarget = 0; } catch {} // show each frame as it comes (Chrome)
+    try { line.receiver.playoutDelayHint = 0; } catch {}   // (older Chrome)
+    pc.ontrack = (e) => {
+      feedVideo.srcObject = e.streams[0] || new MediaStream([e.track]);
+      feedVideo.play().catch(() => {});
+    };
+    pc.onicecandidate = (e) => e.candidate && sendRtc({ candidate: e.candidate.toJSON() });
+    pc.createOffer().then((o) => pc.setLocalDescription(o))
+      .then(() => sendRtc({ sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } }))
+      .catch(() => {});
+  }
+  function onRtc({ page, pc: id, sdp, candidate }) {
+    if (page !== RTC_PAGE || id !== rtc.id || !rtc.pc) return; // for another page, or an older try
+    const pc = rtc.pc;
+    if (sdp?.type === "answer") pc.setRemoteDescription(sdp).then(rtc.answered.resolve, () => {});
+    else if (candidate) rtc.answered.then(() => pc.addIceCandidate(candidate)).catch(() => {});
+  }
+  // Every half second: ask again when the video isn't coming (not connected yet after 6 s, or no
+  // frames for 2.5 s: the phone reloaded, or the network changed); tell the phone when it is.
+  setInterval(() => {
+    const now = performance.now();
+    if (!window.RTCPeerConnection || phoneWs?.readyState !== 1 || now - lastEyes > 2000) return; // no phone to ask
+    if (videoLive(now)) { if (inControl) phoneWs.send(JSON.stringify({ type: "video-ok" })); return; }
+    if (now - rtc.at > 6000 && now - rtc.frameAt > 2500) startVideo();
+  }, 500);
+  // Each new video frame: when it came, and the boxes redrawn over it.
+  (function watchVideo() {
+    requestAnimationFrame(watchVideo);
+    const now = performance.now(), v = feedVideo;
+    if (v.readyState >= 2 && v.currentTime !== rtc.time) { rtc.time = v.currentTime; rtc.frameAt = now; }
+    if (!videoLive(now) || !v.videoWidth) return;
+    const s = 360 / Math.max(v.videoWidth, v.videoHeight);
+    drawFeed(null, Math.round(v.videoWidth * s), Math.round(v.videoHeight * s));
+  })();
+  // What the video is doing, for Details: codec, size, frames a second, round trip to the phone.
+  setInterval(async () => {
+    if (!rtc.pc || !videoLive(performance.now())) return;
+    try {
+      const stats = await rtc.pc.getStats();
+      let inbound = null, pair = null;
+      stats.forEach((r) => {
+        if (r.type === "inbound-rtp" && r.kind === "video") inbound = r;
+        if (r.type === "candidate-pair" && r.nominated && r.state === "succeeded") pair = r;
+      });
+      const codec = inbound?.codecId && stats.get(inbound.codecId)?.mimeType?.replace("video/", "");
+      const local = pair && stats.get(pair.localCandidateId)?.candidateType;
+      rtc.info = `live (WebRTC${codec ? `, ${codec}` : ""}) · ${inbound?.frameWidth ?? "?"}×${inbound?.frameHeight ?? "?"} · ` +
+        `${Math.round(inbound?.framesPerSecond ?? 0)} fps` +
+        `${pair?.currentRoundTripTime != null ? ` · ${Math.round(pair.currentRoundTripTime * 1000)} ms round trip` : ""}` +
+        `${local === "relay" ? " · through a relay" : local === "host" ? " · same network" : ""}`;
+    } catch {}
+  }, 1000);
+  // A frame from the live video (JPEG, `size` px on its longest side): for the depth model (360)
+  // and the detector (640, like Lumen's). Its focal length is the phone's (in its 960 px frame)
+  // scaled to this size.
+  const grab = document.createElement("canvas");
+  function grabVideo(size = 360) {
+    const v = feedVideo;
+    if (!v.videoWidth || !lastFrame?.focal) return null;
+    const s = size / Math.max(v.videoWidth, v.videoHeight);
+    grab.width = Math.round(v.videoWidth * s); grab.height = Math.round(v.videoHeight * s);
+    grab.getContext("2d").drawImage(v, 0, 0, grab.width, grab.height);
+    return { image: grab.toDataURL("image/jpeg", 0.7), w: grab.width, h: grab.height, focal: (lastFrame.focal * size) / 960, at: performance.now() };
+  }
+  // Depth frames: the next one when the server's answered the last (or after 1.5 s without an
+  // answer), at most ~7 a second (the model shares the laptop's CPU with the object finder).
+  const depthAsk = { waiting: false, at: -Infinity };
+  setInterval(() => {
+    const now = performance.now();
+    if (!inControl || !videoLive(now) || phoneWs?.readyState !== 1 || !lastFrame) return;
+    if ((depthAsk.waiting && now - depthAsk.at < 1500) || now - depthAsk.at < 150) return;
+    const shot = grabVideo();
+    if (!shot) return;
+    phoneWs.send(JSON.stringify({ type: "depth-frame", to: "server", image: shot.image, cam: { focal: shot.focal, camH: lastFrame.camH, pitch: lastFrame.pitch } }));
+    Object.assign(depthAsk, { waiting: true, at: now });
+  }, 30);
 
   // ---- Obstacles from depth: anything close in the walking path, even what YOLO can't name ----
   // (walls, poles, doors, boxes: see depth-worker.js on the server). Not at or behind the target,
@@ -1610,6 +1831,7 @@
   let depthSeen = { at: -Infinity }, blockedRuns = 0;
   function onDepth(msg) {
     const now = performance.now();
+    depthAsk.waiting = false;
     depthSeen = { at: now, ms: msg.ms, text: !msg.ok ? msg.why : msg.found.length
       ? msg.found.map((z) => `${z.kind} ${z.distance} m ${z.angle >= 0 ? "+" : ""}${z.angle}°`).join(", ") : `clear (floor ${Math.round(msg.floor * 100)}%)` };
     if (!$("depthOn").checked || !mode || arrived === "handle" || arrived === "thing") return;
@@ -1853,7 +2075,7 @@
       c.strokeStyle = pc; c.lineWidth = 3.5; c.stroke();
       c.fillStyle = ink.text; c.beginPath(); c.arc(T[0], T[1], 3.5, 0, TAU); c.fill();
       // Its name and distance on a chip beside it.
-      const name = aim.by === "explore" && explore ? `Looking: ${explore.target}` : aim.by === "handle" ? "Door handle"
+      const name = aim.by === "handle" ? "Door handle"
         : mode.kind === "find" ? capital(mode.what || "") : mode.kind === "test" ? "Test heading" : mode.name;
       const dist = aim.distance != null ? distanceShown : "";
       c.textBaseline = "middle"; c.textAlign = "left";
@@ -1898,11 +2120,14 @@
       if (msg.type === "beacon") { beacon = { lat: msg.lat, lon: msg.lon, acc: msg.acc, at: now - (msg.age || 0) }; return; }
       if (msg.type === "found") return onFound(msg);
       if (msg.type === "preview") return onPreview(msg);
+      if (msg.type === "rtc") return onRtc(msg);
+      if (msg.type === "depth-skip") return void (depthAsk.waiting = false);
       if (msg.type === "control") return onControl(msg.yours);
       if (msg.type === "heard") return inControl ? onHeard(msg.text) : undefined;
       if (msg.type === "waymo") return onWaymoScores(msg);
       if (msg.type === "depth") return onDepth(msg);
-      if (msg.type === "ai") return onAi(msg);
+      if (msg.type === "detected") return onDetected(msg);
+      if (msg.type === "ai-arrived") return onAiArrived(msg);
       if (msg.type === "ai-what") return onAiWhat(msg);
       if (msg.type === "ai-command") return onAiCommand(msg);
       if (msg.type === "speech") return onSpeech(msg);
@@ -1914,6 +2139,7 @@
       if (msg.frame) lastFrame = msg.frame;
       if (msg.hands) handsSeen = { list: msg.hands, at: now };
       if (msg.gps) wearer = { lat: msg.gps.lat, lon: msg.gps.lon, acc: msg.gps.acc, at: now - (msg.gps.age || 0) };
+      if (msg.objects) setFeedBoxes(msg.objects.filter((o) => o.box).map((o) => ({ ...o, x1: o.box[0], y1: o.box[1], x2: o.box[2], y2: o.box[3] }))); // for the video
       if (!msg.objects || heading === null) return; // objects only come when there's a new result
       latestObjects = msg.objects; latestObjectsAt = now;
 
@@ -1926,23 +2152,6 @@
         if (car && !(cam?.by === "handle" && (now - cam.at < 4000 || arrived === "handle"))) {
           cam = { heading: wrap180(heading + car.angle), distance: car.distance, at: now, by: "object" };
         }
-      }
-      // Find mode, when it's one of YOLO's classes: YOLO's sightings keep the steering smooth
-      // between object finder answers (the one lined up with what we're steering to, else the
-      // most confident).
-      if (mode?.kind === "find" && mode.coco && lastFrame) {
-        const seen = msg.objects.filter((o) => o.label === mode.coco && o.box);
-        const tracking = cam?.by === "thing" && now - cam.at < 3000;
-        const off = (o) => Math.abs(wrap180(heading + o.angle - cam.heading));
-        const o = seen.length ? seen.reduce((a, b) => (tracking ? (off(b) < off(a) ? b : a) : (b.score > a.score ? b : a))) : null;
-        if (o) yoloThing = { heading: wrap180(heading + o.angle), at: now };
-        if (o && tracking && off(o) < 20) lockSeenByYolo = now;
-        // Steering to something YOLO hasn't seen there for 1.5 s while it sees the thing elsewhere
-        // (the object finder picked the wrong thing): switch to what YOLO sees.
-        if (o && (!tracking || off(o) < 20 || now - lockSeenByYolo > 1500)) { thingSeen(o.box, lastFrame, heading, o.score); lockSeenByYolo = now; }
-      }
-      if (mode?.kind === "find") {
-        yoloOthers = { at: now, list: msg.objects.filter((o) => o.label !== mode.coco).map((o) => ({ label: o.label, heading: wrap180(heading + o.angle) })) };
       }
       // Closest obstacle in the walking path.
       const obs = msg.objects.filter((o) => o !== car && isObstacle(o)).sort((a, b) => a.distance - b.distance)[0];

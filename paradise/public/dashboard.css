@@ -153,7 +153,9 @@ body { padding-bottom: 112px; }
   position: relative; flex: none; height: 100%; aspect-ratio: 9 / 16; max-width: 56%;
   overflow: hidden; border-radius: var(--radius-sm); background: #05080c;
 }
-.feed canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+.feed canvas { position: relative; display: block; width: 100%; height: 100%; object-fit: contain; }
+/* The live video (WebRTC) sits under the canvas, which then only draws the boxes over it. */
+.feed video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .feed-empty {
   position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 4px;
   padding: 14px; text-align: center; background: var(--bg-2); transition: opacity 300ms var(--ease-out);
@@ -210,6 +212,7 @@ body { padding-bottom: 112px; }
 .scan { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
 .ring { position: relative; height: 240px; }
 .ring img, .ring .slot { position: absolute; width: 40px; aspect-ratio: 9 / 16; transform: translate(-50%, -50%); border-radius: 8px; object-fit: cover; background: var(--surface-2); }
+.ring .slot.done { background: rgba(58, 214, 208, 0.28); }
 .ring .slot.now { box-shadow: inset 0 0 0 2px var(--guide); }
 .ring img.pick { box-shadow: 0 0 0 2px var(--guide), 0 0 16px rgba(58, 214, 208, 0.5); }
 .hub { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 46%; text-align: center; white-space: pre-line; font: 500 15px/1.3 var(--font); }

@@ -168,8 +168,8 @@
 <main>
   <section class="opening measure" aria-labelledby="statement">
     <h1 id="statement">Every buzz, and what it means</h1>
-    <p class="lede">The <strong>left</strong> Joy-Con means left, the <strong>right</strong> one means right, and
-      <strong>both together</strong> mean everything else.</p>
+    <p class="lede">Three signals: the <strong>left</strong> or <strong>right</strong> Joy-Con held on means rotate
+      that way, <strong>both held on</strong> means go forward, and a <strong>double buzz</strong> means you've reached it.</p>
     <div class="brief">
       <div class="intro">
         <p>Press play on any buzz to watch its rhythm on the two wrists pinned below. With the laptop page
@@ -206,15 +206,13 @@
   <section class="notes measure" aria-labelledby="notesTitle">
     <h2 id="notesTitle">Understanding the signals</h2>
     <ul>
-      <li><strong>Quiet</strong> means carry on: after <em>Arrived</em> you're there, and during a room scan it
-        means hold still while the camera looks.</li>
-      <li><strong>Room scan</strong> (finding something that isn't in view): turn pulses take you round a full
-        circle in 10 steps, with a quiet stop at each.</li>
-      <li><strong>Stop</strong> beats everything else, in every mode, except while reaching for the thing.</li>
-      <li><strong>Voice</strong> only listens to what starts with “Paradise” (“Paradise, take me to the Waymo”),
-        so people talking nearby change nothing. Every answer is a buzz: <em>Heard you</em> while it works it
-        out, then <em>Got it</em>, <em>Stopped</em>, or <em>Didn't understand</em>.</li>
-      <li>Guidance waits until <em>Got it</em> is over, so it can be counted.</li>
+      <li><strong>Quiet</strong> means don't walk: stand still. That's while it looks for the thing, when
+        something is in the way, and after <em>Reached</em>.</li>
+      <li><strong>Looking round</strong> (the thing isn't in view): rotate pulses turn you round the room a step
+        at a time, with a quiet stop at each while the camera looks.</li>
+      <li>If the thing drops out of view, the rotate buzz turns you back to where it was.</li>
+      <li><strong>Close to it</strong>, it goes quiet for a moment while the AI checks a photo: then either
+        <em>Reached</em>, or a short forward buzz (one more step) and it checks again.</li>
       <li>How strong every buzz is follows <em>Buzz strength</em> in the laptop page's settings.</li>
     </ul>
   </section>
@@ -231,10 +229,11 @@
   // Each pattern as pulses: [wrists ("L", "R" or "LR" for both), start ms, length ms, strength 0–1,
   // pitch]. The same as PATTERNS in hands.html: change a pattern there, change it here.
   const PULSES = {
-    left: () => [["L", 0, 150, 1]],
-    right: () => [["R", 0, 150, 1]],
-    approach: (s = 0.5) => [["LR", 0, 90, s]],
-    arrived: () => [["LR", 0, 800, 1]],
+    left: () => [["L", 0, 200, 1]],
+    right: () => [["R", 0, 200, 1]],
+    // (Not in the three-signal vocabulary any more: silent in hands.html. Kept so the pictures still draw.)
+    approach: () => [["LR", 0, 200, 0.8]],
+    arrived: () => [0, 400].map((t) => ["LR", t, 200, 1]),
     obstacle: () => [0, 180, 360].map((t) => ["LR", t, 100, 1]),
     search: () => [["L", 0, 200, 0.6], ["R", 450, 200, 0.6], ["L", 900, 200, 0.6]],
     connected: () => [0, 180].map((t) => ["LR", t, 80, 1]),
@@ -256,49 +255,15 @@
   const every = (ms, n, pattern, args) => Array.from({ length: n }, (_, i) => [i * ms, pattern, args?.(i)]);
   const fading = (i) => [Math.max(0.4, 1 - i * 0.15)]; // stronger the further off: here, the hand closing in
   const LEGEND = [
-    ["Talking to it: buttons and voice", [
-      { name: "Heard you", icon: "ear", where: "Both wrists · two quick soft taps", seq: [[0, "listening"]],
-        what: "You said “Paradise” on its own: say what you want within 8 seconds, no need to say Paradise again. Also right after a command that needs thinking about: it's working on it, and the answer (Got it, or Didn't understand) follows in a second or so." },
-      { name: "Got it", icon: "count", where: "Both wrists", seq: [[0, "echo", [3]]],
-        what: "Right after you choose, by buttons or by voice: one pulse per press, so you can count it. 1 = the Waymo, 2 and up = your saved places, a thing to find = 1. “Paradise, repeat” plays it again." },
-      { name: "Stopped", icon: "stopHand", where: "Both wrists · two long buzzes", seq: [[0, "stopped"]],
-        what: "You said “Paradise, stop” (or cancel, wait, never mind, anywhere in what you said): guidance is off. Choose again whenever you like." },
-      { name: "Didn't understand", icon: "question", where: "Left, right, left · once", seq: [[0, "search"]],
-        what: "It didn't understand what you said after “Paradise”: say it again. Or more presses than there are choices. Nothing changes." },
-    ]],
-    ["Walking", [
-      { name: "Turn left", icon: "arrowLeft", where: "Left wrist · every 0.4 s", seq: every(400, 4, "left"),
-        what: "Turn left until the pulses stop." },
-      { name: "Turn right", icon: "arrowRight", where: "Right wrist · every 0.4 s", seq: every(400, 4, "right"),
-        what: "Turn right until the pulses stop." },
-      { name: "Walk", icon: "walk", where: "Both wrists · faster and stronger as you get closer", seq: [0, 520, 920, 1220, 1450, 1640].map((t, i) => [t, "approach", [[0.35, 0.45, 0.6, 0.75, 0.9, 1][i]]]),
-        what: "You're facing it: walk forward. The pulses get faster (1 to 4 a second) and stronger as you get closer: soft far away, full strength as you arrive." },
-      { name: "Arrived", icon: "pin", where: "Both wrists · one long buzz", seq: [[0, "arrived"]],
-        what: "You're there: the place, the car, the door handle, or arm's reach from the thing. Then quiet." },
-      { name: "Found it", icon: "target", where: "Both wrists · two quick pulses", seq: [[0, "connected"]],
-        what: "The camera found your Waymo, or the thing you asked for. Steering to it starts." },
-    ]],
-    ["Stop and wait", [
-      { name: "Stop", icon: "stopHand", where: "Both wrists, strong · again every 1.2 s", seq: every(1200, 2, "obstacle"),
-        what: "Something is in the way, close ahead. Stand still until the pulses end." },
-      { name: "Searching", icon: "search", where: "Left, right, left · every 1.6 s", seq: every(1600, 2, "search"),
-        what: "Nothing to steer by yet: no signal from the chest phone, no compass, waiting for GPS, or the thing isn't in view. Stand still. Just once, then quiet: the search is over, it isn't anywhere around you." },
-    ]],
-    ["Reaching: at the door handle or the thing", [
-      { name: "Hand left", icon: "arrowLeft", where: "Left wrist · every 0.3 s", seq: every(300, 6, "reachLeft", fading),
-        what: "Move your hand left. Stronger the further off, softer as you get there." },
-      { name: "Hand right", icon: "arrowRight", where: "Right wrist · every 0.3 s", seq: every(300, 6, "reachRight", fading),
-        what: "Move your hand right." },
-      { name: "Hand up", icon: "arrowUp", where: "Both wrists, high buzz · every 0.3 s", seq: every(300, 6, "reachUp", fading),
-        what: "Move your hand up." },
-      { name: "Hand down", icon: "arrowDown", where: "Both wrists, low buzz · every 0.3 s", seq: every(300, 6, "reachDown", fading),
-        what: "Move your hand down." },
-      { name: "Forward", icon: "forward", where: "Both wrists · faster and stronger as you get closer", seq: [0, 450, 800, 1080, 1300, 1480, 1640].map((t, i) => [t, "reachForward", [[0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1][i]]]),
-        what: "Your hand is lined up: move it forward. The taps get faster (2 to 6 a second) and stronger as your hand closes in." },
-      { name: "Reach out", icon: "reach", where: "Both wrists · a longer buzz every 1.2 s", seq: every(1200, 2, "reachOut"),
-        what: "Your hand isn't in the camera's view yet: reach out in front of your chest." },
-      { name: "Touching", icon: "touch", where: "Both wrists · three quick high pulses", seq: [[0, "touch"]],
-        what: "Your hand is on it." },
+    ["The three signals", [
+      { name: "Rotate left", icon: "arrowLeft", where: "Left wrist · held on", seq: every(100, 16, "left"),
+        what: "Turn on the spot to your left for as long as it's on. When it stops, you're facing it." },
+      { name: "Rotate right", icon: "arrowRight", where: "Right wrist · held on", seq: every(100, 16, "right"),
+        what: "Turn on the spot to your right for as long as it's on." },
+      { name: "Forward", icon: "walk", where: "Both wrists · held on", seq: every(100, 16, "approach"),
+        what: "You're facing it: walk forward for as long as both wrists stay on. When the hold stops, stop." },
+      { name: "Reached", icon: "pin", where: "Both wrists · a double buzz", seq: [[0, "arrived"]],
+        what: "You're there: the bottle (or whatever you asked for) is within reach. Then quiet: done." },
     ]],
   ];
 

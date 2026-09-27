@@ -2,10 +2,11 @@
 <!-- Paradise "eyes": chest phone page, styled like a Waymo rider screen — calm dark navy, a big
      rounded camera card, a large light heading numeral, and a clean list of sensor rows. Finds
      objects with YOLO (cars, people, bikes…) and sends their angle + distance to the laptop, with
-     GPS, compass (the wearer's heading), tilt and what the mic hears. Also sends small camera
-     frames (for the laptop's display and the server's depth model) and, when asked, bigger ones
-     for the server's object finder (door handles, whatever's being looked for). At the target, it
-     tracks the wearer's hand (MediaPipe). Needs https. -->
+     GPS, compass (the wearer's heading), tilt and what the mic hears. Streams the camera live to
+     the laptop page (WebRTC, the iPhone's hardware H.264 encoder); only when that isn't getting
+     through, small camera frames instead (for the laptop's display and the server's depth model).
+     When asked, bigger frames for the server's object finder (door handles, whatever's being looked
+     for). At the target, it tracks the wearer's hand (MediaPipe). Needs https. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -143,6 +144,7 @@
       <h2>Status</h2>
       <div class="rows">
         <div class="row-net" data-state="bad"><i></i><span>Laptop</span><b id="net">Not connected</b></div>
+        <div><i></i><span>Video</span><b id="videoInfo">Not started</b></div>
         <div><i></i><span>Objects</span><b id="yoloInfo">Not started</b></div>
         <div><i></i><span>Hands</span><b id="handsInfo">Not started</b></div>
         <div><i></i><span>Voice</span><b id="voiceInfo">Not started</b></div>
@@ -246,6 +248,8 @@
       if (msg.type === "frame-please") sendFrame(msg.id, msg.prompt, msg.check);
       if (msg.type === "want-cars") wantCarsUntil = performance.now() + 3000;
       if (msg.type === "want-hands") wantHandsUntil = performance.now() + 3000;
+      if (msg.type === "video-ok") videoOkUntil = performance.now() + 1500;
+      if (msg.type === "rtc") onRtc(msg).catch(() => {});
     };
   }
   connect();
@@ -317,14 +321,17 @@
   // Opening the page starts everything that needs no tap: camera, GPS, objects, hands, screen on.
   // iPhones only allow the compass (motion) and the microphone straight from a tap, so the first
   // tap anywhere on the page turns those on (and retries the camera if it was refused at first).
-  let cameraOn = false, tapped = false;
+  let cameraOn = false, tapped = false, camStream = null, camTrack = null;
   async function startCamera() {
     if (cameraOn) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
         audio: false,
       });
+      camStream = stream;
+      camTrack = stream.getVideoTracks()[0];
+      try { camTrack.contentHint = "motion"; } catch {} // the encoder keeps the frame rate up, over sharpness
       video.srcObject = stream;
       await video.play();
       cameraOn = true;
@@ -375,14 +382,14 @@
   let lastDraw = 0;
   function loop(now) {
     requestAnimationFrame(loop);
-    if (now - lastDraw < 66 || !video.videoWidth) return; // ~15 a second
+    if (now - lastDraw < 30 || !video.videoWidth) return; // ~30 a second
     lastDraw = now;
     const k = 960 / Math.max(video.videoWidth, video.videoHeight);
     const W = Math.round(video.videoWidth * k), H = Math.round(video.videoHeight * k);
     if (view.width !== W) { view.width = W; view.height = H; }
     ctx.drawImage(video, 0, 0, W, H);
     sendFrameToYolo(W);
-    if (hands.tracker && performance.now() < wantHandsUntil && now - hands.last > 80) trackHands(now); // every other frame: ~7 a second
+    if (hands.tracker && performance.now() < wantHandsUntil && now - hands.last > 45) trackHands(now); // ~20 a second
     draw();
     const sign = (a) => `${a >= 0 ? "+" : ""}${a.toFixed(0)}°`;
     const lines = performance.now() - yolo.at < 1500 ? yolo.objects.map((o) =>
@@ -459,6 +466,7 @@
     yolo.at = performance.now();
     yolo.fresh = true;
     row("yoloInfo", error || `${backend} · ${ms.toFixed(0)} ms a frame`, error ? "warn" : "ok");
+    sendEyes(); // now, not at the next tick
   }
 
   function distanceOf(b, f, H) {
@@ -525,12 +533,15 @@
     }));
   }, 500);
 
-  // ---- Small camera frames, 4 a second: the server runs the depth model on them, then passes them
-  // on to the laptop's display. With the latest object boxes (0–1 of the frame) so the display can
-  // mark obstacles, and what the depth model needs: focal length in these pixels, chest height, tilt.
+  // ---- Small camera frames, 4 a second, only while the laptop isn't getting the live video ----
+  // The server runs the depth model on them, then passes them on to the laptop's display. With the
+  // latest object boxes (0–1 of the frame) so the display can mark obstacles, and what the depth
+  // model needs: focal length in these pixels, chest height, tilt. While the live video arrives
+  // (the laptop says so: "video-ok"), the laptop takes these frames from the video itself.
   const mini = document.createElement("canvas");
   setInterval(() => {
-    if (!video.videoWidth || !pictureRoom(32_000)) return; // the link is behind: skip this one
+    if (!video.videoWidth || performance.now() < videoOkUntil) return; // the laptop has the live video
+    if (!pictureRoom(32_000)) return; // the link is behind: skip this one
     const k = 360 / Math.max(video.videoWidth, video.videoHeight);
     mini.width = Math.round(video.videoWidth * k);
     mini.height = Math.round(video.videoHeight * k);
@@ -591,13 +602,67 @@
       const mid = (ids) => [r3(ids.reduce((s, i) => s + L[i].x, 0) / ids.length), r3(ids.reduce((s, i) => s + L[i].y, 0) / ids.length)];
       return {
         tip: mid([8, 12]), // index and middle fingertips: what touches first
+        index: mid([8]),   // the index fingertip alone: what the reach for a thing (Lumen's) steers
         palm: mid([0, 5, 9, 13, 17]),
         width: Math.round(Math.hypot((L[5].x - L[17].x) * view.width, (L[5].y - L[17].y) * view.height)), // index to little-finger knuckle
       };
     });
     hands.at = performance.now();
     row("handsInfo", `${hands.list.length} in view · ${(hands.at - t0).toFixed(0)} ms`, "ok");
+    sendEyes(); // the reach is steered from these: now, not at the next tick
   }
+
+  // ---- Live video to the laptop page (WebRTC) ----
+  // The laptop page offers (through the server: "rtc" messages) and this answers with the camera.
+  // The video then goes straight from this phone to the laptop, not through the server or the
+  // tunnel, encoded by the iPhone's hardware (H.264, which the laptop asks for first) at up to 30
+  // frames a second and ~0.1–0.2 s behind: before, it was 360 px JPEGs made on this page 4 times a
+  // second and sent through the server. Each laptop page has its own connection (its "page" id);
+  // a new offer from it replaces its old one.
+  const ICE = [{ urls: "stun:stun.l.google.com:19302" }]; // finds a way through home routers; on the same Wi-Fi or hotspot it isn't needed
+  const peers = new Map(); // laptop page id → { id: this connection's id, pc, ready: the offer's been read }
+  let videoOkUntil = -Infinity; // the laptop says the live video is arriving: no preview frames needed
+  const sendRtc = (m) => ws?.readyState === 1 && ws.send(JSON.stringify({ type: "rtc", ...m }));
+  async function onRtc({ page, pc: id, sdp, candidate }) {
+    page = String(page || ""); id = String(id || "");
+    if (!page || !id) return;
+    const peer = peers.get(page);
+    if (candidate) {
+      if (peer?.id === id) await peer.ready.then(() => peer.pc.addIceCandidate(candidate)).catch(() => {});
+      return;
+    }
+    if (sdp?.type !== "offer" || !camTrack || !window.RTCPeerConnection) return; // no camera yet: the laptop asks again soon
+    peer?.pc.close();
+    if (!peer && peers.size >= 4) { const [old, p] = peers.entries().next().value; p.pc.close(); peers.delete(old); } // forgotten tabs
+    const pc = new RTCPeerConnection({ iceServers: ICE });
+    const ready = pc.setRemoteDescription(sdp);
+    peers.set(page, { id, pc, ready });
+    pc.onicecandidate = (e) => e.candidate && sendRtc({ page, pc: id, candidate: e.candidate.toJSON() });
+    pc.onconnectionstatechange = () => {
+      if (!["failed", "closed"].includes(pc.connectionState)) return;
+      pc.close();
+      if (peers.get(page)?.pc === pc) peers.delete(page);
+    };
+    await ready;
+    const sender = pc.addTrack(camTrack, camStream); // on the laptop's receive-only video line
+    await pc.setLocalDescription(await pc.createAnswer());
+    sendRtc({ page, pc: id, sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
+    // A smooth, current picture over a sharp one: on a weak link, drop resolution, not frames.
+    try {
+      const p = sender.getParameters();
+      p.degradationPreference = "maintain-framerate";
+      for (const e of p.encodings || []) { e.maxBitrate = 2500000; e.maxFramerate = 30; }
+      await sender.setParameters(p);
+    } catch {}
+  }
+  setInterval(() => {
+    if (!started) return;
+    const live = [...peers.values()].filter((p) => p.pc.connectionState === "connected").length;
+    const ok = performance.now() < videoOkUntil;
+    row("videoInfo", !camTrack ? "No camera yet" : !window.RTCPeerConnection ? "No WebRTC here: small frames instead"
+      : ok ? `Live to the laptop${live > 1 ? ` (${live} pages)` : ""}` : live ? "Connected, starting…" : "Connecting… (small frames meanwhile)",
+      ok ? "ok" : "warn");
+  }, 500);
 
   // ---- Voice: "Waymo", a place's name, or "find the water bottle". The phone never speaks back. ----
   // Listens all the time; the laptop decides whether what it heard means anything.
@@ -630,7 +695,7 @@
     try { rec.start(); row("voiceInfo", "Listening", "ok"); } catch (err) { row("voiceInfo", err.message, "bad"); }
   }
 
-  // ---- Send ~10 updates a second ----
+  // ---- Send updates: at least 10 a second, and straight away with each new YOLO or hand result ----
   // The Laptop row: is the server actually getting our updates?
   let seq = 0;
   setInterval(() => {
@@ -638,7 +703,7 @@
     row("net", up ? `Connected · ${seq} updates` : linkRefused ? "Wrong or missing link: reopen the link printed by npm start"
       : "Not connected (reconnecting…)", up ? "ok" : "bad");
   }, 500);
-  setInterval(() => {
+  function sendEyes() {
     if (ws?.readyState !== 1) return;
     ws.send(JSON.stringify({
       type: "eyes",
@@ -653,7 +718,8 @@
       compass: compassNow(),
       gps: gps && { lat: gps.lat, lon: gps.lon, acc: gps.acc, age: Math.max(0, Date.now() - gps.time) },
     }));
-  }, 100);
+  }
+  setInterval(sendEyes, 100);
   boot();
 </script>
 </body>
