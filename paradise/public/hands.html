@@ -162,6 +162,7 @@
         <button class="ghost" data-pattern="reachUp">Hand up</button><button class="ghost" data-pattern="reachDown">Hand down</button>
         <button class="ghost" data-pattern="reachForward">Forward</button><button class="ghost" data-pattern="reachOut">Reach out</button><button class="ghost" data-pattern="touch">Touch</button>
       </div></div>
+      <div class="group"><span class="label">Test places (GPS, from where you stand)</span><div class="chips" id="testPlaces"></div></div>
       <div class="group"><span class="label">Indoor steering (no GPS)</span><div class="chips">
         <button class="ghost" data-turn="-90">90° left</button><button class="ghost" data-turn="45">45° right</button>
         <button class="ghost" data-turn="90">90° right</button><button class="ghost" data-turn="180">Behind</button>
@@ -682,14 +683,15 @@
     startMode(n === 1 ? { kind: "waymo", name: "Waymo" } : { kind: "place", name: c.name, place: c }, n);
   }
   // One button per choice, numbered like the presses that pick it; the one in use is highlighted.
+  // The Waymo and real saved places go in the dock; test spots (meters from where you stand) are
+  // for the team, so they sit under Testing instead.
   const choiceButtons = CHOICES.map((c, i) => {
-    const b = document.createElement("button"), n = document.createElement("span");
-    n.className = "n";
-    n.textContent = i + 1;
-    b.append(n, c.name);
+    const b = document.createElement("button"), test = c.north !== undefined || c.east !== undefined;
+    b.append(c.name);
     b.setAttribute("aria-pressed", "false");
     b.onclick = () => choose(i + 1);
-    $("choices").append(b);
+    if (test) b.className = "ghost";
+    $(test ? "testPlaces" : "choices").append(b);
     return b;
   });
   function showChoice() {
