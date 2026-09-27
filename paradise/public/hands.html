@@ -137,7 +137,7 @@
       <div class="setting"><label for="amp">Buzz strength</label><input id="amp" type="range" min="0.1" max="1" step="0.05" value="0.7"><span class="val num"><span id="ampV">0.7</span></span></div>
       <div class="setting"><label for="margin">On-target margin</label><input id="margin" type="range" min="5" max="30" value="12"><span class="val num">±<span id="marginV">12</span>°</span></div>
       <div class="setting"><label for="arrive">GPS arrival radius</label><input id="arrive" type="range" min="2" max="20" value="6"><span class="val num"><span id="arriveV">6</span> m</span></div>
-      <div class="setting"><label for="stopDist">Obstacle stop distance</label><input id="stopDist" type="range" min="0.5" max="3" step="0.1" value="1.5"><span class="val num"><span id="stopDistV">1.5</span> m</span></div>
+      <div class="setting"><label for="stopDist">Stop if something is closer than</label><input id="stopDist" type="range" min="0.4" max="2" step="0.1" value="0.8"><span class="val num"><span id="stopDistV">0.8</span> m</span></div>
       <label class="toggle"><span>Obstacles from depth<small>Walls, poles, doors, boxes: anything close in the walking path</small></span><input type="checkbox" id="depthOn" class="switch" checked></label>
       <label class="toggle"><span>Use Gemini<small>Understand requests and suggest where to look after a room scan. Sends requests and scan photos to Google.</small></span><input type="checkbox" id="aiOn" class="switch" checked></label>
       <label class="toggle"><span>Speak for the audience<small>Spoken updates through the laptop speakers. The wearer's guidance stays on the wrists.</small></span><input type="checkbox" id="voiceOn" class="switch" checked></label>
@@ -354,8 +354,7 @@
     b.textContent = on ? "Voice on" : "Voice off";
     b.setAttribute("aria-pressed", String(on));
     try { localStorage.setItem("paradise.voice", on ? "on" : "off"); } catch {}
-    if (changed && on) narrate("Voice on."); // (the click that turns it on also lets Chrome play sound)
-    else if (changed) hush();
+    if (changed && !on) hush(); // (turning it on says nothing: only "Going to …" is ever spoken)
   };
   try { if (localStorage.getItem("paradise.voice") === "off") $("voiceOn").checked = false; } catch {}
   $("voiceBtn").onclick = () => { $("voiceOn").checked = !$("voiceOn").checked; showVoice(true); };
@@ -456,7 +455,19 @@
   }
   const both = (strength, ms, hz) => { buzz("L", strength, ms, hz); buzz("R", strength, ms, hz); };
   // Later pulses of a pattern keep its meaning, even if another pattern has started since.
-  const repeat = (n, gap, fn) => { const m = meaning; for (let i = 0; i < n; i++) setTimeout(() => { meaning = m; fn(); }, i * gap); };
+  // Pulses scheduled for later are tracked, so Stop can cancel the rest of a pattern at once.
+  const pending = new Set();
+  const later = (fn, ms) => { const id = setTimeout(() => { pending.delete(id); fn(); }, ms); pending.add(id); };
+  const repeat = (n, gap, fn) => { const m = meaning; for (let i = 0; i < n; i++) later(() => { meaning = m; fn(); }, i * gap); };
+  // Everything on the wrists off, now: pulses still to come, and whatever is buzzing.
+  function silenceWrists() {
+    pending.forEach(clearTimeout); pending.clear();
+    for (const [side, jc] of [["L", joyL], ["R", joyR]]) {
+      const icon = $(side === "L" ? "wristL" : "wristR"), label = $(side === "L" ? "wristLText" : "wristRText");
+      clearTimeout(icon.off); clearTimeout(label.off);
+      rumble(jc, 0); icon.classList.remove("on"); label.textContent = "Standing by";
+    }
+  }
 
   // ---- Buzz vocabulary (from the spec) ----
   const PATTERNS = {
@@ -465,7 +476,7 @@
     approach: (s = 0.5) => both(s, 90),                             // approaching: faster and stronger as it gets close
     arrived: () => both(1, 800),                                    // arrived: one long buzz
     obstacle: () => repeat(3, 180, () => both(1, 100)),             // stop: 3 sharp pulses
-    search: () => { const m = meaning; [["L", 0], ["R", 450], ["L", 900]].forEach(([s, t]) => setTimeout(() => { meaning = m; buzz(s, 0.6, 200); }, t)); },
+    search: () => { const m = meaning; [["L", 0], ["R", 450], ["L", 900]].forEach(([s, t]) => later(() => { meaning = m; buzz(s, 0.6, 200); }, t)); },
     connected: () => repeat(2, 180, () => both(1, 80)),             // Waymo connected (and "found it"): 2 quick pulses
     echo: (n) => repeat(n, 300, () => both(0.8, 120)),              // selection echo: N short pulses
     // Reaching (at the target, steering the hand): shorter and quicker than the walking buzzes.
@@ -612,6 +623,7 @@
     Object.assign(mode, thingFields(what));
     aiAsk.meant = { asked: mode.asked, what, reason: thing ? reason : `no answer (${reason}), so looking for the words as said` };
     aiAsk.info = thing ? `"${mode.asked}" → "${what}" · ${(ms / 1000).toFixed(1)} s · ${tokens} tokens` : `"${mode.asked}": ${reason}`;
+    narrate(modeSentence(mode), true);
   }
   $("findGo").onclick = () => findThing($("findText").value);
   $("findText").onkeydown = (e) => { if (e.key === "Enter") findThing($("findText").value); };
@@ -671,7 +683,7 @@
     rideStage = m.kind === "waymo" ? "requested" : "";
     Object.assign(task, { at: m.kind === "test" ? 0 : performance.now(), done: 0 });
     playEcho(echo);
-    if (m.kind !== "test") narrate(modeSentence(m), true);
+    if (m.kind !== "test" && m.prompt !== null) narrate(modeSentence(m), true); // a vague request: once it's known what (settleWhat)
   }
   function playEcho(n) {
     PATTERNS.echo(n);
@@ -706,6 +718,8 @@
   function stopGuidance() {
     mode = null; resetGuidance(); dropCommand(); showChoice();
     clearTimeout(presses.timer); presses.count = 0;
+    silenceWrists(); // the rest of an echo or a search pattern mustn't keep buzzing after Stop
+    hush();          // nor a sentence still queued or playing
   }
   $("stopMode").onclick = stopGuidance;
   // Relative to where the chest faces; pinned down once the compass is there (guideTick).
@@ -875,7 +889,6 @@
     if (c.intent === "stop") {
       stopGuidance();
       PATTERNS.stopped();
-      narrate("Stopping.", true);
       return "stop";
     }
     if (c.intent === "repeat") {
@@ -883,12 +896,10 @@
       // nothing chosen, the search buzz.
       if (!mode) { PATTERNS.search("nothing to repeat"); return "repeat: nothing chosen"; }
       playEcho(mode.kind === "place" ? CHOICES.indexOf(mode.place) + 1 : 1);
-      if (mode.kind !== "test") narrate(modeSentence(mode), true);
       return `repeat: ${mode.name}`;
     }
     if (c.intent === "none") {
       PATTERNS.search("didn't understand");
-      narrate("Sorry, I didn't catch that.", true);
       return "didn't understand";
     }
     return null;
@@ -899,7 +910,7 @@
   function modeSentence(m) {
     if (m.kind === "waymo") return "Going to the Waymo.";
     if (m.kind === "place") return `Going to ${m.name}.`;
-    return m.prompt === null ? `Looking for ${m.asked}.` : `Looking for the ${m.what}.`; // "Looking for something to drink."
+    return `Going to the ${m.what}.`;
   }
 
   // ---- Speaking for the audience ----
@@ -1164,7 +1175,6 @@
   function giveUp(why) {
     Object.assign(scan, { phase: "done", why });
     PATTERNS.search("not found");
-    narrate(`Couldn't find the ${mode.what} nearby.`);
   }
   function onAi({ id, answer, reason }) {
     const req = aiAsk.waiting;
@@ -1298,12 +1308,15 @@
 
   // ---- Guidance: every 50 ms ----
   let onTarget = false, arrived = false, nextPulse = 0, connectedBuzzed = false, obstacleNext = 0, echoUntil = 0;
+  let detour = null;       // { heading, label, distance, started, clearSince, on } while going round something
+  let depthAround = null;  // { at, around: { distance, left, right } | null } the depth model's latest
+  let detourAt = -Infinity; // last time a detour was on
   let rideStage = "", distanceShown = "—", distanceBy = "";
   function resetGuidance() {
     cam = null; waymoSeen = null; yoloThing = null; lastCar = null; route = null; routeAsk.at = -Infinity;
     scan = shownScan = explore = null;
     Object.assign(aiAsk, { calls: 0, waiting: null, pick: null, meant: null });
-    onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—"; distanceBy = ""; blockedRuns = 0;
+    onTarget = false; arrived = false; connectedBuzzed = false; nextPulse = 0; distanceShown = "—"; distanceBy = ""; blockedRuns = 0; detour = null;
     Object.assign(reach, { view: null, touched: false });
     Object.assign(finder, { waiting: null, retryAt: 0, info: "idle", box: null });
   }
@@ -1326,7 +1339,10 @@
     }
 
     // Where to? A camera target counts while it's recent, or for as long as we've arrived at it.
-    const camTarget = (ms) => cam && (now - cam.at < ms || arrived === cam.by);
+    // While going round something (and a few seconds after), the target is often out of the camera's
+    // view: remember where it was for longer, so the detour ends by turning back to it.
+    if (detour) detourAt = now;
+    const camTarget = (ms) => cam && (now - cam.at < ms + (now - detourAt < 6000 ? 10000 : 0) || arrived === cam.by);
 
     // Obstacle close ahead: stop, overriding everything else, for as long as it's there. Not while
     // reaching for the handle / the thing: it's right in front, and so is the wearer's own arm.
@@ -1335,12 +1351,14 @@
     // stop the looking.
     const reaching = arrived === "handle" || arrived === "thing";
     const scanning = mode.kind === "find" && !camTarget(3000) && !(explore && now < explore.until);
-    if (obs && !reaching && !scanning) {
+    // Only for something right in front (the stop distance, 0.8 m by default) or a wall filling the
+    // view: anything further off is gone round instead (see "Going round things" below).
+    if (obs && !reaching && !scanning && (obs.distance == null || obs.distance <= Number($("stopDist").value))) {
       explore = null; // walking to the AI's pick and something's in the way: likely there; look round again
+      detour = null;  // plan a new way round once it's clear
       if (now >= obstacleNext) {
         obstacleNext = now + 1200;
         PATTERNS.obstacle();
-        narrate(`Stop. ${capital(obs.label.replace(/ \(.*\)$/, ""))} ahead.`); // "something close (no floor in view)" → "Something close"
       }
       nextPulse = now + 400;
       return say(`STOP: ${obs.label}${obs.distance != null ? ` ${obs.distance.toFixed(1)} m` : ""} ahead`);
@@ -1365,7 +1383,7 @@
       else waiting = fresh(beacon, now) ? "waiting for GPS" : "waiting for the Waymo's location (beacon)";
       // Near the beacon but no Waymo confirmed yet: keep heading for the beacon; the camera will
       // take over as soon as it recognizes the car.
-      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); narrate("Waymo found."); nextPulse = now + 600; }
+      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; rideStage = "found"; PATTERNS.connected(); nextPulse = now + 600; }
     }
     if (mode.kind === "find" && mode.prompt === null) { // waiting to hear what "something to drink" means
       if (now - task.at > 15000) settleWhat(null, "the AI didn't answer");
@@ -1382,7 +1400,7 @@
         return scanTick(now, say);
       }
       // Found it (after the selection echo, so the two can't blur together).
-      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; PATTERNS.connected(); narrate(`Found the ${mode.what}.`); nextPulse = now + 600; }
+      if (cam && !connectedBuzzed && now >= echoUntil) { connectedBuzzed = true; PATTERNS.connected(); nextPulse = now + 600; }
     }
     distanceShown = distance == null ? "—" : `${distance.toFixed(by === "gps" ? 0 : 1)} m`;
     distanceBy = distance == null ? "" : onRoute ? "route" : by;
@@ -1401,7 +1419,6 @@
       if (!arrived && distance <= radius) {
         arrived = by;
         PATTERNS.arrived();
-        narrate(by === "handle" ? "At the door handle." : by === "thing" ? `The ${mode.what} is within reach.` : by === "object" ? "At the car." : "Arrived.");
         Object.assign(reach, { startAt: now + 1000, next: 0, touched: false, view: null }); // reaching starts after the buzz
         if (mode.kind === "waymo" && by === "handle") rideStage = "door";
       }
@@ -1411,6 +1428,34 @@
       // At the door handle or the thing: steer the hand onto it (below).
       if (arrived === "handle" || arrived === "thing") return reachTick(now, say);
       if (arrived) return say(by === "object" ? "AT THE CAR: turn slowly along it to find the door handle" : "ARRIVED");
+    }
+
+    // Going round things: something in the way on the walk to the target (closer than AVOID_AT, and
+    // not the target or what it stands on) → bear off to the side it can be passed on (the one nearer
+    // the target), walk until it's behind, then back to the target.
+    if (!scanning) {
+      const tErr = wrap180(target - heading), facing = Math.abs(tErr) <= Number($("margin").value) + 5;
+      const b = facing || detour ? blocker(now, distance) : null;
+      if (detour && b && now - detour.started > 1500 && b.distance < 1.6) detour = null; // something new right ahead: plan again
+      if (!detour && b) {
+        const sides = [b.left, b.right].filter((v) => v != null);
+        const pick = sides.length ? sides.reduce((a, c) => (Math.abs(c - tErr) < Math.abs(a - tErr) ? c : a)) : tErr <= 0 ? -45 : 45;
+        detour = { heading: wrap180(heading + pick), label: b.label, distance: b.distance, started: now, clearSince: null, on: false };
+      }
+      if (detour) {
+        // Done once nothing's been ahead for long enough to walk past it (at ~0.8 m/s), or after 15 s.
+        if (b) detour.clearSince = null; else detour.clearSince ??= now;
+        if ((detour.clearSince != null && now - detour.clearSince > ((detour.distance + 0.8) / 0.8) * 1000) || now - detour.started > 15000) detour = null;
+      }
+      if (detour) {
+        const dErr = wrap180(detour.heading - heading), what = detour.label === "something" ? "an obstacle" : `the ${detour.label}`;
+        detour.on = Math.abs(dErr) <= 8 + (detour.on ? 5 : 0);
+        const text = detour.on ? `GO AROUND: walk past ${what}` : `GO AROUND: bear ${dErr < 0 ? "left" : "right"} ${Math.abs(dErr).toFixed(0)}° (${what} ahead)`;
+        if (now < nextPulse) return say(text);
+        if (detour.on) { nextPulse = now + 700; PATTERNS.approach(0.5); }
+        else { nextPulse = now + 400; PATTERNS[dErr < 0 ? "left" : "right"](); }
+        return say(text);
+      }
     }
 
     // Facing it (with hysteresis so it doesn't flicker) → approaching: both pulse, faster when
@@ -1478,7 +1523,7 @@
     const lined = Math.abs(ax) <= tolX && Math.abs(ay) <= tolY;
     // Touching: lined up and about as far away as the target (with some slack once it's touching).
     if (lined && gap != null && gap <= (reach.touched ? 0.25 : 0.12)) {
-      if (!reach.touched && !quiet) { reach.touched = true; PATTERNS.touch(); narrate(`Touching the ${what}.`); reach.next = now + 800; }
+      if (!reach.touched && !quiet) { reach.touched = true; PATTERNS.touch(); reach.next = now + 800; }
       return say(`TOUCHING the ${what}`);
     }
     reach.touched = false;
@@ -1507,7 +1552,7 @@
   const RIDE_STEPS = ["requested", "here", "found", "door"];
   const SOURCES = { gps: "by GPS", route: "by GPS, along the walking route",object: "to the car, by camera", handle: "to the door handle", thing: "by camera", test: "indoor test" };
   // "TURN RIGHT 12°" → "Turn right" over "12°"; the colour says what kind of message it is.
-  const GUIDE_STATES = [[/^STOP/, "stop"], [/^(?:TURN|SCANNING)/, "turn"], [/^APPROACHING/, "go"], [/^(?:ARRIVED|AT THE CAR|TOUCHING)/, "done"],
+  const GUIDE_STATES = [[/^STOP/, "stop"], [/^(?:TURN|SCANNING|GO AROUND)/, "turn"], [/^APPROACHING/, "go"], [/^(?:ARRIVED|AT THE CAR|TOUCHING)/, "done"],
     [/^(?:REACH|THINKING)/, "reach"], [/^(?:NO |NOT FOUND)/, "warn"]];
   const put = (id, text) => { const el = $(id); if (el.textContent !== text) el.textContent = text; }; // only touch what changed
   const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -1661,10 +1706,10 @@
     const px = 1 / fit; // one screen pixel, in frame pixels
     fctx.lineJoin = "round";
     for (const b of feedBoxes) {
-      const color = b.obstacle ? RED : b.target ? GREEN : WHITE, x = b.x1 * W, y = b.y1 * H;
+      const color = b.obstacle ? RED : b.avoid ? YELLOW : b.target ? GREEN : WHITE, x = b.x1 * W, y = b.y1 * H;
       fctx.strokeStyle = color; fctx.lineWidth = 2.5 * px;
       fctx.beginPath(); rr(x, y, (b.x2 - b.x1) * W, (b.y2 - b.y1) * H, 6 * px); fctx.stroke();
-      tag(b.obstacle ? "STOP" : b.target ? (mode?.kind === "find" ? mode.what : "Waymo") : b.label, x, y, color, px);
+      tag(b.obstacle ? "STOP" : b.avoid ? "AVOID" : b.target ? (mode?.kind === "find" ? mode.what : "Waymo") : b.label, x, y, color, px);
     }
     // Reaching: the target (green ring) and the fingertips being steered to it (yellow).
     if (reach.view && (arrived === "handle" || arrived === "thing")) {
@@ -1685,7 +1730,7 @@
   };
   function onPreview(msg) {
     // Mark the boxes the same way the guidance sees them.
-    feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), target: isTarget(b) }));
+    feedBoxes = (msg.boxes || []).map((b) => ({ ...b, obstacle: isObstacle(b), avoid: isInTheWay(b), target: isTarget(b) }));
     previewAt = performance.now();
     previewCam = msg.cam;
     feedImg.src = msg.image;
@@ -1708,6 +1753,7 @@
       return;
     }
     blockedRuns = 0;
+    depthAround = { at: now, around: msg.around || null };
     const z = msg.found.filter((z) => z.distance <= Number($("stopDist").value) && Math.abs(z.angle) <= 20 && !(target != null && z.distance >= target - 0.3))
       .sort((a, b) => a.distance - b.distance)[0];
     if (z) setObstacle(z.kind === "drop" ? "drop-off" : "something", z.distance, "depth", now);
@@ -1728,6 +1774,30 @@
     if (mode?.kind === "waymo") return VEHICLES.includes(o.label) && lined(waymoHeading(performance.now()) ?? cam?.heading);
     if (mode?.kind === "find") return o.label === mode.coco && lined(cam?.heading);
     return false;
+  }
+  // ---- Going round things ----
+  // The nearest thing in the walking path (straight ahead, within AVOID_AT), from the depth model
+  // (which also says how far to bear left or right to pass it) and from YOLO's boxes (their edges,
+  // plus room for the shoulders). Not the target, nor anything at or behind it (its table, the car).
+  const AVOID_AT = 2.5, SHOULDERS = 0.5; // m; SHOULDERS: half the room needed to walk past, plus a margin
+  function blocker(now, targetDistance) {
+    const behindTarget = (d) => targetDistance != null && d >= targetDistance - 0.3;
+    let best = null;
+    const dz = $("depthOn").checked && depthAround && now - depthAround.at < 800 ? depthAround.around : null;
+    if (dz && dz.distance <= AVOID_AT && !behindTarget(dz.distance)) best = { distance: dz.distance, left: dz.left, right: dz.right, label: "something" };
+    if (lastFrame && now - latestObjectsAt < 1200) for (const o of latestObjects) {
+      if (o.distance == null || !o.box || o.distance > AVOID_AT || behindTarget(o.distance) || isTarget(o)) continue;
+      const pad = (Math.atan(SHOULDERS / o.distance) * 180) / Math.PI;
+      const l = deg((o.box[0] - 0.5) * lastFrame.w, lastFrame.focal) - pad, r = deg((o.box[2] - 0.5) * lastFrame.w, lastFrame.focal) + pad;
+      if (l > 0 || r < 0) continue; // not in the way straight ahead
+      if (!best || o.distance < best.distance) best = { distance: o.distance, left: o.box[0] > 0.02 ? Math.round(l) : null, right: o.box[2] < 0.98 ? Math.round(r) : null, label: o.label };
+    }
+    return best;
+  }
+  // In the walking path and close enough to go round (for the camera view's AVOID marks).
+  function isInTheWay(o) {
+    if (o.distance == null || Math.abs(o.angle) > 20 || o.distance > AVOID_AT || isTarget(o)) return false;
+    return !((mode?.kind === "find" || mode?.kind === "waymo") && cam?.distance != null && o.distance >= cam.distance - 0.3);
   }
   function isObstacle(o) {
     if (o.distance == null || Math.abs(o.angle) > 20 || o.distance > Number($("stopDist").value)) return false;

@@ -88,16 +88,47 @@ function analyze(D, W, H, { f, camH, pitch, corridor = 0.4, near = 4 }) {
   const s = (m * sxy - sx * sy) / (m * sxx - sx * sx), t = (sy - s * sx) / m;
   if (!(s > 0)) return { ok: false, why: "floor not visible (something close in front?)", floor: round(floor) };
   // 3. Every pixel → 3D: how far ahead, how far to the side, how high above the floor.
+  //    Also, for each direction the wearer could walk in (PATHS, degrees from straight ahead), how
+  //    far they'd get: the nearest obstacle within ±corridor of that line. The laptop steers round
+  //    things with it (the clear direction nearest the target), instead of just stopping.
   const px = { obstacle: [], drop: [] };
+  const along = PATHS.map(() => []), solidAt = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const d = D[y * W + x] - t;
     if (d <= 0) continue; // farther than anything the fit can say
     const Z = s / d, side = ((x + 0.5 - cx) / f) * Z, Yc = ((y + 0.5 - cy) / f) * Z;
     const ahead = Z * cp - Yc * sp, height = camH - (Yc * cp + Z * sp);
-    if (ahead < 0.3 || ahead > near || Math.abs(side) > corridor) continue;
-    if (height > 0.12 && height < 2.1) px.obstacle.push([ahead, (x + 0.5 - cx) / f]);
+    if (ahead < 0.3 || ahead > near) continue;
+    const solid = height > 0.12 && height < 2.1;
+    if (solid && Math.abs(side) < 3) solidAt.push([ahead, side]);
+    if (solid) PATHS.forEach((_, i) => {
+      const a = along[i], c = PATH_COS[i], sn = PATH_SIN[i];
+      const on = ahead * c + side * sn;       // how far along that walking line
+      if (on >= 0.3 && Math.abs(side * c - ahead * sn) <= corridor) a.push(on);
+    });
+    if (Math.abs(side) > corridor) continue;
+    if (solid) px.obstacle.push([ahead, (x + 0.5 - cx) / f]);
     else if (height < -0.12 && y > cy) px.drop.push([ahead, (x + 0.5 - cx) / f]);
   }
+  // The thing in the way, if any: how far, and how far to bear left or right to walk past it with
+  // room for the shoulders (degrees; null when that edge runs out of the picture, so it's unknown).
+  let around = null;
+  if (px.obstacle.length >= W * H * 0.004) {
+    const near1 = [...px.obstacle].sort((a, b) => a[0] - b[0])[Math.floor(px.obstacle.length * 0.1)][0];
+    const sides = solidAt.filter(([ahead]) => ahead >= near1 - 0.1 && ahead <= near1 + 0.6).map(([, side]) => side).sort((a, b) => a - b);
+    if (sides.length) {
+      const lo = sides[Math.floor(sides.length * 0.03)], hi = sides[Math.floor(sides.length * 0.97)];
+      const edge = near1 * Math.tan(Math.atan(W / 2 / f)) - 0.12; // |side| where the picture ends at that distance
+      const deg = (v) => Math.round((Math.atan(v / near1) * 180) / Math.PI);
+      around = { distance: round(near1), left: lo > -edge ? deg(lo - corridor - 0.1) : null, right: hi < edge ? deg(hi + corridor + 0.1) : null };
+    }
+  }
+  const paths = PATHS.map((angle, i) => {
+    const a = along[i];
+    if (a.length < W * H * 0.004) return { angle, clear: null }; // nothing solid that way (within `near`)
+    a.sort((p, q) => p - q);
+    return { angle, clear: round(a[Math.floor(a.length * 0.1)]) };
+  });
   const found = [];
   for (const [kind, list] of Object.entries(px)) {
     if (list.length < W * H * 0.004) continue; // a few stray pixels aren't a hazard
@@ -105,6 +136,9 @@ function analyze(D, W, H, { f, camH, pitch, corridor = 0.4, near = 4 }) {
     const [ahead, tan] = list[Math.floor(list.length * 0.1)]; // the near edge, minus the nearest 10% (noise)
     found.push({ kind, distance: round(ahead), angle: Math.round((Math.atan(tan) * 180) / Math.PI) });
   }
-  return { ok: true, floor: round(floor), found };
+  return { ok: true, floor: round(floor), found, paths, around };
 }
+// Walking directions checked for a way round, degrees from straight ahead (the camera sees ~±20°).
+const PATHS = [-20, -16, -12, -8, -4, 0, 4, 8, 12, 16, 20];
+const PATH_COS = PATHS.map((a) => Math.cos((a * Math.PI) / 180)), PATH_SIN = PATHS.map((a) => Math.sin((a * Math.PI) / 180));
 const round = (v) => Math.round(v * 100) / 100;

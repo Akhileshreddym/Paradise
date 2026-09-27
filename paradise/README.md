@@ -158,7 +158,7 @@ The wearer never looks at a screen. The laptop page is for everyone else:
 - in Waymo mode, the ride's progress (simulated): *Requested → Arrived → Found by the camera → At
   the door*, with the current step spelled out (*Your Waymo has arrived: guiding you to it*);
 - and **out loud**, through the laptop's speakers, a few words when something happens: *Going to the
-  Waymo.*, *Looking for the water bottle.*, *Found the water bottle.*, *Stop. Person ahead.*, *The
+  Waymo.*, *Looking for the water bottle.*, *Found the water bottle.*, *The
   water bottle is within reach.*, *Touching the water bottle.* ([7.10a](#710a-speaking-for-the-audience)).
 
 Above it: pills for the **Phone** and each **Joy-Con** (green when connected), and the **Gemini**
@@ -323,7 +323,7 @@ ELEVENLABS_API_KEY=your-key-here
 
 - Optional, same file: `ELEVENLABS_VOICE_ID=…` (another voice, from the ElevenLabs voice library)
   and `ELEVENLABS_MODEL=…` (another speech model).
-- Cost: roughly 1 credit per character spoken. Each sentence is short (*Stop. Person ahead.* is 19
+- Cost: roughly 1 credit per character spoken. Each sentence is short (*Going to the Waymo.* is 20
   characters), and the server caches the audio, so a sentence said again costs nothing.
 - Like the Gemini key: git-ignored, used only by the server, never in `public/`.
 
@@ -736,7 +736,7 @@ running here).
 | Settings → Buzz strength | 0.7 (0.1–1) | Multiplies every buzz's strength |
 | Settings → On-target margin | ±12° (5–30) | How close to straight ahead counts as "facing it" (+5° extra once facing, so it doesn't flicker) |
 | Settings → GPS arrival radius | 6 m (2–20) | Arrival distance for places |
-| Settings → Obstacle stop distance | 1.5 m (0.5–3) | Anything closer than this, straight ahead, is an obstacle |
+| Settings → Stop if something is closer than | 0.8 m (0.4–2) | Stop outright for anything this close straight ahead; anything further off in the path (up to 2.5 m) is gone round instead ([7.5](#75-obstacles)) |
 | Settings → Obstacles from depth | on | Also stop for anything the depth model sees close in the walking path, not just what YOLO recognizes ([7.5](#75-obstacles)) |
 | **Gemini on / off** (header button) = Settings → Use Gemini | on (remembered in the browser) | All of Gemini's jobs: what a voice command means ([7.10](#710-choosing-buttons-voice-typing)), plain-language requests ([7.8b](#78b-plain-language-requests)) and, after a full turn finds nothing, where to look (at most 3 times a search, [7.8a](#78a-not-in-view-the-room-scan-and-asking-the-ai)). Off: no Gemini calls at all; voice commands use the built-in grammar, requests are taken literally and find mode says "not found" after one turn |
 | **Voice on / off** (header button) = Settings → Speak for the audience | on (remembered in the browser) | The laptop's speakers say what's happening in a few words, for onlookers ([7.10a](#710a-speaking-for-the-audience)). Off: silent at once |
@@ -759,7 +759,7 @@ running here).
 | `waymo classifier:` | `best 96% (sure at 90%)` | Highest Waymo score in the last 3 s |
 | `object finder:` | `door handle: 1180 ms · 22%` or `"water bottle": 1250 ms · not in view` | The object finder's last answer; `(second opinion unavailable: …)` if CLIP isn't ready |
 | `command:` | `"i'm thirsty" → find "water bottle" · 0.9 s · 180 tokens` or `"take me to test north": no answer in 5 s, so the built-in grammar` | The last voice command: what Gemini made of it, or why the built-in grammar decided |
-| `speaker:` | `"Stop. Person ahead." · ElevenLabs (cached)` or `… · browser voice (no audio in 4 s)` | The last sentence spoken for the audience, and whose voice; `off` when the Voice switch is off |
+| `speaker:` | `"Going to the Waymo." · ElevenLabs (cached)` or `… · browser voice (no audio in 4 s)` | The last sentence spoken for the audience, and whose voice; `off` when the Voice switch is off |
 | `depth:` | `clear (floor 78%) · 85 ms`, `obstacle 1.32 m +4° · 88 ms` or `floor not visible (something close in front?) · 90 ms` | The depth model's last answer (up to 4 a second): what it found in the walking path (`obstacle` / `drop`, distance, angle), or why it couldn't judge. `(not used: switched off)` when the checkbox is off |
 | `hand:` | `1 in view` | Hand tracking; only runs while reaching (`— (tracked only at the target)` otherwise) |
 
@@ -828,7 +828,7 @@ refuses its key. It sends its latest fix once a second.
 | `object finder: failed: stopped (SIGKILL), starting it again` | A model process crashed; it restarts (up to 3 times) |
 | `bad cars message: …` | A malformed message was ignored |
 | `[ai] command "i'm thirsty": find "water bottle" (850 ms, 180 tokens) · …` | A voice command Gemini read, with the running totals |
-| `[tts] "Stop. Person ahead.": 19 chars, cached (2 ms) · …` | A sentence for the audience, and the ElevenLabs characters used since the start |
+| `[tts] "Going to the Waymo.": 20 chars, cached (2 ms) · …` | A sentence for the audience, and the ElevenLabs characters used since the start |
 | `[status] chest phone 0s ago: gps ±5 m, compass 187°, sees person, car \| beacon 1s ago: ±4 m \| distance 32 m \| waymo 96% \| depth clear \| finding "a car door handle." best 22% (1180 ms)` | Every 3 s while a phone has sent something in the last 10 s. `depth` is `clear`, what's in the walking path (`obstacle 1.32 m`), or why it can't judge. **No coordinates are ever printed.** |
 
 ### 6.5 The buzz legend page
@@ -935,7 +935,22 @@ echo can be counted; the "connected / found it" buzz also waits for the echo to 
 
 ### 7.5 Obstacles
 
-Two sources. Either one stops the wearer; when both see something at once, YOLO's name ("person")
+**Going round, not stopping.** Something in the walking path on the way to the target (within
+2.5 m, and not the target or what it stands on) is gone round: the wrists steer toward the side it
+can be passed on (the one nearer the target), with room for the shoulders, then "walk", until it's
+behind the wearer (its distance + 0.8 m at ~0.8 m/s after it leaves the path), then back to the
+target. The display says `GO AROUND: bear left 23° (the person ahead)`, then `GO AROUND: walk past
+the person`; the camera view marks it AVOID (champagne). Where the way round is:
+- from the depth model: for the thing nearest in the path, how far to bear left or right to pass it
+  (its edges at that distance, plus 0.5 m), or unknown if that edge runs out of the picture;
+- from YOLO's box: its left and right edges, plus the same room for the shoulders.
+Neither side known (a wide thing) → it turns 45° toward the target's side to look. Something new
+close ahead during a detour → a new plan. The target is remembered while going round (it's often
+out of view), so the detour ends by turning back to it. Nothing is narrated for obstacles: the
+voice only says where they're going and what happened.
+
+**Stopping** is only for something right in front: closer than **Settings → Stop if something is
+closer than** (0.8 m), or a wall filling the view. Two sources. Either one stops the wearer; when both see something at once, YOLO's name ("person")
 is shown rather than the depth model's "something". An obstacle counts for 1.2 s after it was last
 seen (longer than YOLO's gap between results on a slow phone, so STOP doesn't flicker), and never
 while reaching for the door handle or the thing (it's right in front, and so is the wearer's arm).
@@ -1343,15 +1358,11 @@ words (`narrate()` in `hands.html`; `tts.js` on the server). Fixed sentences, ne
 
 | When | Said |
 |---|---|
-| A choice (voice, buttons or typed) | *Going to the Waymo.* / *Going to test north.* / *Looking for the water bottle.* (*Looking for something to drink.* while the AI works out what that is) |
-| "Paradise, stop" / not understood | *Stopping.* / *Sorry, I didn't catch that.* |
-| Found by the camera | *Waymo found.* / *Found the water bottle.* |
-| Obstacle stop | *Stop. Person ahead.* / *Stop. Something ahead.* / *Stop. Drop-off ahead.* |
-| Arrived | *Arrived.* (a place) / *At the car.* / *At the door handle.* / *The water bottle is within reach.* |
-| The hand on it | *Touching the water bottle.* / *Touching the door handle.* |
-| Find mode gave up | *Couldn't find the water bottle nearby.* |
+| A choice (voice, buttons or typed) | *Going to the Waymo.* / *Going to test north.* / *Going to the water bottle.* (for a request like "something to drink", once the AI has worked out what it means) |
 
-Never the turn pulses, the approach pulses or "no signal": only events.
+That's the only sentence it ever says: nothing for obstacles, stops, arrivals or anything else,
+which stay on the wrists and the display. Pressing Stop (or "Paradise, stop") also silences anything
+still playing, and cancels any buzzes still to come.
 
 - **One clip at a time.** While one plays, only the newest two sentences wait; older ones are
   dropped (old news), and a new command or choice clears the queue first, so its sentence comes next
@@ -1486,7 +1497,7 @@ All in `public/hands.html` unless noted. Pages: edit and reload. Server files: r
 |---|---|---|---|
 | `PLACES` | top of the script | 2 test spots | Saved places ([4.11](#411-add-your-own-places)) |
 | `DECLINATION` | top of the script | −6.8 (Miami) | Magnetic declination, east positive ([4.12](#412-set-your-magnetic-declination)) |
-| Buzz strength / margin / GPS radius / stop distance | sliders under **Settings** on the page | 0.7 / ±12° / 6 m / 1.5 m | See [6.1](#61-the-laptop-page) |
+| Buzz strength / margin / GPS radius / stop distance | sliders under **Settings** on the page | 0.7 / ±12° / 6 m / 0.8 m | See [6.1](#61-the-laptop-page) |
 | Obstacles from depth | switch under **Settings** on the page | on | See [7.5](#75-obstacles) |
 | Colours, fonts, spacing | `public/paradise.css` (shared by the three pages) | light and dark | The page look; each page adds its own layout in its `<style>` |
 | `PATTERNS` | "Buzz vocabulary" | see [What each buzz means](#what-each-buzz-means) | Each pattern: `buzz(side, strength, ms)`, `both(...)`, `repeat(n, gap, fn)` |
