@@ -860,6 +860,8 @@
   let latestObjects = [], latestObjectsAt = -Infinity; // for the display
   let lastFrame = null;            // { w, h, focal, camH, pitch } the phone measures boxes in
   let yoloThing = null;            // { heading, at } last time YOLO saw the kind of thing being found
+  let yoloOthers = { at: -Infinity, list: [] }; // what else YOLO saw last: [{ label, heading }]
+  let lockSeenByYolo = -Infinity;  // last time YOLO saw the thing where it's being steered to
 
   // ---- Waymo: which car ----
   // While in Waymo mode the phone sends crops of the cars it sees, twice a second, and the server's
@@ -960,9 +962,16 @@
     const now = performance.now();
     const headingOf = (o) => wrap180(req.heading + deg(((o.box[0] + o.box[2]) / 2 - 0.5) * w, focal));
     const yoloAgrees = (o) => yoloThing && now - yoloThing.at < 1500 && Math.abs(wrap180(headingOf(o) - yoloThing.heading)) < 10;
+    // When the thing is one of YOLO's classes, YOLO leads: a box YOLO doesn't back up only counts if
+    // YOLO hasn't seen the thing anywhere lately, and never where YOLO sees something else (the
+    // object finder and CLIP will both call a phone "a water bottle").
+    const small = (label) => !["person", "dining table", "chair", "couch", "bed", "bench", "car", "truck", "bus"].includes(label);
+    const clash = (o) => now - yoloOthers.at < 1500
+      && yoloOthers.list.some((x) => small(x.label) && Math.abs(wrap180(headingOf(o) - x.heading)) < 7);
+    const yoloSeesIt = mode.coco && yoloThing && now - yoloThing.at < 5000;
     const ok = boxes.filter((b) => b.score >= THING_SURE && b.x2 - b.x1 < 0.8 * w && b.y2 - b.y1 < 0.9 * h)
       .map((b) => ({ score: b.score, verified: b.verified, box: [b.x1 / w, b.y1 / h, b.x2 / w, b.y2 / h] }))
-      .filter((o) => o.verified || yoloAgrees(o));
+      .filter((o) => yoloAgrees(o) || (o.verified && !(mode.coco && (yoloSeesIt || clash(o)))));
     const tracking = cam?.by === "thing" && now - cam.at < 3000;
     const b = ok.length ? ok.reduce((a, c) => (tracking
       ? (Math.abs(wrap180(headingOf(c) - cam.heading)) < Math.abs(wrap180(headingOf(a) - cam.heading)) ? c : a)
@@ -1927,7 +1936,13 @@
         const off = (o) => Math.abs(wrap180(heading + o.angle - cam.heading));
         const o = seen.length ? seen.reduce((a, b) => (tracking ? (off(b) < off(a) ? b : a) : (b.score > a.score ? b : a))) : null;
         if (o) yoloThing = { heading: wrap180(heading + o.angle), at: now };
-        if (o && (!tracking || off(o) < 20)) thingSeen(o.box, lastFrame, heading, o.score);
+        if (o && tracking && off(o) < 20) lockSeenByYolo = now;
+        // Steering to something YOLO hasn't seen there for 1.5 s while it sees the thing elsewhere
+        // (the object finder picked the wrong thing): switch to what YOLO sees.
+        if (o && (!tracking || off(o) < 20 || now - lockSeenByYolo > 1500)) { thingSeen(o.box, lastFrame, heading, o.score); lockSeenByYolo = now; }
+      }
+      if (mode?.kind === "find") {
+        yoloOthers = { at: now, list: msg.objects.filter((o) => o.label !== mode.coco).map((o) => ({ label: o.label, heading: wrap180(heading + o.angle) })) };
       }
       // Closest obstacle in the walking path.
       const obs = msg.objects.filter((o) => o !== car && isObstacle(o)).sort((a, b) => a.distance - b.distance)[0];

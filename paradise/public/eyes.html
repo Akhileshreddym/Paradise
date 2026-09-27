@@ -204,14 +204,45 @@
   // tunnel with it (anyone can come across a tunnel address). Passed on to the WebSocket.
   const LINK_KEY = new URLSearchParams(location.search).get("k") || "";
   let ws = null, linkRefused = false; // the server said the key is wrong or missing
+  // Room to send a picture: pictures are only sent while the link has drained what it was given
+  // (bytes still queued below the limit). Over a slow uplink or the tunnel, queuing them anyway
+  // makes everything arrive later and later (the compass and object updates wait behind them)
+  // until the link gives up. Dropping a picture instead keeps the rest live.
+  const roomFor = (limit) => ws?.readyState === 1 && ws.bufferedAmount < limit;
+  // And end to end: the server acknowledges every preview and car picture ("got"); at most two may
+  // be unacknowledged at once, wherever they are held up. (One lost acknowledgement doesn't stall
+  // it: after 3 s without one, the count starts again.)
+  let inFlight = 0, lastGot = 0;
+  const pictureRoom = (limit) => {
+    if (inFlight && performance.now() - lastGot > 3000) inFlight = 0;
+    return inFlight < 2 && roomFor(limit);
+  };
+  const sentPicture = () => { if (!inFlight) lastGot = performance.now(); inFlight++; };
+  // A link that has stopped draining (the Wi-Fi or the tunnel dropped it, but the phone hasn't
+  // noticed; iOS can take a minute) is replaced at once instead of waiting for it to time out.
+  let drainedAt = performance.now(), lastQueued = 0;
+  setInterval(() => {
+    if (ws?.readyState !== 1) { drainedAt = performance.now(); return; }
+    const q = ws.bufferedAmount;
+    if (q === 0 || q < lastQueued) drainedAt = performance.now();
+    lastQueued = q;
+    if (performance.now() - drainedAt > 6000) {
+      const stuck = ws;
+      stuck.onclose = null;
+      try { stuck.close(); } catch {}
+      drainedAt = performance.now(); lastQueued = 0;
+      connect();
+    }
+  }, 1000);
   function connect() {
     ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=eyes&k=${encodeURIComponent(LINK_KEY)}`);
-    ws.onopen = () => { linkRefused = false; };
+    ws.onopen = () => { linkRefused = false; inFlight = 0; };
     // Refused: trying again every second won't help (only the right link will), so every 5 s.
     ws.onclose = (e) => { linkRefused = e.code === 4401; setTimeout(connect, linkRefused ? 5000 : 1000); };
     ws.onmessage = (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg.type === "got") { inFlight = Math.max(0, inFlight - 1); lastGot = performance.now(); return; }
       if (msg.type === "frame-please") sendFrame(msg.id, msg.prompt, msg.check);
       if (msg.type === "want-cars") wantCarsUntil = performance.now() + 3000;
       if (msg.type === "want-hands") wantHandsUntil = performance.now() + 3000;
@@ -455,7 +486,7 @@
   // 800 px: what the handle model works at anyway, and ~80 KB as JPEG.
   const snap = document.createElement("canvas");
   function sendFrame(id, prompt, check) {
-    if (!video.videoWidth || ws?.readyState !== 1) return;
+    if (!video.videoWidth || !roomFor(200_000)) return; // the laptop asks again after 5 s
     const k = 800 / Math.max(video.videoWidth, video.videoHeight);
     snap.width = Math.round(video.videoWidth * k);
     snap.height = Math.round(video.videoHeight * k);
@@ -474,13 +505,14 @@
   const crop = document.createElement("canvas");
   crop.width = crop.height = 224;
   setInterval(() => {
-    if (performance.now() > wantCarsUntil || performance.now() - yolo.at > 600 || ws?.readyState !== 1) return;
+    if (performance.now() > wantCarsUntil || performance.now() - yolo.at > 600 || !pictureRoom(64_000)) return;
     const k = view.width / video.videoWidth; // 960 px frame → camera pixels
     const cars = yolo.boxes.map((b, i) => ({ b, o: yolo.objects[i] }))
       .filter(({ b }) => ["car", "truck", "bus"].includes(b.label) && b.x2 - b.x1 > 40)
       .sort((p, q) => (q.b.x2 - q.b.x1) * (q.b.y2 - q.b.y1) - (p.b.x2 - p.b.x1) * (p.b.y2 - p.b.y1))
       .slice(0, 3);
     if (!cars.length) return;
+    sentPicture();
     ws.send(JSON.stringify({
       type: "cars", to: "server", compass: compassNow(),
       cars: cars.map(({ b, o }) => {
@@ -498,12 +530,13 @@
   // mark obstacles, and what the depth model needs: focal length in these pixels, chest height, tilt.
   const mini = document.createElement("canvas");
   setInterval(() => {
-    if (!video.videoWidth || ws?.readyState !== 1) return;
+    if (!video.videoWidth || !pictureRoom(32_000)) return; // the link is behind: skip this one
     const k = 360 / Math.max(video.videoWidth, video.videoHeight);
     mini.width = Math.round(video.videoWidth * k);
     mini.height = Math.round(video.videoHeight * k);
     mini.getContext("2d").drawImage(video, 0, 0, mini.width, mini.height);
     const recent = performance.now() - yolo.at < 1000;
+    sentPicture();
     ws.send(JSON.stringify({
       type: "preview", to: "server",
       image: mini.toDataURL("image/jpeg", 0.6),

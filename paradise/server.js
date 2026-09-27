@@ -134,6 +134,10 @@ wss.on("connection", (ws, req) => {
       // Anything can arrive here (the tunnel is public): a bad message is logged, never fatal.
       const job = own(own(JOBS, role), type);
       if (!job) return drop(role, `${type || "?"} to the server`);
+      // A picture from the phone is acknowledged the moment it's here: the phone keeps at most two
+      // unacknowledged, so pictures can never pile up on the way (in the phone, the Wi-Fi or the
+      // tunnel) and arrive minutes late; over a slow link it just sends fewer.
+      if (role === "eyes" && (type === "preview" || type === "cars")) ws.send('{"type":"got"}');
       job(msg, ws, data).catch((err) => console.log(`bad ${type} message: ${err.message}`));
       return;
     }
