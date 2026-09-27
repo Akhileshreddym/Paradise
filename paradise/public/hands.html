@@ -878,6 +878,7 @@
   const OBSTACLE_HOLD = 1200;
   let latestObjects = [], latestObjectsAt = -Infinity; // for the display
   let lastFrame = null;            // { w, h, focal, camH, pitch } the phone measures boxes in
+  let serverBuild = null;          // which start of the server this page first talked to
 
   // ---- Waymo: which car ----
   // While in Waymo mode the phone sends crops of the cars it sees, twice a second, and the server's
@@ -888,11 +889,51 @@
   const VEHICLES = ["car", "truck", "bus"]; // YOLO can call a Zeekr Waymo a truck
   let waymoSeen = null;            // { heading, distance, prob, at } last confirmed Waymo
   let waymoBest = null;            // { prob, at } best score lately, for the details box
-  setInterval(() => { if (mode?.kind === "waymo" && phoneWs?.readyState === 1) phoneWs.send(JSON.stringify({ type: "want-cars", to: "eyes" })); }, 1000);
+  // Crops of every car in view, all the time (not only in Waymo mode), so the display can tell a
+  // Waymo from any other car wherever it is.
+  setInterval(() => { if (phoneWs?.readyState === 1) phoneWs.send(JSON.stringify({ type: "want-cars", to: "eyes" })); }, 1000);
+  // The classifier's Waymos, by where they are in the picture: each one's box, followed from one
+  // YOLO result to the next (the box that overlaps it most), so the label stays on that car as
+  // the wearer moves, and not on the car beside it. Dropped when not seen for 3 s.
+  let waymoBoxes = []; // [{ box, prob, seen }]
+  const iou = (a, b) => {
+    const w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+    if (w <= 0 || h <= 0) return 0;
+    const i = w * h;
+    return i / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - i);
+  };
+  const waymoAt = (box) => box && waymoBoxes.some((w) => iou(w.box, box) > 0.3);
+  function followWaymos(objects, now) {
+    waymoBoxes = waymoBoxes.filter((w) => now - w.seen < 3000);
+    for (const w of waymoBoxes) {
+      let best = null, bestIou = 0.3;
+      for (const o of objects) if (VEHICLES.includes(o.label) && o.box && iou(w.box, o.box) > bestIou) { best = o; bestIou = iou(w.box, o.box); }
+      if (best) { w.box = best.box; w.seen = now; }
+    }
+  }
+  // What to call a vehicle on the display and in messages: "Waymo" when the classifier was sure of
+  // that car, else its colour from the phone and "car" ("white car").
+  function vehicleName(o) {
+    if (!VEHICLES.includes(o.label)) return o.label;
+    if (waymoAt(o.box ?? (o.x1 !== undefined ? [o.x1, o.y1, o.x2, o.y2] : null))) return "Waymo";
+    const kind = o.label === "truck" ? "car" : o.label; // YOLO calls many SUVs (and Waymos) trucks
+    return o.color ? `${o.color} ${kind}` : kind;
+  }
   function onWaymoScores({ cars, compass }) {
     const now = performance.now();
-    if (!cars?.length || typeof compass !== "number") return;
+    if (!cars?.length) return;
     waymoBest = { prob: Math.max(...cars.map((c) => c.prob)), at: now };
+    // Where each checked car is: a Waymo's box is remembered (and followed); a car the classifier
+    // says isn't one clears any Waymo remembered on the same spot.
+    for (const c of cars) {
+      if (!c.box) continue;
+      if (c.prob >= WAYMO_SURE) {
+        const same = waymoBoxes.find((w) => iou(w.box, c.box) > 0.3);
+        if (same) Object.assign(same, { box: c.box, prob: c.prob, seen: now });
+        else waymoBoxes.push({ box: c.box, prob: c.prob, seen: now });
+      } else if (c.prob < 0.5) waymoBoxes = waymoBoxes.filter((w) => iou(w.box, c.box) <= 0.5);
+    }
+    if (typeof compass !== "number") return; // (steering to it needs the compass)
     // Demo switch (no real Waymo there): any car counts; the one in the beacon's direction is picked below.
     const sure = cars.filter((c) => c.prob >= WAYMO_SURE || $("anyCar").checked).map((c) => ({ ...c, heading: wrap180(compass + c.angle) }));
     if (!sure.length || mode?.kind !== "waymo") return;
@@ -1688,7 +1729,7 @@
       const color = b.obstacle ? RED : b.avoid ? YELLOW : b.target ? GREEN : WHITE, x = b.x1 * W, y = b.y1 * H;
       fctx.strokeStyle = color; fctx.lineWidth = 2.5 * px;
       fctx.beginPath(); rr(x, y, (b.x2 - b.x1) * W, (b.y2 - b.y1) * H, 6 * px); fctx.stroke();
-      tag(b.obstacle ? "STOP" : b.avoid ? "AVOID" : b.target ? (mode?.kind === "find" ? mode.what : "Waymo") : b.label, x, y, color, px);
+      tag(b.obstacle ? "STOP" : b.avoid ? "AVOID" : b.target ? (mode?.kind === "find" ? mode.what : "Waymo") : capital(vehicleName(b)), x, y, color, px);
     }
     // Reaching: the target (green ring) and the fingertips being steered to it (yellow).
     if (reach.view && (arrived === "handle" || arrived === "thing")) {
@@ -1879,7 +1920,7 @@
       const pad = (Math.atan(SHOULDERS / o.distance) * 180) / Math.PI;
       const l = deg((o.box[0] - 0.5) * lastFrame.w, lastFrame.focal) - pad, r = deg((o.box[2] - 0.5) * lastFrame.w, lastFrame.focal) + pad;
       if (l > 0 || r < 0) continue; // not in the way straight ahead
-      if (!best || o.distance < best.distance) best = { distance: o.distance, left: o.box[0] > 0.02 ? Math.round(l) : null, right: o.box[2] < 0.98 ? Math.round(r) : null, label: o.label };
+      if (!best || o.distance < best.distance) best = { distance: o.distance, left: o.box[0] > 0.02 ? Math.round(l) : null, right: o.box[2] < 0.98 ? Math.round(r) : null, label: vehicleName(o) };
     }
     return best;
   }
@@ -2011,7 +2052,7 @@
       c.restore();
       if (!o.target) {
         c.fillStyle = col ? rgba(col, 0.95) : rgba(ink.muted, 0.95);
-        c.fillText(`${capital(o.label)} · ${o.distance.toFixed(1)} m`, clamp(cx, 60, w - 60), Math.min(cy + bd / 2 + 16, h - 8));
+        c.fillText(`${capital(vehicleName(o))} · ${o.distance.toFixed(1)} m`, clamp(cx, 60, w - 60), Math.min(cy + bd / 2 + 16, h - 8));
       }
     }
 
@@ -2123,6 +2164,11 @@
       if (msg.type === "rtc") return onRtc(msg);
       if (msg.type === "depth-skip") return void (depthAsk.waiting = false);
       if (msg.type === "control") return onControl(msg.yours);
+      if (msg.type === "hello") { // a different start of the server than this page loaded with: fresh page code
+        if (serverBuild && serverBuild !== msg.build) location.reload();
+        serverBuild = msg.build;
+        return;
+      }
       if (msg.type === "heard") return inControl ? onHeard(msg.text) : undefined;
       if (msg.type === "waymo") return onWaymoScores(msg);
       if (msg.type === "depth") return onDepth(msg);
@@ -2140,6 +2186,7 @@
       if (msg.hands) handsSeen = { list: msg.hands, at: now };
       if (msg.gps) wearer = { lat: msg.gps.lat, lon: msg.gps.lon, acc: msg.gps.acc, at: now - (msg.gps.age || 0) };
       if (msg.objects) setFeedBoxes(msg.objects.filter((o) => o.box).map((o) => ({ ...o, x1: o.box[0], y1: o.box[1], x2: o.box[2], y2: o.box[3] }))); // for the video
+      if (msg.objects) followWaymos(msg.objects, now); // keep each Waymo label on its own car (compass or not)
       if (!msg.objects || heading === null) return; // objects only come when there's a new result
       latestObjects = msg.objects; latestObjectsAt = now;
 

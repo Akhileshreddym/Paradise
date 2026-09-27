@@ -96,6 +96,7 @@ function setLeader(ws) {
   for (const c of wss.clients) if (c.role === "hands" && c.readyState === 1) tell(c);
 }
 const wss = new WebSocketServer({ server, path: "/ws" });
+const BUILD = Date.now().toString(36); // this start of the server (see "hello" below)
 const latest = { eyes: null, beacon: null, objects: [] }; // for the status line below
 const dropped = new Set(); // role + type: each kind of dropped message is logged once, not every time
 const refused = { n: 0, loggedAt: -Infinity }; // pages turned away for the key (logged at most every 10 s)
@@ -120,6 +121,9 @@ wss.on("connection", (ws, req) => {
     return;
   }
   console.log(`${role} page connected (${device}); ${wss.clients.size} connected`);
+  // Which start of the server this is: a laptop page left open across a restart reloads itself,
+  // so it never keeps running the page code from before (it would only reconnect).
+  if (role === "hands") ws.send(JSON.stringify({ type: "hello", build: BUILD }));
   if (role === "hands") setLeader(ws); // the newest laptop page takes over
   ws.on("close", () => {
     console.log(`${role} page disconnected (${device}); ${wss.clients.size} connected`);
@@ -192,7 +196,10 @@ async function onCars({ cars, compass }) {
   const probs = await classifyCars(cars.map((c) => c.image)).catch((err) => `failed: ${err.message}`);
   if (typeof probs === "string") return; // loading or busy: the phone sends more soon
   latest.waymo = { best: Math.max(...probs), at: Date.now() };
-  const reply = JSON.stringify({ type: "waymo", compass, cars: cars.map((c, i) => ({ angle: c.angle, distance: c.distance, prob: probs[i] })) });
+  // Each car's box (0–1 of the frame) goes back with its score, so the laptop can tell which car
+  // on screen is the Waymo even when several are side by side.
+  const boxOf = (b) => (Array.isArray(b) && b.length === 4 && b.every((v) => typeof v === "number" && v >= -0.1 && v <= 1.1) ? b : null);
+  const reply = JSON.stringify({ type: "waymo", compass, cars: cars.map((c, i) => ({ angle: c.angle, distance: c.distance, box: boxOf(c.box), prob: probs[i] })) });
   for (const client of wss.clients) if (client.role === "hands" && client.readyState === 1) client.send(reply);
 }
 
