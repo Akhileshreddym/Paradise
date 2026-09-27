@@ -149,9 +149,6 @@ The wearer never looks at a screen. The laptop page is for everyone else:
   ×6`, `L+R · walk ×4`), and a note when no Joy-Con is connected;
 - **Mode** (with a task timer: from the choice to the "touch", or to arriving at a place),
   **Distance** (and how it's measured) and **Obstacle** tiles;
-- **the difference**: the same task done without Paradise (the team times it with the **Time it**
-  button: start, stop; kept in the browser) next to the last task done with it, and how many times
-  faster (`1:30` vs `0:20`: `4.5× faster`);
 - in find mode, the **room scan**: each stop's photo round a circle (top = where the turn started),
   the stop being looked at, and, if the AI was asked, the photo it picked (violet) with what it said
   ("look at the desk, about 2 m away. Keys are often left on desks.");

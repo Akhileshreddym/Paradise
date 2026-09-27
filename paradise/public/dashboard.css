@@ -217,12 +217,6 @@ body { padding-bottom: 112px; }
 .ai + .ai { margin-top: 8px; }
 .ai b { color: var(--text); font-weight: 500; }
 
-.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-.compare > .card { display: grid; justify-items: start; align-content: start; gap: 10px; padding: 24px 26px; }
-.compare .with { box-shadow: inset 0 0 0 1px rgba(58, 214, 208, 0.22); }
-.compare b { font: 300 64px/1 var(--font); letter-spacing: -0.045em; }
-.compare em { font: 500 18px/1.2 var(--font); font-style: normal; color: var(--guide); }
-.compare em:empty { display: none; }
 
 details.card .body { padding: 0 22px 20px; }
 .setting { display: grid; grid-template-columns: 240px minmax(0, 1fr) 70px; align-items: center; gap: 20px; padding: 12px 0; border-top: 1px solid var(--line); }
@@ -267,8 +261,7 @@ details.card .body { padding: 0 22px 20px; }
   .chips { border: 0; padding: 0; }
   #stopMode { flex: 1; }
   .below { padding: 0 16px; margin-top: 40px; }
-  .compare { grid-template-columns: 1fr; }
-  .setting { grid-template-columns: 1fr 60px; }
+    .setting { grid-template-columns: 1fr 60px; }
   .setting input { grid-column: 1 / -1; grid-row: 2; }
   .group { grid-template-columns: 1fr; gap: 8px; }
   .group > span { padding-top: 0; }

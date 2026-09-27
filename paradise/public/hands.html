@@ -121,11 +121,6 @@
     <div class="scan-ai"><div class="ai" id="aiMeant" hidden></div><div class="ai"><b id="aiPick"></b><span id="aiWhy"></span></div></div>
   </section>
 
-  <div class="compare">
-    <div class="card"><span class="k">Without Paradise</span><b class="num" id="beforeV">—</b><button id="beforeBtn" class="btn">Time it</button></div>
-    <div class="card with"><span class="k">With Paradise</span><b class="num" id="afterV">—</b><em id="fasterV"></em></div>
-  </div>
-
   <details class="card" data-key="settings" id="settings">
     <summary>Settings</summary>
     <div class="body">
@@ -1462,17 +1457,9 @@
     // How long the task has taken: from the choice to the touch (or, for a place, arriving).
     if (mode && task.at && !task.done && (/^TOUCHING/.test(guide) || (mode.kind === "place" && /^ARRIVED/.test(guide)))) {
       task.done = now;
-      compare.after = now - task.at;
     }
     put("modeS", mode && task.at ? `${task.done ? "done in " : ""}${clock((task.done || now) - task.at)}` : "");
     renderScan();
-    // The difference: the same task without Paradise (timed with the button) and with it.
-    const before = compare.startedAt ? now - compare.startedAt : compare.before;
-    put("beforeV", before ? clock(before) : "—");
-    put("beforeBtn", compare.startedAt ? "Stop" : compare.before ? "Time again" : "Time it");
-    const running = mode && task.at && !task.done;
-    put("afterV", running ? `${clock(now - task.at)}…` : compare.after ? clock(compare.after) : "—");
-    put("fasterV", !running && compare.before && compare.after && compare.after < compare.before ? `${(compare.before / compare.after).toFixed(1)}× faster` : "");
     put("distV", mode ? distanceShown : "—");
     $("distV").classList.toggle("none", $("distV").textContent === "—");
     put("distS", mode && distanceBy ? SOURCES[distanceBy] || distanceBy : "");
@@ -1508,17 +1495,6 @@
   }
 
   const task = { at: 0, done: 0 }; // when the current choice was made, and when it was reached
-  // Before and after, for the demo: the team times the same task done without Paradise (blindfolded,
-  // ears covered: the button starts and stops it), shown next to the last task done with it. The
-  // "without" time is kept in this browser.
-  const compare = { before: null, startedAt: 0, after: null }; // ms
-  try { compare.before = Number(localStorage.getItem("paradise.before")) || null; } catch {}
-  $("beforeBtn").onclick = () => {
-    if (!compare.startedAt) { compare.startedAt = performance.now(); return; }
-    compare.before = performance.now() - compare.startedAt;
-    compare.startedAt = 0;
-    try { localStorage.setItem("paradise.before", String(compare.before)); } catch {}
-  };
   const clock = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 
   // The room scan (find mode): each stop's photo round a circle, top = where the scan started; the
