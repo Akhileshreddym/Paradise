@@ -38,6 +38,7 @@
       <span class="dev" id="phonePill" title="Chest camera">Camera</span>
       <span class="dev" id="joyLPill" title="Left wrist Joy-Con">Left</span>
       <span class="dev" id="joyRPill" title="Right wrist Joy-Con">Right</span>
+      <span class="dev" id="beaconPill" title="Beacon phone (where the Waymo is)">Beacon</span>
     </div>
     <button id="geminiBtn" class="toggle ok" aria-pressed="true" title="Gemini: understand requests, suggest where to look">Gemini on</button>
     <button id="voiceBtn" class="toggle ok" aria-pressed="true" title="Speak for the audience">Voice on</button>
@@ -1638,6 +1639,14 @@
     const phoneOk = now - lastEyes < 1000;
     $("phonePill").classList.toggle("ok", phoneOk);
     $("phonePill").classList.toggle("bad", !phoneOk && lastEyes > 0); // was connected, went quiet
+    // The beacon: green with a usable fix, amber when its GPS is too rough to guide by (over 50 m),
+    // red once it's gone quiet; the tooltip says which.
+    const bOk = fresh(beacon, now);
+    $("beaconPill").classList.toggle("ok", bOk && beacon.acc <= 50);
+    $("beaconPill").classList.toggle("warn", bOk && beacon.acc > 50);
+    $("beaconPill").classList.toggle("bad", !bOk && !!beacon);
+    $("beaconPill").title = !beacon ? "Beacon: not connected (open the beacon link on the other phone)"
+      : !bOk ? "Beacon: no position for over 30 s" : `Beacon: ±${beacon.acc.toFixed(0)} m${beacon.acc > 50 ? " (too rough: turn on Precise Location)" : ""}`;
     $("feedBox").classList.toggle("live", now - previewAt < 2000 || videoLive(now));
 
     const pos = (p) => (p ? `${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} ±${p.acc.toFixed(0)} m, ${((now - p.at) / 1000).toFixed(0)} s old` : "—");

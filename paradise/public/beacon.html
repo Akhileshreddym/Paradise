@@ -180,7 +180,9 @@
 
   let gps = null; // { lat, lon, acc, time }
   let watch = null;
-  $("start").onclick = () => {
+  // Sharing starts by itself when the page opens (the iPhone asks for location permission once);
+  // the button is only there again if permission was refused, to try again after allowing it.
+  function startSharing() {
     if (!navigator.geolocation) { note("No GPS in this browser."); return; }
     $("intro").hidden = true;
     $("fix").hidden = false;
@@ -199,7 +201,9 @@
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
     );
     keepAwake();
-  };
+  }
+  $("start").onclick = startSharing;
+  startSharing();
   // Keep the screen on. The browser drops the lock whenever the page is hidden (another app, the
   // lock screen), so take it again when the page comes back.
   let wantAwake = false;

@@ -27,6 +27,8 @@ body { padding-bottom: 112px; }
 .dev.ok { color: var(--text); }
 .dev.ok::before { background: var(--go); box-shadow: 0 0 8px var(--go); }
 .dev.bad::before { background: var(--stop); }
+.dev.warn { color: var(--text); }
+.dev.warn::before { background: var(--wait); }
 .toggle { min-height: 34px; padding: 0 14px; font-size: 13px; color: var(--muted); }
 .toggle::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); transition: background 200ms var(--ease-out), box-shadow 200ms var(--ease-out); }
 .toggle.ok { color: var(--text); }
