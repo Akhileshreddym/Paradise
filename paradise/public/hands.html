@@ -1,331 +1,169 @@
 <!doctype html>
 <!-- Paradise "hands": laptop page. Drives the two wrist Joy-Cons (WebHID, so Chrome or Edge only),
-     runs all the guidance logic, and is the onlooker display. Laid out like an editorial page:
-     the camera as a framed photograph, what the wearer is being told as the headline, the two
-     wrists beneath it; the team's controls float in a dock at the bottom; tools come after. -->
+     runs all the guidance logic, and is what the room watches: the chest camera on the left; on
+     the right a dial whose arrow points where the wearer must go, the instruction, where they're
+     going, and the two wrists as the logo's two dots, lighting up as they buzz. The controls float
+     at the bottom; team tools are folded away below. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Paradise</title>
-<link rel="stylesheet" href="paradise.css">
-<script src="appearance.js"></script>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='2' y='2' width='96' height='96' rx='30' fill='%23111113' stroke='%23c6c5c0' stroke-width='3'/%3E%3Ccircle cx='34.6' cy='50' r='11' fill='%23ffd60a'/%3E%3Ccircle cx='65.4' cy='50' r='11' fill='%23ffd60a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Julius+Sans+One&display=swap">
 <link rel="stylesheet" href="dashboard.css">
 </head>
-<body class="dashboard">
-<a class="skip-link" href="#session">Skip to the live display</a>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs><filter id="soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter></defs>
+  <symbol id="mark" viewBox="0 0 100 100">
+    <rect x="1.5" y="1.5" width="97" height="97" rx="30" fill="#111113" stroke="#c6c5c0" stroke-width="2"/>
+    <g fill="#ffd60a"><g filter="url(#soft)" opacity=".55"><circle cx="34.6" cy="50" r="11"/><circle cx="65.4" cy="50" r="11"/></g><circle cx="34.6" cy="50" r="10.6"/><circle cx="65.4" cy="50" r="10.6"/></g>
+  </symbol>
+  <symbol id="i-arrow" viewBox="0 0 100 100"><path d="M50 16 76 50H59v34H41V50H24z" stroke-linejoin="round" stroke-width="6" stroke="currentColor"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 100 100"><rect x="22" y="44" width="56" height="12" rx="6"/></symbol>
+  <symbol id="i-done" viewBox="0 0 100 100"><path d="M26 52l16 16 32-34" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-wait" viewBox="0 0 100 100"><circle cx="30" cy="50" r="6"/><circle cx="50" cy="50" r="6"/><circle cx="70" cy="50" r="6"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 100 100"><circle cx="36" cy="50" r="10"/><circle cx="64" cy="50" r="10"/></symbol>
+</svg>
 
-<header class="masthead">
-  <a class="brand" href="/" aria-label="Paradise"><span class="brand-word">PAR<em>A</em>DISE</span></a>
-  <span class="tagline">Guidance by touch</span>
-  <div class="masthead-right">
+<header class="top">
+  <a class="brand" href="/" aria-label="Paradise"><svg class="brand-mark" aria-hidden="true"><use href="#mark"/></svg><span class="brand-word">Paradise</span></a>
+  <div class="top-right">
     <div class="devices" role="group" aria-label="Devices">
-      <span class="pill" id="phonePill" title="Chest camera">Camera</span>
-      <span class="pill" id="joyLPill" title="Left wrist Joy-Con">Left</span>
-      <span class="pill" id="joyRPill" title="Right wrist Joy-Con">Right</span>
+      <span class="dev" id="phonePill" title="Chest camera">Camera</span>
+      <span class="dev" id="joyLPill" title="Left wrist Joy-Con">Left</span>
+      <span class="dev" id="joyRPill" title="Right wrist Joy-Con">Right</span>
     </div>
-    <span class="sep" aria-hidden="true"></span>
-    <button id="geminiBtn" class="pill toggle-pill ok" aria-pressed="true" title="Gemini: understand requests, suggest where to look">Gemini on</button>
-    <button id="voiceBtn" class="pill toggle-pill ok" aria-pressed="true" title="Speak for the audience">Voice on</button>
-    <span class="sep" aria-hidden="true"></span>
-    <a class="textlink" href="/legend" target="_blank" rel="noopener">Legend</a>
-    <button class="icon-button ghost" data-theme-toggle aria-label="Switch appearance" title="Switch appearance"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></button>
-    <button id="connect" class="primary">Connect Joy-Con</button>
+    <button id="geminiBtn" class="toggle ok" aria-pressed="true" title="Gemini: understand requests, suggest where to look">Gemini on</button>
+    <button id="voiceBtn" class="toggle ok" aria-pressed="true" title="Speak for the audience">Voice on</button>
+    <button id="connect" class="btn light">Connect Joy-Con</button>
   </div>
 </header>
-<p class="notice" id="connectionHelp" role="status" hidden></p>
-<div class="takeover" id="takeover" role="status" hidden><span>View only · another laptop page is in control</span><button id="takeControl" class="primary">Take control</button></div>
+<p class="banner warn" id="connectionHelp" role="status" hidden></p>
+<div class="banner info" id="takeover" role="status" hidden><span>View only: another laptop page is guiding.</span><button id="takeControl" class="btn light">Take control</button></div>
 
-<!-- The stage: what the audience watches. -->
-<main class="stage" id="session" aria-label="Live guidance">
-  <figure class="plate">
+<main class="stage" aria-label="Live guidance">
+  <figure class="camera">
     <div class="feed" id="feedBox">
       <canvas id="feed" width="360" height="640" aria-label="Live chest camera feed"></canvas>
-      <!-- Presentation only: the camera dressed as a cinema viewfinder (corners, crosshair, a
-           compass tape read from the Details heading, REC and a running timecode). -->
-      <div class="vf" aria-hidden="true">
-        <span class="vf-c tl"></span><span class="vf-c tr"></span><span class="vf-c bl"></span><span class="vf-c br"></span>
-        <span class="vf-cross"></span>
-        <div class="vf-tape"><div class="vf-strip"></div><span class="vf-index"></span></div>
-        <span class="vf-hdg num">---°</span>
-        <div class="vf-foot"><span class="vf-rec"><i></i><span class="rec-on">REC</span><span class="rec-off">STBY</span></span><span class="vf-tc num">--:--:--:--</span></div>
-      </div>
-      <div class="empty">
-        <span class="empty-mark" aria-hidden="true"></span>
-        <p class="empty-title">Waiting for the chest camera</p>
-        <p class="empty-copy">Open the Eyes link on the phone; it connects by itself.</p>
-      </div>
+      <div class="feed-empty"><svg class="empty-mark" aria-hidden="true"><use href="#mark"/></svg><p>Waiting for the chest camera</p><span>Open the phone link on the chest iPhone.</span></div>
+      <span class="live-tag"><i></i>Live</span>
     </div>
-    <figcaption><span class="fig">Fig. 1</span><span>Chest camera</span><span class="live-state"><i></i><span class="off-text">No signal</span><span class="live-text">Live</span></span></figcaption>
   </figure>
 
-  <section class="narrative">
-    <section class="guide" id="guide" data-state="idle" aria-label="What the wearer is being told">
-      <div class="guide-meta"><span class="index">Now</span><span class="state"><i></i><span id="guidanceState">Standing by</span></span></div>
-      <div class="head" id="guideHead" role="status" aria-live="polite">Ready</div>
-      <div class="detail" id="guideDetail">Choose a destination or find an object to begin.</div>
+  <section class="panel">
+    <section class="hero" id="guide" data-state="idle" data-pict="idle" aria-label="What the wearer is being told">
+      <div class="dial" aria-hidden="true">
+        <svg class="dial-ring" viewBox="0 0 200 200"><circle cx="100" cy="100" r="92"/><g class="ticks"></g></svg>
+        <svg class="dial-sym arrow" id="dialArrow"><use href="#i-arrow"/></svg>
+        <svg class="dial-sym stop"><use href="#i-stop"/></svg>
+        <svg class="dial-sym done"><use href="#i-done"/></svg>
+        <svg class="dial-sym wait"><use href="#i-wait"/></svg>
+        <svg class="dial-sym idle"><use href="#i-dots"/></svg>
+      </div>
+      <div class="hero-text">
+        <span class="state"><i></i><span id="guidanceState">Standing by</span></span>
+        <h1 class="head" id="guideHead" role="status" aria-live="polite">Ready</h1>
+        <p class="detail" id="guideDetail">Choose a destination or find an object to begin.</p>
+      </div>
       <div class="heard" id="heard" hidden></div>
     </section>
 
-    <section class="haptics" aria-label="Wrists">
-      <div class="wrist left" id="wristL">
-        <div class="wrist-top"><span class="label">Left wrist</span><span class="wrist-letter" aria-hidden="true">L</span></div>
-        <span class="wrist-rail" aria-hidden="true"><span class="wrist-line"></span><span class="wrist-wave"></span></span>
-        <span class="wrist-text" id="wristLText">Standing by</span>
-      </div>
-      <div class="wrist right" id="wristR">
-        <div class="wrist-top"><span class="label">Right wrist</span><span class="wrist-letter" aria-hidden="true">R</span></div>
-        <span class="wrist-rail" aria-hidden="true"><span class="wrist-line"></span><span class="wrist-wave"></span></span>
-        <span class="wrist-text" id="wristRText">Standing by</span>
-      </div>
+    <section class="facts" aria-label="Readings">
+      <div class="fact"><span class="k">Going to</span><span class="v" id="modeV">Nothing yet</span><span class="s num" id="modeS"></span></div>
+      <div class="fact"><span class="k">Distance</span><span class="v num" id="distV">—</span><span class="s" id="distS"></span></div>
+      <div class="fact" id="obsCard"><span class="k">Obstacle</span><span class="v" id="obsV">None</span><span class="s" id="obsS"></span></div>
     </section>
 
-    <section class="readings" aria-label="Session readings">
-      <div class="reading"><span class="label">Mode</span><span class="v" id="modeV">Standby</span><span class="s" id="modeS"></span></div>
-      <div class="reading"><span class="label">Distance</span><span class="v num" id="distV">—</span><span class="s" id="distS"></span></div>
-      <div class="reading" id="obsCard"><span class="label">Obstacle</span><span class="v" id="obsV">None</span><span class="s" id="obsS"></span></div>
+    <section class="wrists" aria-label="Wrists">
+      <div class="wrist" id="wristL"><span class="dot" aria-hidden="true"></span><div><span class="k">Left wrist</span><span class="w" id="wristLText">Standing by</span></div></div>
+      <div class="wrist" id="wristR"><span class="dot" aria-hidden="true"></span><div><span class="k">Right wrist</span><span class="w" id="wristRText">Standing by</span></div></div>
+      <div class="buzzlog" id="buzzLog" aria-live="off"></div>
     </section>
 
-    <div class="buzzlog" id="buzzLog" aria-live="off"></div>
+    <section class="extra ride" id="rideCard" hidden aria-label="The ride">
+      <p class="ride-now" id="ride"></p>
+      <ol class="steps" id="rideSteps"><li>Requested</li><li>Arrived</li><li>Found by the camera</li><li>At the door</li></ol>
+    </section>
+    <section class="extra scan" id="scanCard" hidden aria-label="Looking around">
+      <div class="ring" id="ring"><div class="hub" id="ringHub"></div></div>
+      <div class="scan-ai"><div class="ai" id="aiMeant" hidden></div><div class="ai"><b id="aiPick"></b><span id="aiWhy"></span></div></div>
+    </section>
   </section>
 </main>
 
-<!-- The team's controls, floating at the bottom of the window: find, go to, stop. -->
 <div class="dock" role="toolbar" aria-label="Guidance controls">
   <div class="find">
     <label class="sr-only" for="findText">Find something</label>
     <input id="findText" placeholder="Find something…" autocomplete="off">
-    <kbd class="find-kbd" aria-hidden="true">⌘K</kbd><button id="findGo" class="primary">Find</button>
+    <button id="findGo" class="btn light">Find</button>
   </div>
-  <span class="dock-sep" aria-hidden="true"></span>
-  <div class="goto">
-    <span class="label" id="gotoLabel" title="The numbers are how many presses on a Joy-Con choose it">Go to</span>
-    <div class="chips" id="choices" role="group" aria-labelledby="gotoLabel"></div>
-  </div>
-  <span class="dock-sep" aria-hidden="true"></span>
-  <button id="stopMode" class="danger">Stop</button>
+  <div class="chips" id="choices" role="group" aria-label="Go to"></div>
+  <button id="stopMode" class="btn stop">Stop</button>
 </div>
 
-<!-- The rest of the session: shown only while a mode needs it. -->
-<section class="chapter progress" aria-label="Progress">
-  <section class="ride" id="rideCard" hidden>
-    <div class="chapter-head"><span class="index"></span><h2 class="serif">The ride</h2></div>
-    <p class="now" id="ride"></p>
-    <ol id="rideSteps"><li>Requested</li><li>Arrived</li><li>Found by the camera</li><li>At the door</li></ol>
-  </section>
-  <section class="scan" id="scanCard" hidden>
-    <div class="chapter-head"><span class="index"></span><h2 class="serif">Looking around</h2></div>
-    <div class="ring" id="ring"><div class="hub" id="ringHub"></div></div>
-    <div class="ai" id="aiMeant" hidden></div>
-    <div class="ai"><b id="aiPick"></b><span id="aiWhy"></span></div>
-  </section>
-</section>
-
-<!-- The difference: the same task timed without Paradise, and with it. -->
-<section class="chapter compare" aria-label="The difference">
-  <div class="chapter-head"><span class="index"></span><h2 class="serif">The difference</h2><p class="muted">The same task, timed without Paradise and with it.</p></div>
-  <div class="compare-grid">
-    <div class="compare-cell"><span class="label">Without</span><b class="num" id="beforeV">—</b><button id="beforeBtn" class="ghost">Time it</button></div>
-    <div class="compare-cell with"><span class="label">With Paradise</span><b class="num" id="afterV">—</b><em id="fasterV"></em></div>
+<section class="below" aria-label="More">
+  <div class="compare">
+    <div><span class="k">Without Paradise</span><b class="num" id="beforeV">—</b><button id="beforeBtn" class="btn">Time it</button></div>
+    <div class="with"><span class="k">With Paradise</span><b class="num" id="afterV">—</b><em id="fasterV"></em></div>
   </div>
-</section>
 
-<section class="chapter more" aria-label="Team tools">
-  <div class="chapter-head"><span class="index"></span><h2 class="serif">For the team</h2></div>
-  <details class="card" data-key="settings" id="settings">
-    <summary><span>Settings</span><span class="summary-hint">Strength, margins, switches</span></summary>
+  <details data-key="settings" id="settings">
+    <summary>Settings</summary>
     <div class="body">
-      <div class="setting"><label for="amp">Buzz strength</label><input id="amp" type="range" min="0.1" max="1" step="0.05" value="0.7"><span class="val num"><span id="ampV">0.7</span></span></div>
-      <div class="setting"><label for="margin">On-target margin</label><input id="margin" type="range" min="5" max="30" value="12"><span class="val num">±<span id="marginV">12</span>°</span></div>
-      <div class="setting"><label for="arrive">GPS arrival radius</label><input id="arrive" type="range" min="2" max="20" value="6"><span class="val num"><span id="arriveV">6</span> m</span></div>
-      <div class="setting"><label for="stopDist">Stop if something is closer than</label><input id="stopDist" type="range" min="0.4" max="2" step="0.1" value="0.8"><span class="val num"><span id="stopDistV">0.8</span> m</span></div>
-      <label class="toggle"><span>Obstacles from depth<small>Walls, poles, doors, boxes: anything close in the walking path</small></span><input type="checkbox" id="depthOn" class="switch" checked></label>
-      <label class="toggle"><span>Use Gemini<small>Understand requests and suggest where to look after a room scan. Sends requests and scan photos to Google.</small></span><input type="checkbox" id="aiOn" class="switch" checked></label>
-      <label class="toggle"><span>Speak for the audience<small>Spoken updates through the laptop speakers. The wearer's guidance stays on the wrists.</small></span><input type="checkbox" id="voiceOn" class="switch" checked></label>
-      <label class="toggle"><span>Any car counts as the Waymo<small>For demos without a Waymo: the car in the beacon's direction counts.</small></span><input type="checkbox" id="anyCar" class="switch"></label>
-      <label class="toggle"><span>Follow walking routes<small>Sidewalks and footpaths, turning at corners; off is a straight line. Routes © OpenStreetMap contributors.</small></span><input type="checkbox" id="routeOn" class="switch" checked></label>
+      <div class="setting"><label for="amp">Buzz strength</label><input id="amp" type="range" min="0.1" max="1" step="0.05" value="0.7"><span class="num"><span id="ampV">0.7</span></span></div>
+      <div class="setting"><label for="margin">On-target margin</label><input id="margin" type="range" min="5" max="30" value="12"><span class="num">±<span id="marginV">12</span>°</span></div>
+      <div class="setting"><label for="arrive">GPS arrival radius</label><input id="arrive" type="range" min="2" max="20" value="6"><span class="num"><span id="arriveV">6</span> m</span></div>
+      <div class="setting"><label for="stopDist">Stop if something is closer than</label><input id="stopDist" type="range" min="0.4" max="2" step="0.1" value="0.8"><span class="num"><span id="stopDistV">0.8</span> m</span></div>
+      <label class="switchrow"><span>Obstacles from depth</span><input type="checkbox" id="depthOn" class="switch" checked></label>
+      <label class="switchrow"><span>Use Gemini</span><input type="checkbox" id="aiOn" class="switch" checked></label>
+      <label class="switchrow"><span>Speak for the audience</span><input type="checkbox" id="voiceOn" class="switch" checked></label>
+      <label class="switchrow"><span>Any car counts as the Waymo</span><input type="checkbox" id="anyCar" class="switch"></label>
+      <label class="switchrow"><span>Follow walking routes</span><input type="checkbox" id="routeOn" class="switch" checked></label>
     </div>
   </details>
-  <details class="card" data-key="testing" id="testing">
-    <summary><span>Testing</span><span class="summary-hint">Play any buzz on the wrists</span></summary>
+  <details data-key="testing" id="testing">
+    <summary>Testing</summary>
     <div class="body">
-      <div class="group"><span class="label">Voice</span><div class="chips">
-        <button class="ghost" data-pattern="listening">Heard you</button><button class="ghost" data-pattern="stopped">Stopped</button>
+      <div class="group"><span>Voice</span><div class="row">
+        <button class="btn" data-pattern="listening">Heard you</button><button class="btn" data-pattern="stopped">Stopped</button>
       </div></div>
-      <div class="group"><span class="label">Walking</span><div class="chips">
-        <button class="ghost" data-pattern="left">Steer left</button><button class="ghost" data-pattern="right">Steer right</button>
-        <button class="ghost" data-pattern="approach">Approaching</button><button class="ghost" data-pattern="arrived">Arrived</button>
-        <button class="ghost" data-pattern="obstacle">Obstacle</button><button class="ghost" data-pattern="search">Search</button>
-        <button class="ghost" data-pattern="connected">Found it</button><button class="ghost" data-pattern="echo3">Echo 3</button>
+      <div class="group"><span>Walking</span><div class="row">
+        <button class="btn" data-pattern="left">Steer left</button><button class="btn" data-pattern="right">Steer right</button>
+        <button class="btn" data-pattern="approach">Approaching</button><button class="btn" data-pattern="arrived">Arrived</button>
+        <button class="btn" data-pattern="obstacle">Obstacle</button><button class="btn" data-pattern="search">Search</button>
+        <button class="btn" data-pattern="connected">Found it</button><button class="btn" data-pattern="echo3">Echo 3</button>
       </div></div>
-      <div class="group"><span class="label">Reaching</span><div class="chips">
-        <button class="ghost" data-pattern="reachLeft">Hand left</button><button class="ghost" data-pattern="reachRight">Hand right</button>
-        <button class="ghost" data-pattern="reachUp">Hand up</button><button class="ghost" data-pattern="reachDown">Hand down</button>
-        <button class="ghost" data-pattern="reachForward">Forward</button><button class="ghost" data-pattern="reachOut">Reach out</button><button class="ghost" data-pattern="touch">Touch</button>
+      <div class="group"><span>Reaching</span><div class="row">
+        <button class="btn" data-pattern="reachLeft">Hand left</button><button class="btn" data-pattern="reachRight">Hand right</button>
+        <button class="btn" data-pattern="reachUp">Hand up</button><button class="btn" data-pattern="reachDown">Hand down</button>
+        <button class="btn" data-pattern="reachForward">Forward</button><button class="btn" data-pattern="reachOut">Reach out</button><button class="btn" data-pattern="touch">Touch</button>
       </div></div>
-      <div class="group"><span class="label">Test places (GPS, from where you stand)</span><div class="chips" id="testPlaces"></div></div>
-      <div class="group"><span class="label">Indoor steering (no GPS)</span><div class="chips">
-        <button class="ghost" data-turn="-90">90° left</button><button class="ghost" data-turn="45">45° right</button>
-        <button class="ghost" data-turn="90">90° right</button><button class="ghost" data-turn="180">Behind</button>
+      <div class="group"><span>Test places</span><div class="row" id="testPlaces"></div></div>
+      <div class="group"><span>Indoor steering</span><div class="row">
+        <button class="btn" data-turn="-90">90° left</button><button class="btn" data-turn="45">45° right</button>
+        <button class="btn" data-turn="90">90° right</button><button class="btn" data-turn="180">Behind</button>
       </div></div>
     </div>
   </details>
-  <details class="card" data-key="details">
-    <summary><span>Details</span><span class="summary-hint">Connections and sensors</span></summary>
-    <div class="body"><div id="info" class="mono">…</div></div>
+  <details data-key="details">
+    <summary>Details</summary>
+    <div class="body"><pre id="info">…</pre></div>
   </details>
+  <p class="foot">Paradise · guidance by touch, for people who are blind or DeafBlind · <a href="/legend" target="_blank" rel="noopener">Buzz legend</a></p>
 </section>
-
-<footer class="colophon">
-  <div class="colophon-word" aria-hidden="true">Paradise</div>
-  <div class="colophon-row"><span>Guidance by touch, for people who are blind or DeafBlind.</span><nav aria-label="Jump to"><a href="#settings" data-open-section="settings">Settings</a><a href="#testing" data-open-section="testing">Testing</a><a href="/legend" target="_blank" rel="noopener">Buzz legend</a></nav></div>
-</footer>
 <script>
-  // Presentation only (no guidance logic): the headline and readings arrive letter by letter,
-  // the camera becomes a viewfinder (compass tape + timecode), the Go-to chips get a sliding
-  // indicator, ⌘K focuses Find, and the chapters rise into view. The module script below keeps
-  // writing the same ids; the animated copies are aria-hidden twins beside them.
+  // The dial's tick marks (every 10°, longer every 90°), drawn once.
   (() => {
-    const $ = (id) => document.getElementById(id);
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
-    const watch = (el, fn) => new MutationObserver(fn).observe(el, { childList: true, characterData: true, subtree: true });
-    document.documentElement.classList.add("fx");
-
-    // An element's aria-hidden twin, stacked on it in one grid cell (the original stays for the
-    // script and screen readers, invisible, and keeps the space).
-    function twin(el, stackClass) {
-      const stack = document.createElement(el.tagName === "DIV" ? "div" : "span");
-      stack.className = stackClass;
-      el.replaceWith(stack);
-      const fx = document.createElement(el.tagName);
-      fx.className = `${el.className} fx-twin`;
-      fx.setAttribute("aria-hidden", "true");
-      stack.append(el, fx);
-      return fx;
+    const g = document.querySelector(".dial-ring .ticks");
+    let s = "";
+    for (let d = 0; d < 360; d += 10) {
+      const r = (d * Math.PI) / 180, long = d % 90 === 0, a = 92 - (long ? 12 : 6);
+      s += `<line class="${long ? "long" : ""}" x1="${100 + Math.sin(r) * 86}" y1="${100 - Math.cos(r) * 86}" x2="${100 + Math.sin(r) * (a - 6)}" y2="${100 - Math.cos(r) * (a - 6)}"/>`;
     }
-    // Text as words (so lines only break between words) of single-character spans.
-    function spell(fx, text, animate) {
-      const frag = document.createDocumentFragment();
-      let i = 0, k = 0;
-      for (const part of text.split(/(\s+)/)) {
-        if (!part) continue;
-        if (/^\s+$/.test(part)) { frag.append(" "); i += part.length; continue; }
-        const w = document.createElement("span");
-        w.className = "w";
-        for (const ch of part) {
-          const c = document.createElement("span");
-          c.textContent = ch;
-          if (animate(ch, i)) { c.className = "ch"; c.style.setProperty("--i", k++); }
-          else c.className = "st";
-          w.append(c); i++;
-        }
-        frag.append(w);
-      }
-      fx.replaceChildren(frag);
-    }
-
-    // The headline: every letter arrives, staggered.
-    const head = $("guideHead"), headFx = twin(head, "head-stack");
-    const renderHead = () => spell(headFx, head.textContent, () => true);
-    watch(head, renderHead); renderHead();
-
-    // Readings: only the characters that changed roll in, like an odometer.
-    for (const id of ["modeV", "distV", "obsV"]) {
-      const el = $(id), fx = twin(el, "v-stack");
-      let prev = [];
-      const render = () => { const now = [...el.textContent]; spell(fx, el.textContent, (ch, i) => ch !== prev[i]); prev = now; };
-      watch(el, render); render();
-    }
-
-    // The viewfinder: a compass tape (heading from the Details text) and a running timecode.
-    const feedBox = $("feedBox"), vf = feedBox.querySelector(".vf");
-    const strip = vf.querySelector(".vf-strip"), tape = vf.querySelector(".vf-tape");
-    const hdg = vf.querySelector(".vf-hdg"), tc = vf.querySelector(".vf-tc");
-    const PX = 3.6; // pixels per degree
-    const NAMES = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
-    let ticks = "";
-    for (let d = -180; d <= 540; d += 5) {
-      const n = ((d % 360) + 360) % 360, x = (d + 180) * PX;
-      ticks += `<i class="${n % 15 ? "" : "M"}" style="left:${x}px"></i>`;
-      if (n % 15 === 0) ticks += `<b class="${n % 90 === 0 ? "c" : n % 45 === 0 ? "ic" : ""}" style="left:${x}px">${NAMES[n] ?? n}</b>`;
-    }
-    strip.innerHTML = ticks;
-    let tapeW = tape.clientWidth;
-    new ResizeObserver(() => (tapeW = tape.clientWidth)).observe(tape);
-    let target = null, shown = null;
-    const readHeading = () => {
-      const m = $("info").textContent.match(/heading:\s+(\d+(?:\.\d+)?)°/);
-      target = m ? Number(m[1]) % 360 : null;
-      feedBox.classList.toggle("has-heading", target !== null);
-      const t = target === null ? "---°" : `${String(Math.round(target) % 360).padStart(3, "0")}°`;
-      if (hdg.textContent !== t) hdg.textContent = t;
-    };
-    watch($("info"), readHeading); readHeading();
-
-    const pad = (n) => String(n).padStart(2, "0");
-    let liveSince = 0, lastT = performance.now(), lastTc = "";
-    function frame(t) {
-      const dt = Math.min(100, t - lastT); lastT = t;
-      const live = feedBox.classList.contains("live");
-      if (live && !liveSince) liveSince = t;
-      if (!live) liveSince = 0;
-      let text = "--:--:--:--";
-      if (live) {
-        const ms = t - liveSince, s = Math.floor(ms / 1000);
-        text = `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}:${pad(Math.floor((ms % 1000) / 40))}`;
-      }
-      if (text !== lastTc) tc.textContent = lastTc = text;
-      if (target !== null) {
-        if (shown === null || reduce.matches) shown = target;
-        else shown += ((((target - shown) % 360) + 540) % 360 - 180) * (1 - Math.exp(-dt / 140));
-        shown = ((shown % 360) + 360) % 360;
-        strip.style.transform = `translate3d(${(tapeW / 2 - (shown + 180) * PX).toFixed(2)}px,0,0)`;
-      }
-      requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-
-    // Wrists: bars for the champagne waveform, phased so the wave travels toward the arrow.
-    document.querySelectorAll(".wrist").forEach((w) => {
-      const wave = w.querySelector(".wrist-wave"), left = w.classList.contains("left"), N = 28, T = 780;
-      for (let j = 0; j < N; j++) {
-        const i = document.createElement("i"), phase = (left ? j : N - 1 - j) / N;
-        i.style.setProperty("--dl", `${(-phase * 3 * T).toFixed(0)}ms`);
-        i.style.setProperty("--h", (0.25 + 0.75 * Math.sin((Math.PI * (j + 0.5)) / N) * (0.8 + 0.2 * Math.sin(j * 12.9898))).toFixed(3));
-        wave.append(i);
-      }
-    });
-
-    // Go to: one indicator that slides to whichever choice is active.
-    const choices = $("choices"), slider = document.createElement("span");
-    slider.className = "chip-slider"; slider.setAttribute("aria-hidden", "true");
-    choices.prepend(slider); choices.classList.add("has-slider");
-    let shownSlider = false;
-    function place() {
-      const a = choices.querySelector("button.active");
-      if (!a) { slider.style.opacity = "0"; shownSlider = false; return; }
-      if (!shownSlider) { slider.classList.add("snap"); }
-      Object.assign(slider.style, { width: `${a.offsetWidth}px`, height: `${a.offsetHeight}px`, transform: `translate(${a.offsetLeft}px, ${a.offsetTop}px)`, opacity: "1" });
-      if (!shownSlider) { void slider.offsetWidth; slider.classList.remove("snap"); shownSlider = true; }
-    }
-    new MutationObserver(place).observe(choices, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
-    addEventListener("resize", place);
-    document.fonts?.ready.then(place);
-
-    // ⌘K (Ctrl K elsewhere) goes to Find.
-    const kbd = document.querySelector(".find-kbd");
-    if (kbd && !/Mac|iPhone|iPad/.test(navigator.platform)) kbd.textContent = "Ctrl K";
-    addEventListener("keydown", (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("findText").focus(); $("findText").select(); }
-    });
-
-    // Chapters and the colophon rise into view once.
-    if (!reduce.matches && "IntersectionObserver" in window) {
-      const io = new IntersectionObserver((entries) => entries.forEach((e) => {
-        if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
-      }), { rootMargin: "0px 0px -8% 0px" });
-      document.querySelectorAll(".chapter, .colophon").forEach((el) => { el.classList.add("reveal"); io.observe(el); });
-    }
+    g.innerHTML = s;
   })();
 </script>
 <script type="module">
@@ -449,6 +287,7 @@
     const icon = $(side === "L" ? "wristL" : "wristR"), label = $(side === "L" ? "wristLText" : "wristRText");
     const idle = "Standing by";
     icon.classList.add("on");
+    icon.style.setProperty("--s", clamp(strength, 0, 1).toFixed(2)); // the dot glows as hard as it buzzes
     label.textContent = meaning || idle;
     clearTimeout(icon.off); clearTimeout(label.off);
     icon.off = setTimeout(() => { rumble(jc, 0); icon.classList.remove("on"); }, ms);
@@ -1572,6 +1411,24 @@
   const GUIDE_STATES = [[/^STOP/, "stop"], [/^(?:TURN|SCANNING|GO AROUND)/, "turn"], [/^APPROACHING/, "go"], [/^(?:ARRIVED|AT THE CAR|TOUCHING)/, "done"],
     [/^(?:REACH|THINKING)/, "reach"], [/^(?:NO |NOT FOUND)/, "warn"]];
   const put = (id, text) => { const el = $(id); if (el.textContent !== text) el.textContent = text; }; // only touch what changed
+  // The dial: an arrow pointing where to go (up = straight ahead, turned by the message's angle
+  // when it has one), or a symbol for stop / arrived / waiting / ready.
+  let dialTurn = 0;
+  function showDial(guide, state) {
+    const g = $("guide");
+    const pict = !mode ? "idle" : state === "stop" ? "stop" : state === "done" ? "done"
+      : state === "warn" || /^(?:THINKING|SEARCHING|NO |NOT )|^SCANNING: (?:hold|next)/.test(guide) ? "wait" : "arrow";
+    if (g.dataset.pict !== pict) g.dataset.pict = pict;
+    if (pict !== "arrow") return;
+    let turn = 0;
+    const hand = /^REACH/.test(guide) && guide.match(/\b(left|right|up|down)\b/i);
+    const angled = guide.match(/\b(left|right)\b\s+(\d+)°/i);
+    if (hand) turn = { left: -90, right: 90, up: 0, down: 180 }[hand[1].toLowerCase()];
+    else if (angled) turn = (angled[1].toLowerCase() === "left" ? -1 : 1) * Math.min(180, Number(angled[2]));
+    dialTurn += ((((turn - dialTurn) % 360) + 540) % 360) - 180; // the short way round
+    const css = `${dialTurn.toFixed(0)}deg`;
+    if (g.style.getPropertyValue("--turn") !== css) g.style.setProperty("--turn", css);
+  }
   const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
   const EXPLAIN = { APPROACHING: "Facing it: walk forward", ARRIVED: "Within the arrival radius" }; // for messages that are one word
   function showStatus(guide, obs) {
@@ -1582,6 +1439,7 @@
     put("guideDetail", !mode ? "Choose a destination, find an object, or say “Paradise” to get started." : m ? m[2] || EXPLAIN[m[1]] || "" : "");
     const state = (mode && GUIDE_STATES.find(([re]) => re.test(guide))?.[1]) || "idle";
     if ($("guide").dataset.state !== state) $("guide").dataset.state = state;
+    showDial(guide, state);
     put("guidanceState", !mode ? "Standing by" : state === "stop" ? "Obstacle detected" : state === "done" ? "Destination reached" : "Guidance active");
     // The last phrase heard (10 s), and what came of it: ignored, listening, understanding, or the command.
     const showHeard = heard && now - heard.at < 10000;
@@ -1594,7 +1452,7 @@
     put("buzzLog", [...buzzLog.map((b) => `${b.text}${b.n > 1 ? ` ×${b.n}` : ""}`),
       ...(!joyL && !joyR ? ["Preview mode · Connect Joy-Cons to feel these signals."] : [])].join("\n"));
     $("buzzLog").classList.toggle("has", buzzLog.length > 0);
-    put("modeV", mode ? mode.name : "Standby");
+    put("modeV", mode ? mode.name : "Nowhere yet");
     // How long the task has taken: from the choice to the touch (or, for a place, arriving).
     if (mode && task.at && !task.done && (/^TOUCHING/.test(guide) || (mode.kind === "place" && /^ARRIVED/.test(guide)))) {
       task.done = now;
@@ -1610,6 +1468,7 @@
     put("afterV", running ? `${clock(now - task.at)}…` : compare.after ? clock(compare.after) : "—");
     put("fasterV", !running && compare.before && compare.after && compare.after < compare.before ? `${(compare.before / compare.after).toFixed(1)}× faster` : "");
     put("distV", mode ? distanceShown : "—");
+    $("distV").classList.toggle("none", $("distV").textContent === "—");
     put("distS", mode && distanceBy ? SOURCES[distanceBy] || distanceBy : "");
     put("obsV", obs ? `${capital(obs.label)}${obs.distance != null ? ` · ${obs.distance.toFixed(1)} m` : ""}` : "None");
     put("obsS", !obs ? "" : reaching ? "ignored while reaching" : obs.src === "depth" ? "seen by the depth model" : "seen by the camera");
@@ -1702,13 +1561,13 @@
   const feed = $("feed"), fctx = feed.getContext("2d");
   const feedImg = new Image();
   let feedBoxes = [], previewAt = -Infinity, previewCam = null;
-  const RED = "#d2464b", GREEN = "#9fbfa8", YELLOW = "#d8b77a", WHITE = "rgba(237, 237, 235, 0.8)";
+  const RED = "#ff453a", GREEN = "#30d158", YELLOW = "#ffd60a", WHITE = "rgba(245, 245, 247, 0.85)";
   const rr = (x, y, w, h, r) => (fctx.roundRect ? fctx.roundRect(x, y, w, h, r) : fctx.rect(x, y, w, h));
   function tag(text, x, y, color, px) { // a label on a coloured chip above a box (inside it, at the top edge)
-    fctx.font = `500 ${11 * px}px Geist, -apple-system, BlinkMacSystemFont, sans-serif`;
+    fctx.font = `600 ${11 * px}px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif`;
     const w = fctx.measureText(text).width + 12 * px, h = 20 * px, ty = y - h - 3 * px >= 0 ? y - h - 3 * px : y + 3 * px;
     fctx.fillStyle = color;
-    fctx.beginPath(); rr(x, ty, w, h, 6 * px); fctx.fill();
+    fctx.beginPath(); rr(x, ty, w, h, 10 * px); fctx.fill();
     fctx.fillStyle = color === RED ? "#fff" : "#111";
     fctx.fillText(text, x + 6 * px, ty + 14 * px);
   }
