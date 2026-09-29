@@ -9,7 +9,7 @@
 //   npm start
 //   laptop: http://localhost:8080/                  (hands.html)
 //   phone:  https://<tunnel address>/eyes?k=<key>   (the camera needs https; npm start prints the
-//                                                    link with its key; see README.md)
+//                                                    link with its key; see ../README.md)
 
 import http from "node:http";
 import { randomInt, timingSafeEqual } from "node:crypto";
