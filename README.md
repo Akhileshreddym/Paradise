@@ -2,6 +2,7 @@
 
 **Touch-only navigation for people who are DeafBlind.**
 🏆 3rd Place Overall at ShellHacks 2026 (1,400+ hackers).
+Built by Akhilesh Reddy Mallu, Haren Gannarapu, Pranavsai Gandikota and Devam Dholakia.
 
 <a href="https://www.youtube.com/watch?v=BVIRTrum1OM">
   <img src="https://img.youtube.com/vi/BVIRTrum1OM/maxresdefault.jpg" alt="Watch the Paradise demo on YouTube" width="720">
@@ -78,6 +79,7 @@ Full setup is in [Getting started](#4-getting-started).
 14. [Why it's built this way](#14-why-its-built-this-way)
 15. [Files](#15-files)
 16. [Credits and licenses](#16-credits-and-licenses)
+17. [License](#17-license)
 
 ---
 
@@ -860,3 +862,15 @@ paradise/
 | ONNX Runtime | `onnxruntime-node` 1.21.0, `onnxruntime-web` 1.22.0 (Microsoft) | MIT |
 | sharp, ws, joy-con-webhid | 0.34.5, 8.21.3, 0.11.0 | Apache-2.0, MIT, Apache-2.0 |
 | Training photos | Wikimedia Commons and Openverse (kept locally in `training/data/`, not redistributed) | Per photo |
+
+---
+
+## 17. License
+
+Paradise's own code is released under the [MIT License](LICENSE). Anyone may use, modify, share
+or sell it, as long as they keep the copyright notice and give the Paradise team credit.
+
+The models and services it uses have their own licenses (see [Credits](#16-credits-and-licenses)).
+They're downloaded when the server first starts, not stored in this repository, but anyone who
+ships or hosts Paradise must follow them. In particular, **YOLOv8n and YOLOv10s are AGPL-3.0**.
+Swapping them for permissively licensed detectors would make the whole stack permissive.

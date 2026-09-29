@@ -1,6 +1,7 @@
 {
   "name": "paradise",
   "private": true,
+  "license": "MIT",
   "description": "Touch-only navigation: Joy-Cons buzz to guide you to a target a chest-mounted phone camera finds.",
   "type": "module",
   "scripts": {
