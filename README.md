@@ -11,7 +11,7 @@ Built by Akhilesh Reddy Mallu, Haren Gannarapu, Pranavsai Gandikota and Devam Dh
 ▶️ **[Watch the demo](https://www.youtube.com/watch?v=BVIRTrum1OM)**
 
 Most accessibility tech assumes you can either see or hear. Tools for blind people talk to you;
-tools for Deaf people show you something. For someone who is DeafBlind, both channels are closed.
+Tools for Deaf people show you something. For someone who is DeafBlind, both channels are closed.
 Paradise gives directions through touch alone.
 
 A phone on the wearer's chest is the eyes. A laptop in a backpack does the thinking. Two Nintendo
@@ -31,7 +31,7 @@ nothing to look at or listen to.
 Paradise does three things:
 
 1. **Walks you to a saved place** along real sidewalks and footpaths, using an OpenStreetMap walking
-   route, GPS and the phone's compass.
+   route, GPS, and the phone's compass.
 2. **Walks you to a waiting car.** It follows GPS toward the car's location, then switches to the
    camera for the last few meters to the car itself.
 3. **Finds an everyday object and walks you to it** ("water bottle", "chair", "laptop"). If it isn't
@@ -47,7 +47,7 @@ backpack as the target (teal) and a bed 0.7 m ahead as an obstacle (red), so the
 stop. The top-down scene (center) shows everything the camera sees around the wearer.*
 
 > **Safety.** This is a supervised prototype. It works *alongside* a white cane, never instead of
-> one. It misses low curbs, steps down, holes and glass, and its distances are rough. Always test with
+> one. It misses low curbs, steps down, holes, and glass, and its distances are rough. Always test with
 > a sighted spotter walking next to the wearer.
 
 ```
@@ -108,7 +108,7 @@ Full setup is in [Getting started](#4-getting-started).
 
 **The guidance controller lives in `hands.html`**, in the laptop's browser. It runs every 50 ms
 (20 times a second). Each time, it combines the compass heading, GPS, the walking route, what the
-cameras see and the obstacle estimates, and decides which wrist to buzz. The server relays messages
+cameras see, and the obstacle estimates, and decides which wrist to buzz. The server relays messages
 and runs the models; Gemini never steers.
 
 | Part | Runs on | Job |
@@ -243,7 +243,7 @@ Leave this terminal running.
 
 ### 4.4 Pair the Joy-Cons (once)
 
-1. Quit Steam, BetterJoy and any other controller tool: they grab the Joy-Cons.
+1. Quit Steam, BetterJoy, and any other controller tool: they grab the Joy-Cons.
 2. Open **System Settings → Bluetooth**.
 3. Hold the small round **sync button** on the left Joy-Con's rail until the lights run back and
    forth, then click **Connect** next to **Joy-Con (L)**.
@@ -261,7 +261,7 @@ Chrome remembers the permission, so the Joy-Cons reconnect by themselves next ti
 
 ### 4.6 Start the tunnel
 
-iPhones only allow the camera, GPS, compass and microphone on **https** pages. In a second
+iPhones only allow the camera, GPS, compass, and microphone on **https** pages. In a second
 terminal:
 
 ```
@@ -352,11 +352,11 @@ Each step adds one piece. ✅ shows what working looks like. The quoted messages
 page's **Details → guide:** line.
 
 1. **Laptop and Joy-Cons.** Play every buzz under **Testing**. ✅ Rotate left is felt on the left
-   wrist, rotate right on the right, forward and reached on both. Adjust **Settings → Buzz
+   wrist, rotate right on the right, forward and back on both. Adjust **Settings → Buzz
    strength** until each is clearly felt through a sleeve.
 2. **Choosing with the buttons.** Press once and wait 1.5 s. ✅ **Mode** says `Waymo`. Press three
    times. ✅ **Mode** says `test east`. There's no buzz to confirm a choice ([10](#10-built-but-switched-off)).
-3. **Chest phone and compass** (indoors is fine). Open the chest phone page, tap once, mount it.
+3. **Chest phone and compass** (indoors is fine). Open the chest phone page, tap once, and mount it.
    Choose **Testing → 90° right**. ✅ The right wrist buzzes until you've turned about 90°, then
    both buzz. Close the phone page. ✅ Within a second, `NO SIGNAL from the chest phone` and the
    wrists go quiet.
@@ -413,7 +413,7 @@ The wearer never looks at a screen; the laptop page is for everyone else:
   last thing the phone heard, and what came of it;
 - **two wrist tiles** that light up exactly when each wrist buzzes (even with no Joy-Cons connected),
   and a log of the last few buzzes;
-- **Mode**, **Distance** and **Obstacle** tiles, the room scan in find mode, and a simulated ride
+- **Mode**, **Distance**, and **Obstacle** tiles, the room scan in find mode, and a simulated ride
   status in car mode (*Requested → Arrived → Found by the camera → At the door*);
 - a **top-down scene** of what Paradise sees around the wearer and the path it's steering along;
 - **spoken sentences** through the laptop's speakers: *Going to the water bottle.*, *Found the water
@@ -442,7 +442,7 @@ control** is pressed. The buzz legend (`/legend`) shows and plays each wrist sig
    radius for GPS, 0.5 m for the camera).
 6. **Something in the way further ahead** (within 2.5 m) → a detour ([7.4](#74-obstacles-and-detours)).
 7. **Facing the target** (within ±12°, or ±17° once already facing it, so it doesn't flicker) →
-   both wrists, held on.
+   Both wrists, held on.
 8. **Otherwise** → the wrist on the side to turn toward, held on.
 
 A "held on" buzz is refreshed every 100 ms and switches itself off 200 ms after the last refresh,
@@ -530,10 +530,10 @@ bearing). Arrival is within the GPS arrival radius (6 m by default).
 ### 7.7 Mode: the car
 
 1. **Far away (over 25 m from the beacon):** steer along the walking route toward the beacon.
-   Meanwhile the phone sends crops of every car it sees twice a second, and the CLIP classifier
+   Meanwhile, the phone sends crops of every car it sees twice a second, and the CLIP classifier
    scores each ([9](#9-the-waymo-classifier)). A car scored at 0.9 or more, in view, can take over
    steering from GPS.
-2. **Close (within 25 m; back to GPS beyond 35 m):** the laptop's YOLOv8n looks for a car, truck or
+2. **Close (within 25 m; back to GPS beyond 35 m):** the laptop's YOLOv8n looks for a car, truck, or
    bus within 40° of the beacon's direction and at about the beacon's distance. Once seen in 3 of 5
    frames, the camera steers the wearer to it. If none is seen, GPS keeps going toward the beacon.
 3. **Arrival:** the same check as find mode ([7.8](#78-mode-find-an-object)), tuned for a car
@@ -556,7 +556,7 @@ every car count in the far stage too, for demos without a real Waymo, and the ri
    a time, so the detector never falls behind the video.
 3. **Confirmation** (after the Lumen project's rules): the object only counts once it's in **3 of the
    last 5 frames**, so a single-frame flicker can't send the wearer anywhere. With several in view,
-   the one nearest the middle wins. Left, center and right regions only change after 2 frames in a
+   the one nearest the middle wins. Left, center, and right regions only change after 2 frames in a
    row.
 4. **Not in view: the room scan.** The wrists turn the wearer round in **10 stops, 36° apart** (the
    camera sees ~41° across, so they overlap), holding still for 1.2 s at each while the detector
@@ -565,7 +565,7 @@ every car count in the far stage too, for demos without a real Waymo, and the ri
 5. **Steering.** Where it was seen is kept as a compass heading for 8 s, so the wrists turn the
    wearer back to it if it drops out of view.
 6. **Arrival check.** Close to it (0.8 m by the camera, or once it drops off the bottom of the view
-   within 1.5 m), the wrists go quiet and a photo goes to Gemini: *is it within arm's reach?* Yes →
+   within 1.5 m), the wrists go quiet, and a photo goes to Gemini: *is it within arm's reach?* Yes →
    the double buzz. Not yet → one step forward (a 1.2 s forward buzz), then ask again (up to 12
    times). Without Gemini (off, no key, no answer in 8 s), the camera decides alone, at 0.55 m.
 
@@ -573,7 +573,7 @@ every car count in the far stage too, for demos without a real Waymo, and the ri
 
 - **Wake word.** Only a phrase starting with "Paradise" counts, after at most two filler words
   ("so", "um", "hey"…). Dictation doesn't know the word, so it also accepts *pair of dice*,
-  *paradice*, *parodies* and similar. "Paradise" alone makes the next phrase within 8 s count.
+  *paradice*, *parodies*, and similar. "Paradise" alone makes the next phrase within 8 s count.
 - **Stop never waits.** Any stop word anywhere after "Paradise" stops at once, even mid-phrase
   ("take me to the Waymo… Paradise, stop"). Stopping when it wasn't meant costs a second; not
   stopping when it was meant can walk someone into something.
@@ -587,7 +587,7 @@ every car count in the far stage too, for demos without a real Waymo, and the ri
 ### 7.10 Speaking for the audience
 
 The wearer can't hear, but everyone around can. The laptop speaks fixed sentences, never Gemini's
-words: what was chosen, found, lost, reached or not found. One clip plays at a time, the same
+words: what was chosen, found, lost, reached, or not found. One clip plays at a time, the same
 sentence at most once every 8 s, and a new choice clears anything still queued. The server gets the
 audio from ElevenLabs and caches it. With no audio within 4 s (or no key), the browser's own voice
 says it.
@@ -675,7 +675,7 @@ laptop with no GPU, and its weights are `paradise/waymo-head.json`.
 - **Training:** features standardized within each fold; class weighting for the imbalance; L2
   regularization; 5-fold cross-validation grouped by source photo, so crops from one photo never sit
   on both sides.
-- **Results:** see [Results](#2-results). At the 0.9 cutoff it catches ~89% of Waymo crops with a
+- **Results:** see [Results](#2-results). At the 0.9 cutoff, it catches ~89% of Waymo crops with a
   0.7% false-positive rate; the misses are mostly other robotaxis with roof sensors. The phone sends
   several crops a second, so a single missed crop rarely matters.
 - **Why CLIP:** compared with DINOv2 features, CLIP caught more Waymos at the strict cutoff, and
@@ -702,7 +702,7 @@ These parts are implemented in the code but disabled in the current build:
 | Feature | Where | Status |
 |---|---|---|
 | **Steering the hand onto the object** (MediaPipe hand tracking on the phone; left, right, high-pitched "up" and low-pitched "down" buzzes, then a "touch" buzz) | `reachTick()` in `hands.html` | Off: `REACH = false`. Arrival is the end of guidance. |
-| **Extra buzz patterns:** obstacle stop (3 sharp pulses), searching, found it, choice echo (N pulses), heard you, stopped | `SILENT` in `hands.html` | Silenced to keep the vocabulary to four signals. Stops, lost signal, confirmations and "didn't understand" currently all feel like silence. |
+| **Extra buzz patterns:** obstacle stop (3 sharp pulses), searching, found it, choice echo (N pulses), heard you, stopped | `SILENT` in `hands.html` | Silenced to keep the vocabulary to four signals. Stops, lost signal, confirmations, and "didn't understand" currently all feel like silence. |
 | **Door-handle finder** (Grounding DINO tiny, open-vocabulary detection) | `object-finder.js`, `onFound()` in `hands.html` | Loads at startup, but the current car flow hands over to the close-range search at 25 m, before the handle search (within 4 m) can start. |
 | **CLIP second opinion** on open-vocabulary boxes | `check` job in `clip-worker.js` | Only used together with the door-handle finder. |
 
@@ -724,9 +724,9 @@ These parts are implemented in the code but disabled in the current build:
 | Steers the wrong way | Phone upright, camera forward; turning right must make `heading` go **up**. Keep it away from magnets and steel. Check (L) is on the left wrist. |
 | GPS targets consistently a bit off | Set `DECLINATION` for your location. |
 | Joy-Con won't connect or buzz | Quit Steam or BetterJoy, re-pair, use Chrome, press a button to wake it. |
-| Button presses don't count | Use a face button, trigger or stick click (not SL/SR), and wait 1.5 s. |
+| Button presses don't count | Use a face button, trigger, or stick click (not SL/SR), and wait 1.5 s. |
 | No live video (Details `video:` shows small frames) | WebRTC couldn't connect (it has STUN but no TURN relay). It falls back to 4 frames a second through the server; putting both devices on the same network or hotspot usually fixes it. |
-| Stops for no reason: `STOP: something…` | The depth model. Check the tilt (10–20° down), chest height and focal. Still wrong: turn off **Obstacles from depth**. |
+| Stops for no reason: `STOP: something…` | The depth model. Check the tilt (10–20° down), chest height, and focus. Still wrong: turn off **Obstacles from depth**. |
 | `STOP: something close (no floor in view)` | The camera can't see the floor: it's tilted up, or a strap covers the lower part of the lens. |
 | Voice ignored (`→ ignored (no wake word)`) | Start with "Paradise". Check the `Heard:` text; if dictation spells it some other way, add that spelling to `WAKE_WORD`. |
 | `CAN'T FIND` | The object isn't one of YOLOv8n's 80 types ([7.8](#78-mode-find-an-object)). |
@@ -738,7 +738,7 @@ These parts are implemented in the code but disabled in the current build:
 
 ## 12. Known limitations
 
-- **Silence means several things.** Waiting, stopped for an obstacle, lost signal and finished all
+- **Silence means several things.** Waiting, stopped for an obstacle, lost signal, and finished all
   feel the same on the wrists. The wearer gets no tactile confirmation of a choice or a voice command.
 - **Two controllers are needed.** If one drops out, a forward signal on both wrists could feel like a
   turn. The page notices the disconnect, but the wearer isn't told.
@@ -748,7 +748,7 @@ These parts are implemented in the code but disabled in the current build:
   drop-offs whose edge doesn't show, glass, or overhangs. Its distances are rough (±20–30%) and need
   the floor in view, plus the right chest height and tilt.
 - **Finding objects** is limited to YOLOv8n's 80 everyday types. "My red bottle" finds *a* bottle:
-  there's no colour or ownership matching, and 3-of-5-frame confirmation doesn't prove the same
+  There's no colour or ownership matching, and 3-of-5-frame confirmation doesn't prove the same
   physical object was tracked throughout.
 - **Near the car, any vehicle in the right place counts.** The classifier doesn't verify that it's
   the rider's assigned vehicle.
@@ -756,17 +756,17 @@ These parts are implemented in the code but disabled in the current build:
   status is simulated.
 - **Routes fall back to a straight line** when the router is unreachable, and GPS drifts several
   meters.
-- **The compass is magnetic:** steel, magnets and cars nearby can skew it by several degrees.
+- **The compass is magnetic:** steel, magnets, and cars nearby can skew it by several degrees.
 - **Arbitrary objects need speech or typing.** Buttons only select the car and saved places.
-- **Hardware burden:** a laptop in a backpack, a chest mount and two controllers.
-- **Testing so far:** simulations, photo tests, rendered depth scenes, benchmarks and team
+- **Hardware burden:** a laptop in a backpack, a chest mount, and two controllers.
+- **Testing so far:** simulations, photo tests, rendered depth scenes, benchmarks, and team
   demonstrations. **No study with DeafBlind users has been done yet.**
 
 ---
 
 ## 13. Privacy and security
 
-- Camera video goes from the phone to the Mac (by WebRTC, or through the Cloudflare tunnel as a
+- Camera video goes from the phone to the Mac (via WebRTC, or through the Cloudflare tunnel as a
   fallback). Nothing is stored. All continuous vision runs on the phone and the Mac.
 - **Sent to cloud services, only when enabled:**
   - **Gemini:** voice command text, vague request text, and **arrival-check photos** from the chest
@@ -808,7 +808,7 @@ These parts are implemented in the code but disabled in the current build:
 - **Four signals, not twenty:** a small vocabulary is faster to learn and harder to confuse. The
   richer patterns are still in the code ([10](#10-built-but-switched-off)).
 - **A beacon phone for the car's location:** there's no public Waymo API.
-- **A Cloudflare tunnel:** iPhones need https for the camera and sensors, and the beacon may be far
+- **A Cloudflare tunnel:** iPhones need HTTPS for the camera and sensors, and the beacon may be far
   away on cellular.
 
 ---
@@ -836,7 +836,7 @@ paradise/
 │   ├── legend.html                the buzz legend (/legend)
 │   └── paradise.css, dashboard.css, appearance.js   the look (light and dark)
 └── training/                      Waymo classifier pipeline (see training/README.md)
-    ├── collect.mjs, download.mjs  1–2. openly licensed photos
+    ├── collect.mjs, download.mjs  1–2. Openly licensed photos
     ├── crop.mjs, sheet.mjs        3. YOLO crops; contact sheets to check them by eye
     ├── embed.mjs                  4. CLIP features
     └── train.mjs                  5. train, cross-validate, write ../waymo-head.json
