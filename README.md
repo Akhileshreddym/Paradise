@@ -5,10 +5,8 @@
 Built by Akhilesh Reddy Mallu, Haren Gannarapu, Pranavsai Gandikota and Devam Dholakia.
 
 <a href="https://www.youtube.com/watch?v=BVIRTrum1OM">
-  <img src="https://img.youtube.com/vi/BVIRTrum1OM/maxresdefault.jpg" alt="Watch the Paradise demo on YouTube" width="720">
+  <img src="docs/demo.jpg" alt="Watch the Paradise demo on YouTube" width="720">
 </a>
-
-▶️ **[Watch the demo](https://www.youtube.com/watch?v=BVIRTrum1OM)**
 
 Most accessibility tech assumes you can either see or hear. Tools for blind people talk to you;
 Tools for Deaf people show you something. For someone who is DeafBlind, both channels are closed.
